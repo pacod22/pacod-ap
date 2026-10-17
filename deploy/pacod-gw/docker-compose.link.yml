@@ -1,0 +1,37 @@
+# pacod-gw on the platform, part 1: joins the gateway stack to pacod-ap's network pacod-link.
+#
+# Applied on top of pacod-gw's own compose files by the root Makefile (GW_COMPOSE, project
+# pacod-ap-gw), never edited into them. Only the services the platform talks to join, each
+# under an alias that cannot be mistaken for a pacod-ap service:
+#
+#   gw-core         the data plane (8080, the app's LLM calls), the management API (8081,
+#                   scripts/gw_bootstrap.py and the admin facades) and metrics (9100)
+#   gw-console      the console (3000), which pacod-ap's Caddy serves
+#   gw-prometheus   the gateway's Prometheus, for the console's Metrics page
+#   (tester)        reaches pacod-id's internal listener for delegated grants
+#
+# The gateway's other services (its PostgreSQL, ClickHouse, analytics, collector) stay on its
+# own networks. pacod-ap never joins the gateway's `edge` network: both stacks have a caddy, a
+# prometheus and a postgres, whose service names would then resolve to either.
+services:
+  core:
+    networks:
+      pacod-link:
+        aliases: [gw-core]
+  ui:
+    networks:
+      pacod-link:
+        aliases: [gw-console]
+  tester:
+    networks:
+      pacod-link:
+        aliases: [gw-tester]
+  prometheus:
+    networks:
+      pacod-link:
+        aliases: [gw-prometheus]
+
+networks:
+  pacod-link:
+    name: pacod-link
+    external: true

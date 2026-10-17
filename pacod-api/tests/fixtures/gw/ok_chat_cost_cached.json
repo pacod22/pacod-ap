@@ -1,0 +1,59 @@
+{
+ "case": "ok_chat_cost_cached",
+ "note": "usage.cost and prompt_tokens_details.cached_tokens",
+ "request": {
+  "model": "anthropic/claude-sonnet-5-5",
+  "max_tokens": 64,
+  "messages": [
+   {
+    "role": "user",
+    "content": "hello"
+   }
+  ],
+  "gateway": {
+   "trace_id": "fixture",
+   "tags": {
+    "purpose": "synthesizer"
+   }
+  }
+ },
+ "status": 200,
+ "headers": {
+  "content-type": "application/json"
+ },
+ "body": {
+  "id": "msg_mock30dff3a35ad08395",
+  "object": "chat.completion",
+  "created": 1792144130,
+  "model": "anthropic/claude-sonnet-5-5",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "echo: hello",
+     "provider_specific_fields": {
+      "native_finish_reason": "end_turn"
+     }
+    },
+    "finish_reason": "stop"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 42,
+   "completion_tokens": 15,
+   "total_tokens": 57,
+   "prompt_tokens_details": {
+    "cached_tokens": 40
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 0
+   },
+   "cost": {
+    "amount": 0.000162,
+    "currency": "USD",
+    "price_version": 1
+   }
+  }
+ }
+}

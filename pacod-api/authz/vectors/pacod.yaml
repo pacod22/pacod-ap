@@ -1,0 +1,69 @@
+# What each app role may do. tests/unit/test_authz_manifest.py runs this file through the
+# vendored pacod_id rules engine; format: <pacod-id>/policy/engine-vectors/README.md.
+#
+# How the app's checks map (Phase 5):
+#   AuthenticatedUser.is_admin()        allowed pacod.admin.read at [platform]
+#   AuthenticatedUser.is_superuser()    has_role pacod.superuser at platform
+#   require_superuser (prompts, agents) allowed pacod.prompts.edit / pacod.profiles.manage
+#   granting/revoking superuser          can_grant pacod.superuser (was guard_superuser_role_change)
+#   Open-WebUI forwarded identity        allowed pacod.attribution.forward (service account only)
+manifests: [pacod]
+cases:
+  - name: everyone who signs in may chat, and nothing more
+    subject: { kind: user, bindings: [] }
+    checks:
+      - { allowed: pacod.chat.use, at: [platform], expect: true }
+      - { allowed: pacod.chat.use, at: [platform, "pacod.profile:starter"], expect: true }
+      - { allowed: pacod.admin.read, at: [platform], expect: false }
+      - { allowed: pacod.attribution.forward, at: [platform], expect: false }
+      - { has_role: pacod.user, scope: platform, expect: true }
+      - { holds_any_at: platform, expect: false }
+      - { can_grant: pacod.admin, at: [platform], expect: not_permitted }
+      - { can_grant: pacod.user, at: [platform], expect: implicit_role }
+
+  - name: an admin runs the console but cannot make superusers
+    subject: { kind: user, bindings: [{ role: pacod.admin, path: [platform] }] }
+    checks:
+      - { allowed: pacod.admin.read, at: [platform], expect: true }
+      - { allowed: pacod.admin.write, at: [platform], expect: true }
+      - { allowed: pacod.profiles.assign, at: [platform], expect: true }
+      - { allowed: pacod.profiles.manage, at: [platform], expect: false }
+      - { allowed: pacod.prompts.edit, at: [platform], expect: false }
+      - { allowed: pacod.webui.admin, at: [platform], expect: false }
+      - { allowed: pacod.chat.use, at: [platform], expect: true }
+      - { has_role: pacod.superuser, scope: platform, expect: false }
+      - { can_grant: pacod.admin, at: [platform], expect: ok }
+      - { can_grant: pacod.webui_service, at: [platform], expect: ok }
+      - { can_grant: pacod.superuser, at: [platform], expect: not_permitted }
+      - { can_grant: pacod.admin, at: [platform, "pacod.profile:starter"], expect: scope_type_not_allowed }
+
+  - name: a superuser does everything, including making superusers
+    subject: { kind: user, bindings: [{ role: pacod.superuser, path: [platform] }] }
+    checks:
+      - { allowed: pacod.admin.write, at: [platform], expect: true }
+      - { allowed: pacod.profiles.manage, at: [platform], expect: true }
+      - { allowed: pacod.prompts.edit, at: [platform], expect: true }
+      - { allowed: pacod.webui.admin, at: [platform], expect: true }
+      - { allowed: pacod.attribution.forward, at: [platform], expect: false }
+      - { has_role: pacod.superuser, scope: platform, expect: true }
+      - { can_grant: pacod.superuser, at: [platform], expect: ok }
+      - { can_grant: pacod.admin, at: [platform], expect: ok }
+
+  - name: the Open-WebUI service account chats and forwards the person, nothing else
+    subject: { kind: service, bindings: [{ role: pacod.webui_service, path: [platform] }] }
+    checks:
+      - { allowed: pacod.chat.use, at: [platform], expect: true }
+      - { allowed: pacod.attribution.forward, at: [platform], expect: true }
+      - { allowed: pacod.admin.read, at: [platform], expect: false }
+      - { has_role: pacod.user, scope: platform, expect: false }
+
+  - name: a service account without a role may not even chat
+    subject: { kind: service, bindings: [] }
+    checks:
+      - { allowed: pacod.chat.use, at: [platform], expect: false }
+
+  - name: a binding of another product grants nothing here
+    subject: { kind: user, bindings: [{ role: gw.platform_admin, path: [platform] }] }
+    checks:
+      - { allowed: pacod.admin.read, at: [platform], expect: false }
+      - { allowed: pacod.chat.use, at: [platform], expect: true }

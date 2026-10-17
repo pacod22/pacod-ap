@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="%lang%" data-theme="light" %sveltekit.theme%>
+	<head>
+		<meta charset="utf-8" />
+		<!-- Favicon + app icons are emitted by the root +layout.svelte from
+		     data.site.icons, not hardcoded here. -->
+		<!-- Rendered per deployment from SITE_NAME — see routes/manifest.webmanifest. -->
+		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+
+		<!-- Fonts: Manrope (display), Inter (body), JetBrains Mono (figures) — all carry Cyrillic -->
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap"
+			rel="stylesheet"
+		/>
+
+		<!-- Set theme before paint to avoid flash -->
+		<script>
+			(function () {
+				try {
+					const stored = localStorage.getItem('theme');
+					const prefers = window.matchMedia('(prefers-color-scheme: dark)').matches;
+					const theme = stored || (prefers ? 'dark' : 'light');
+					document.documentElement.setAttribute('data-theme', theme);
+				} catch (_) {}
+			})();
+		</script>
+
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

@@ -1,0 +1,40 @@
+{
+ "case": "ok_quota",
+ "note": "the limits that apply to a key and end user",
+ "request": {
+  "end_user": "usr_fixture"
+ },
+ "status": 200,
+ "headers": {
+  "content-type": "application/json"
+ },
+ "body": {
+  "end_user": "usr_fixture",
+  "limits": [
+   {
+    "limit_id": "lim_01a1440b6726747a8cd62103ac0fa073",
+    "name": "user-daily-tokens",
+    "subject": "end_user",
+    "metric": "tokens",
+    "window": "day",
+    "enforcement": "advisory",
+    "amount": 100000.0,
+    "used": 0.0,
+    "remaining": 100000.0,
+    "resets_at": "2026-10-17T00:00:00Z"
+   },
+   {
+    "limit_id": "lim_01a1440b977175b5a3b5fa6d7b402ad4",
+    "name": "workspace-monthly-spend",
+    "subject": "workspace",
+    "metric": "spend",
+    "window": "month",
+    "enforcement": "advisory",
+    "amount": 500.0,
+    "used": 0.000446,
+    "remaining": 499.999554,
+    "resets_at": "2026-11-01T00:00:00Z"
+   }
+  ]
+ }
+}

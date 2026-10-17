@@ -1,0 +1,339 @@
+# Caddyfile — combined stack (API + Frontend + Open-WebUI).
+#
+# Caddy is the single edge for the full stack. Responsibilities:
+#   1. Terminate TLS using certs from /etc/caddy/certs (mounted from /data/caddy/certs).
+#   2. Redirect plain HTTP to HTTPS.
+#   3. Disable response buffering so SSE tokens flush immediately.
+#   4. Use generous timeouts so long agent turns don't get cut.
+#   5. Serve Open-WebUI as its own sites (ctest.local:3000, ai.pacod.io), gated by
+#      SvelteKit's forward_auth SSO check; on the main site only its root-relative
+#      /static/* assets go to it.
+#   6. Route ALL other traffic (including /api/*) through SvelteKit so the auth proxy
+#      hook can convert session cookies to Bearer tokens before forwarding to the backends.
+#      SvelteKit's handleApiProxy handles the admin vs. main api routing internally.
+#   7. Serve pacod-id (id.pacod.io) and the gateway console (console.pacod.io).
+
+{
+    # Disable ACME / automatic HTTPS — certs are provided via tls directive below.
+    auto_https off
+    admin off
+    # Enable Caddy's built-in Prometheus instrumentation (opt-in as of Caddy 2.5+).
+    # Populates the default registry with caddy_http_requests_total{server,handler,
+    # method,code}, caddy_http_request_duration_seconds, and request/response sizes
+    # for ALL edge traffic across every vhost. Exposed on the internal :9180 listener
+    # below (admin API stays off, so the metrics endpoint is a plain route handler).
+    servers {
+        metrics
+    }
+}
+
+# Internal-only metrics listener. Plain HTTP (auto_https off), reachable ONLY over
+# the agent-net Docker network as caddy:9180 — it is NOT published to the host and
+# never TLS-terminated, mirroring how the FastAPI /metrics stays off the public edge.
+# Prometheus scrapes caddy:9180/metrics (see monitoring/prometheus/prometheus.yml.tpl).
+:9180 {
+    metrics /metrics
+}
+
+(logging) {
+    log {
+        output file /var/log/caddy.log
+        format json
+    }
+}
+
+pacod.io {
+    redir https://www.pacod.io{uri} permanent
+}
+
+# HTTP → HTTPS redirect for all hostnames.
+http://www.pacod.io, http://id.pacod.io, http://console.pacod.io, http://ctest.local {
+    redir https://{host}{uri} permanent
+}
+
+# HTTPS site — terminates TLS with provided certificates.
+www.pacod.io:443 {
+    tls /etc/caddy/certs/pacod.io.full /etc/caddy/certs/pacod.io.key
+
+    import logging
+
+    # Health check passthrough — hit the main API directly (no auth needed).
+    handle /health {
+        reverse_proxy api:8000
+    }
+
+    # Monitoring UI (Grafana) served under /monitoring. The prefix is NOT stripped —
+    # Grafana is configured to serve from this sub-path (GF_SERVER_ROOT_URL +
+    # GF_SERVER_SERVE_FROM_SUB_PATH in monitoring/docker-compose.monitoring.yml), so it
+    # emits asset/redirect URLs already prefixed with /monitoring. Grafana joins
+    # agent-net from the monitoring compose; reach it by container DNS name.
+    handle /monitoring* {
+        # Grafana is embedded in the admin console at /metrics (a same-origin
+        # iframe) and serves dashboards as an anonymous Viewer (no Grafana login).
+        # Access control therefore lives HERE: forward_auth asks SvelteKit whether
+        # the app_session cookie belongs to an admin. /internal/monitoring-auth
+        # returns 200 (admin → proxy to Grafana) or 403 (rejected). This replaces
+        # the previous HTTP basic_auth, which popped an un-fillable dialog inside
+        # the iframe.
+        #
+        # Grafana's static build assets (/monitoring/public/*) carry no tenant
+        # data and are excluded so first-load JS/CSS chunks skip the auth hop; the
+        # dashboard data endpoints (/monitoring/api/*) and pages stay gated.
+        #
+        # `route` pins evaluation order: the (matched) forward_auth MUST run before
+        # the (terminal) reverse_proxy. Without it, Caddy's directive-order sorting
+        # could place the bare reverse_proxy first and serve Grafana unauthenticated.
+        route {
+            @mon_protected not path /monitoring/public/*
+            forward_auth @mon_protected frontend:3000 {
+                uri /internal/monitoring-auth
+                header_up Cookie {http.request.header.Cookie}
+                header_up Host {host}
+            }
+            reverse_proxy pacod-grafana:3000 {
+                header_up Host {host}
+                header_up X-Real-IP {remote_host}
+                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-Proto {scheme}
+            }
+        }
+    }
+
+    # Open-WebUI root-relative assets — Open-WebUI's HTML is built with
+    # root-relative paths, so they are served here at the site root.
+    #
+    # /static/* belongs exclusively to Open-WebUI (SvelteKit never uses this path).
+    handle /static/* {
+        reverse_proxy open-webui:8080 {
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # /api/* — all browser API calls go through SvelteKit so the handleApiProxy
+    # hook can convert session cookies to Bearer tokens before forwarding to the
+    # Python backends. flush_interval -1 is required for SSE chat streaming;
+    # generous timeouts prevent long agent turns from being cut off.
+    handle /api/* {
+        reverse_proxy frontend:3000 {
+            flush_interval -1
+            transport http {
+                read_timeout 10m
+                write_timeout 10m
+                response_header_timeout 10m
+            }
+            header_up Host {host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Block /internal/* from the public edge. These SvelteKit routes
+    # (monitoring-auth, webui-auth, metrics) are meant only for internal callers:
+    # Caddy forward_auth subrequests and Prometheus scrape both hit frontend:3000
+    # DIRECTLY over agent-net, bypassing this vhost — so a 404 here does not affect
+    # them. Without this, the catch-all below would proxy /internal/metrics (the
+    # Prometheus endpoint) to any public visitor. `handle` is path-specific, so this
+    # is evaluated before the terminal catch-all regardless of source order.
+    handle /internal/* {
+        respond 404
+    }
+
+    # SvelteKit frontend shell — pages and static assets (JS, CSS, fonts).
+    # No streaming needed here; regular buffered proxy avoids chunked-encoding
+    # conflicts that cause NS_ERROR_CORRUPTED_CONTENT on static files.
+    # X-Forwarded-Host lets adapter-node reconstruct the public origin for
+    # SvelteKit's CSRF check (HOST_HEADER=x-forwarded-host in env).
+    handle {
+        reverse_proxy frontend:3000 {
+            header_up Host {host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}
+
+# Open-WebUI's own password login/sign-up, closed at the PUBLIC edge. Users arrive
+# via SSO (/auth?token=…, a token SvelteKit obtained from Open-WebUI), so nobody
+# needs these here — and leaving them open exposes the bootstrapped admin account
+# to password guessing.
+# The SSO bridge still uses them: it calls open-webui:8080 directly over
+# agent-net, never through this vhost. Must be imported BEFORE `handle @ws` —
+# handles with named matchers keep source order, and an `Upgrade: websocket`
+# header would otherwise route a sign-in straight past this block.
+(webui_no_password_login) {
+    @webui_password_login path /api/v1/auths/signin* /api/v1/auths/signup* /api/v1/auths/add* /api/v1/auths/ldap*
+    handle @webui_password_login {
+        respond 403
+    }
+}
+
+ctest.local:3000 {
+    tls /etc/caddy/certs/ctest.local.full /etc/caddy/certs/ctest.local.key
+
+    import logging
+
+    # --- SSO gate via SvelteKit forward_auth ---
+    #
+    # Applied to page navigations only (Sec-Fetch-Mode: navigate), minus the
+    # paths below. The SvelteKit /internal/webui-auth endpoint returns:
+    #   200  — session is valid and SSO has been bootstrapped → a bare pass-through
+    #           (no headers are copied; Open-WebUI uses the token it stored).
+    #   302  — no session → ${SITE_URL}/auth/login?next=/auth/webui-launch
+    #           (pacod-id's sign-in); first visit → ${SITE_URL}/auth/webui-launch,
+    #           which signs the user in to Open-WebUI and bounces back here.
+    # Excluded paths:
+    #   /auth*   — Open-WebUI's own login page and the /auth?token=… SSO landing
+    #   /static* — Open-WebUI static assets (root-relative, loaded before auth)
+    #   /_app/*  — Open-WebUI's (SvelteKit) bundle assets referenced by the /auth page
+    #   /api/*   — Open-WebUI backend API — authenticated by Bearer token in SPA
+    #   /ws/*    — Open-WebUI's websocket
+    @needs_sso {
+        header Sec-Fetch-Mode navigate
+        not path /auth* /static/* /_app/* /api/* /ws/*
+    }
+
+    forward_auth @needs_sso frontend:3000 {
+        uri /internal/webui-auth
+        # Forward the original cookies so SvelteKit can validate the main-app
+        # session and detect the webui_sso bootstrap marker.
+        header_up Cookie {>Cookie}
+        header_up Host {host}
+    }
+
+    import webui_no_password_login
+
+    # WebSocket upgrade requests get a clean proxy with no HTTP-tuned settings.
+    @ws header Upgrade websocket
+    handle @ws {
+        reverse_proxy open-webui:8080
+    }
+
+    # Regular HTTP — SSE flush + standard forwarding headers.
+    handle {
+        reverse_proxy open-webui:8080 {
+            flush_interval -1
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}
+
+ai.pacod.io {
+    tls /etc/caddy/certs/pacod.io.full /etc/caddy/certs/pacod.io.key
+
+    import logging
+
+    # --- SSO gate via SvelteKit forward_auth ---
+    #
+    # Applied to page navigations only (Sec-Fetch-Mode: navigate), minus the
+    # paths below. The SvelteKit /internal/webui-auth endpoint returns:
+    #   200  — session is valid and SSO has been bootstrapped → a bare pass-through
+    #           (no headers are copied; Open-WebUI uses the token it stored).
+    #   302  — no session → ${SITE_URL}/auth/login?next=/auth/webui-launch
+    #           (pacod-id's sign-in); first visit → ${SITE_URL}/auth/webui-launch,
+    #           which signs the user in to Open-WebUI and bounces back here.
+    # Excluded paths:
+    #   /auth*   — Open-WebUI's own login page and the /auth?token=… SSO landing
+    #   /static* — Open-WebUI static assets (root-relative, loaded before auth)
+    #   /_app/*  — Open-WebUI's (SvelteKit) bundle assets referenced by the /auth page
+    #   /api/*   — Open-WebUI backend API — authenticated by Bearer token in SPA
+    #   /ws/*    — Open-WebUI's websocket
+    @needs_sso {
+        header Sec-Fetch-Mode navigate
+        not path /auth* /static/* /_app/* /api/* /ws/*
+    }
+
+    forward_auth @needs_sso frontend:3000 {
+        uri /internal/webui-auth
+        # Forward the original cookies so SvelteKit can validate the main-app
+        # session and detect the webui_sso bootstrap marker.
+        header_up Cookie {>Cookie}
+        header_up Host {host}
+    }
+
+    import webui_no_password_login
+
+    # WebSocket upgrade requests get a clean proxy with no HTTP-tuned settings.
+    @ws header Upgrade websocket
+    handle @ws {
+        reverse_proxy open-webui:8080
+    }
+
+    # Regular HTTP — SSE flush + standard forwarding headers.
+    handle {
+        reverse_proxy open-webui:8080 {
+            flush_interval -1
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}
+
+# The logs of pacod-id's and the gateway console's sites keep one-time values out: sign-in
+# codes, their state, the hints at sign-out, the tokens of account-email links (as pacod-gw's
+# own Caddyfile does). Same file as every other site, JSON.
+(redacted_logging) {
+    log {
+        output file /var/log/caddy.log
+        format filter {
+            wrap json
+            fields {
+                request>uri query {
+                    delete token
+                    delete code
+                    delete state
+                    delete id_token_hint
+                    delete login_hint
+                    delete flow
+                    delete next
+                }
+                request>headers>Referer delete
+                resp_headers>Location delete
+            }
+        }
+    }
+}
+
+# pacod-id's public listener: the issuer of the `pacod` realm (PACOD_ID_ISSUER). Its internal
+# listener (8071) and metrics (9170) are never routed. The certificate must cover id.pacod.io.
+id.pacod.io {
+    tls /etc/caddy/certs/pacod.io.full /etc/caddy/certs/pacod.io.key
+
+    import redacted_logging
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+
+    reverse_proxy pacod-id:8070 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+# The gateway console (pacod-gw's ui, alias gw-console on pacod-link; PGW_CONSOLE_URL). The
+# gateway's own Caddy is switched off on the platform; its management API is never routed.
+# The certificate must cover console.pacod.io.
+console.pacod.io {
+    tls /etc/caddy/certs/pacod.io.full /etc/caddy/certs/pacod.io.key
+
+    import redacted_logging
+
+    encode zstd gzip
+    reverse_proxy gw-console:3000 {
+        flush_interval -1
+    }
+}

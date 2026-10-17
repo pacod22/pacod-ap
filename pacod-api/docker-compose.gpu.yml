@@ -1,0 +1,26 @@
+# AMD GPU override for the embeddings service.
+#
+# Use this on hosts with an AMD GPU (amdgpu kernel module loaded,
+# /dev/kfd and /dev/dri present):
+#
+#   make up-gpu          # first start / rebuild with GPU support
+#   make upgrade-gpu     # pull + down + up with GPU support
+#
+# The base docker-compose.yml runs without GPU devices so it works on
+# CPU-only machines.  This file adds the ROCm device mounts and env vars
+# on top via Compose's merge semantics.
+services:
+  embeddings:
+    environment:
+      # Radeon 680M is gfx1035 (RDNA 2). ROCm does not officially list it;
+      # override to the nearest supported target so HIP initialises correctly.
+      HSA_OVERRIDE_GFX_VERSION: "10.3.0"
+      ROCR_VISIBLE_DEVICES: "0"
+    devices:
+      - /dev/kfd:/dev/kfd            # AMD GPU compute (KFD kernel driver)
+      - /dev/dri:/dev/dri            # DRM render nodes
+    group_add:
+      - video                        # GID 44 — access to /dev/dri/card*
+      - "${RENDER_GID:-109}"         # render group — access to /dev/dri/renderD*
+                                     # default 109 (Debian/Ubuntu + amdgpu); set RENDER_GID
+                                     # in .env if `getent group render` shows a different GID

@@ -1,0 +1,285 @@
+# Vendored unchanged from pacod-gw (deploy/prometheus/rules/pacod-gw.rules.yml, pacod-gw 13309e2).
+# The gateway's alerts are evaluated by the platform's Prometheus and routed by its
+# Alertmanager (the platform override disables the gateway's own). Refresh by copying
+# the file again; prometheus/alerts/app.rules.yml keeps only the app's own view of its
+# LLM calls (timeouts, an unreachable gateway), under other alert names.
+
+# Alert rules for pacod-gw, after the alerts of concept section 14.9.
+#
+# Every expression uses only series the core exports. The source of truth for their names
+# and labels is crates/pacod-gw-core/src/telemetry/metrics.rs; deploy/scripts/check-dashboards.py
+# compares this file with it.
+#
+# deploy/helm/pacod-gw/files/pacod-gw.rules.yml is a copy of this file for the PrometheusRule
+# of the Helm chart. make deploy-check fails when the two differ. Unit tests: ../tests/.
+#
+# Label values the expressions rely on (metrics.rs and pacod-gw-events):
+#   outcome   ok, error, timeout, cancelled. A call the client cancelled is not a failure.
+#   workspace on gw_limit_used_ratio: empty for a limit that counts a whole organisation.
+#   mode      proxy, managed
+#   stage     total (the gateway delay), pre, post (its two parts)
+#   instance  Prometheus keeps its own target label under this name; the instance id the
+#             core sets itself arrives as exported_instance.
+#
+# Thresholds that mirror a setting are marked "keep in step with".
+
+groups:
+  - name: pacod-gw.traffic
+    rules:
+      - alert: GatewayErrorRateHigh
+        # More than 10 % failed calls per provider and model over 15 minutes, with at least
+        # 20 calls in that time.
+        expr: |
+          (
+              sum by (provider, model) (rate(gw_requests_total{outcome!~"ok|cancelled"}[15m]))
+            /
+              sum by (provider, model) (rate(gw_requests_total{outcome!="cancelled"}[15m]))
+          ) > 0.10
+          and
+          sum by (provider, model) (increase(gw_requests_total{outcome!="cancelled"}[15m])) >= 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate for {{ $labels.model }} at {{ $labels.provider }}"
+          description: "{{ $value | humanizePercentage }} of the calls to {{ $labels.model }} ({{ $labels.provider }}) failed over the last 15 minutes."
+          runbook: "docs/runbook.md#a-provider-or-model-fails"
+
+      - alert: GatewayTimeoutsSpike
+        # More than a handful of timeouts in 15 minutes. Timeouts are never retried
+        # (section 4.4), so each one reached an application.
+        expr: |
+          sum by (provider, model) (increase(gw_requests_total{outcome="timeout"}[15m])) > 5
+        labels:
+          severity: warning
+        annotations:
+          summary: "Timeouts for {{ $labels.model }} at {{ $labels.provider }}"
+          description: "{{ $value | humanize }} calls to {{ $labels.model }} ({{ $labels.provider }}) timed out in the last 15 minutes."
+          runbook: "docs/runbook.md#a-provider-or-model-fails"
+
+      - alert: GatewayAllCallsFailing
+        # Calls were attempted and none succeeded in 15 minutes, per provider.
+        expr: |
+          sum by (provider) (increase(gw_requests_total{outcome!="cancelled"}[15m])) >= 5
+          unless
+          sum by (provider) (increase(gw_requests_total{outcome="ok"}[15m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Every call to {{ $labels.provider }} is failing"
+          description: "{{ $value | humanize }} calls to {{ $labels.provider }} in the last 15 minutes and not one succeeded."
+          runbook: "docs/runbook.md#a-provider-or-model-fails"
+
+      - alert: GatewayRejectionSpike
+        # Any rejection reason above one per second for 10 minutes.
+        expr: |
+          sum by (reason) (rate(gw_rejections_total[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The gateway is rejecting requests: {{ $labels.reason }}"
+          description: "{{ $value | humanize }} requests per second are rejected with reason {{ $labels.reason }}."
+          runbook: "docs/runbook.md#requests-are-rejected"
+
+  - name: pacod-gw.limits
+    rules:
+      - alert: GatewayLimitNearlyUsed
+        # Four fifths of a limit of an organisation or a workspace are used, for 10 minutes.
+        # A per-minute limit that is touched in a burst does not stay there that long. The
+        # console shows the same with the limit's own thresholds (Monitoring, Alerts).
+        expr: |
+          max by (organisation, workspace, limit) (gw_limit_used_ratio) >= 0.8
+          and
+          max by (organisation, workspace, limit) (gw_limit_used_ratio) < 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The limit {{ $labels.limit }} of {{ $labels.organisation }}{{ if $labels.workspace }} / {{ $labels.workspace }}{{ end }} is nearly used"
+          description: "{{ $value | humanizePercentage }} of the limit {{ $labels.limit }} is used. Requests are refused once a limit that blocks is reached."
+          runbook: "docs/runbook.md#requests-are-rejected"
+
+      - alert: GatewayLimitNearlyUsed
+        # All of it is used.
+        expr: |
+          max by (organisation, workspace, limit) (gw_limit_used_ratio) >= 1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The limit {{ $labels.limit }} of {{ $labels.organisation }}{{ if $labels.workspace }} / {{ $labels.workspace }}{{ end }} is used up"
+          description: "The limit {{ $labels.limit }} is reached. If it blocks, requests are refused until its window ends or it is raised."
+          runbook: "docs/runbook.md#requests-are-rejected"
+
+  - name: pacod-gw.prices
+    rules:
+      - alert: GatewayPriceStale
+        # A price in effect was neither set nor confirmed by the price tracker for longer than
+        # the price job's "stale days", which the core exports (30 when no instance does).
+        expr: |
+          max by (model) (gw_price_age_days)
+            > scalar(max(gw_price_stale_threshold_days) or vector(30))
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "The price of {{ $labels.model }} has not been checked for {{ $value | humanize }} days"
+          description: "The price tracker has not confirmed the price of {{ $labels.model }}, and nobody has entered one, for {{ $value | humanize }} days. Costs may be computed with an outdated price."
+          runbook: "docs/runbook.md#prices-are-missing-or-stale"
+
+      - alert: GatewayPriceMissing
+        # Calls were settled without a cost because the model has no price in effect.
+        expr: |
+          sum by (provider, model) (increase(gw_price_missing_total[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.model }} is used and has no price"
+          description: "{{ $value | humanize }} calls to {{ $labels.model }} ({{ $labels.provider }}) were settled without a cost in the last 15 minutes. Enter a price or mark the model as free."
+          runbook: "docs/runbook.md#prices-are-missing-or-stale"
+
+  - name: pacod-gw.internals
+    rules:
+      - alert: GatewaySpoolBacklog
+        # The event spool is above 64 MiB and has grown for 15 minutes: events are not
+        # reaching the analytics service.
+        expr: |
+          max by (instance) (gw_spool_bytes) > 67108864
+          and
+          max by (instance) (deriv(gw_spool_bytes[15m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The event spool of {{ $labels.instance }} is growing"
+          description: "{{ $value | humanize1024 }}B of usage events wait on {{ $labels.instance }}. Check the analytics service and ClickHouse."
+          runbook: "docs/runbook.md#the-spool-grows-or-events-are-dropped"
+
+      - alert: GatewaySpoolBacklog
+        expr: |
+          sum by (instance) (increase(gw_events_dropped_total[10m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} is dropping usage events"
+          description: "The event spool of {{ $labels.instance }} is full; {{ $value | humanize }} events were dropped in the last 10 minutes. Usage and cost reports will be incomplete."
+          runbook: "docs/runbook.md#the-spool-grows-or-events-are-dropped"
+
+      - alert: GatewayDelayHigh
+        # The 99th percentile of the gateway delay above its target (concept section 4.5) for
+        # 10 minutes, per mode. The targets are global settings, which the core exports as
+        # gw_delay_target_seconds: 2 ms in proxy mode and 8 ms in managed mode by default.
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, mode) (rate(gw_delay_seconds_bucket{stage="total"}[5m]))
+          )
+          > on (mode) group_left
+          max by (mode) (gw_delay_target_seconds)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gateway delay in {{ $labels.mode }} mode is above target"
+          description: "The 99th percentile of the gateway delay is {{ $value | humanizeDuration }}; the target is {{ with printf \"max(gw_delay_target_seconds{mode='%s'})\" $labels.mode | query }}{{ . | first | value | humanizeDuration }}{{ end }}."
+          runbook: "docs/runbook.md#the-gateway-delay-is-high"
+
+      - alert: GatewayAuditRecordsLost
+        expr: |
+          sum by (instance) (increase(gw_audit_records_dropped_total[10m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} lost audit records"
+          description: "{{ $value | humanize }} audit-mode records were dropped on {{ $labels.instance }} in the last 10 minutes."
+          runbook: "docs/runbook.md#the-spool-grows-or-events-are-dropped"
+
+      - alert: GatewayAuditRecordsLost
+        # 90 % of 4 GiB. Keep in step with [spool] audit_max_bytes of the core.
+        expr: |
+          max by (instance) (gw_audit_spool_bytes) > 0.9 * 4294967296
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The audit spool of {{ $labels.instance }} is nearly full"
+          description: "{{ $value | humanize1024 }}B of audit-mode records wait on {{ $labels.instance }}. Calls that require a record are refused once the spool is full."
+          runbook: "docs/runbook.md#the-spool-grows-or-events-are-dropped"
+
+      - alert: GatewayConfigurationLag
+        # An instance has not applied the newest configuration for more than 30 seconds.
+        # The core reports how many versions it is behind.
+        expr: |
+          max by (instance) (gw_config_apply_lag_versions) > 0
+        for: 30s
+        labels:
+          severity: warning
+          signal: lag
+        annotations:
+          summary: "{{ $labels.instance }} has not applied the newest configuration"
+          description: "{{ $labels.instance }} is {{ $value }} configuration version(s) behind PostgreSQL. Changes made in the console are not in effect there."
+          runbook: "docs/runbook.md#a-configuration-change-does-not-arrive"
+
+      - alert: GatewayConfigurationLag
+        # The same, seen from outside: an instance that cannot reach PostgreSQL does not
+        # know that it is behind, but its version is lower than another instance's.
+        expr: |
+          max by (instance) (gw_config_version)
+          < on () group_left ()
+          max(gw_config_version)
+        for: 30s
+        labels:
+          severity: warning
+          signal: version
+        annotations:
+          summary: "{{ $labels.instance }} runs an older configuration than another instance"
+          description: "{{ $labels.instance }} has applied configuration version {{ $value }}, which is behind the newest one in use."
+          runbook: "docs/runbook.md#a-configuration-change-does-not-arrive"
+
+      - alert: GatewayInstanceIdConflict
+        # Two running processes present the same instance id: their figures mix and their
+        # event spools cannot be told apart. The process that does not hold the id reports it.
+        expr: |
+          max by (instance) (gw_instance_id_conflict) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Two running processes use the instance id {{ $labels.instance }}"
+          description: "A second process presents the instance id {{ $labels.instance }} while the first still runs. Give every instance its own PGW_INSTANCE_ID and spool directory."
+          runbook: "docs/runbook.md#an-instance-id-is-in-use-twice"
+
+  - name: pacod-gw.plugins
+    rules:
+      - alert: GatewayPluginFlagged
+        # A plugin's rule marked calls and asked for an alert (docs/plugin-concept.md, section
+        # 5.8): for example the intent plugin's flag on a jailbreak attempt. The calls are in
+        # the audit records, unless the organisation forbids audit mode.
+        expr: |
+          sum by (plugin, rule) (increase(gw_plugin_flagged_total[10m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "The {{ $labels.plugin }} plugin flagged calls: rule {{ $labels.rule }}"
+          description: "The rule {{ $labels.rule }} of the {{ $labels.plugin }} plugin flagged {{ $value | humanize }} calls in the last 10 minutes."
+          runbook: "docs/runbook.md#a-plugin-blocks-calls-or-fails"
+
+      - alert: GatewayPluginErrors
+        # More than 5 % of a plugin's answers are errors (timeouts, its engine failing, answers
+        # that do not parse) over 10 minutes, with at least 10 errors. An enforcing binding
+        # with on_error closed refuses those calls.
+        expr: |
+          (
+              sum by (plugin) (rate(gw_plugin_errors_total[10m]))
+            /
+              (sum by (plugin) (rate(gw_plugin_errors_total[10m])) + sum by (plugin) (rate(gw_plugin_verdicts_total[10m])))
+          ) > 0.05
+          and
+          sum by (plugin) (increase(gw_plugin_errors_total[10m])) >= 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The {{ $labels.plugin }} plugin fails to answer"
+          description: "{{ $value | humanizePercentage }} of the {{ $labels.plugin }} plugin's answers in the last 10 minutes were errors."
+          runbook: "docs/runbook.md#a-plugin-blocks-calls-or-fails"

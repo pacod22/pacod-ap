@@ -1,0 +1,65 @@
+# Web framework
+fastapi==0.139.0
+uvicorn[standard]==0.32.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+python-multipart==0.0.32
+sse-starlette==3.4.5
+
+# Agent runtime
+langgraph==1.2.7
+langchain-core==1.4.8
+
+# LLM gateway (pacod-gw, OpenAI-compatible HTTP)
+openai>=1.65.2,<2.0.0
+httpx==0.28.1
+tenacity==9.0.0
+
+# Not imported by the app any more (it normalised photos for the removed vision
+# readings); a candidate for removal once nothing else is found to need it.
+Pillow==12.3.0
+
+# Outbound email (the newsletter) over async SMTP
+aiosmtplib==5.1.2
+
+# Vector store and embeddings clients
+qdrant-client==1.12.1
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.13.3
+
+# Cache and rate limiting
+redis[hiredis]==5.1.1
+
+# Utilities
+PyJWT==2.15.0
+cryptography>=50.0.0,<51  # Fernet — encrypts admin-managed provider API keys at rest
+PyYAML==6.0.3  # golden sets; also required by the vendored pacod_id
+lingua-language-detector==2.2.0
+structlog==24.4.0
+prometheus-client==0.21.0
+
+# Web search
+tavily-python==0.5.0
+
+# Document processing for ingestion (light parsers; the heavy deep-learning
+# PDF→markdown converter, marker-pdf, lives in requirements.txt — see there)
+beautifulsoup4==4.13.5
+lxml==6.1.3
+feedparser==6.0.11  # RSS/Atom parsing for newsletter feed sources
+pypdf==6.19.0
+python-docx==1.1.2
+markdown==3.11
+
+# Async task queue
+celery[redis]==5.4.0
+
+# Testing (kept here so tests can run inside the api container)
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-mock==3.14.0
+fakeredis[lua]==2.25.1
+aiosqlite==0.22.1  # in-memory SQLite for the DB-backed unit tests
+respx==0.22.0

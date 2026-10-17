@@ -1,0 +1,1488 @@
+{
+ "format": "pacod-gw-config/1",
+ "exported_at": "2026-10-16T09:45:58.610905013Z",
+ "config_version": 94,
+ "objects": [
+  {
+   "id": "prv_01a1441aa1ff74549afaccca669cbc4c",
+   "kind": "provider",
+   "name": "anthropic",
+   "doc": {
+    "name": "anthropic",
+    "family": "anthropic",
+    "quirks": {
+     "drop_fields": [],
+     "error_rules": {
+      "quota": [
+       "insufficient_quota"
+      ],
+      "code_at": [
+       "error.code",
+       "error.type"
+      ]
+     },
+     "extra_params": [
+      "parallel_tool_calls",
+      "seed",
+      "n",
+      "logprobs",
+      "top_logprobs",
+      "logit_bias",
+      "metadata",
+      "service_tier",
+      "store"
+     ],
+     "stream_usage": true,
+     "cache_control": true,
+     "echo_reasoning": "never",
+     "request_fields": {},
+     "reasoning_field": "reasoning_content",
+     "reasoning_param": "reasoning_effort",
+     "thinking_object": true,
+     "cached_tokens_at": [
+      "prompt_tokens_details.cached_tokens",
+      "prompt_cache_hit_tokens"
+     ],
+     "normalise_history": false,
+     "thought_signatures": false,
+     "reasoning_tokens_at": [
+      "completion_tokens_details.reasoning_tokens"
+     ],
+     "cache_write_tokens_at": [
+      "prompt_tokens_details.cache_write_tokens"
+     ],
+     "reasoning_outside_completion": false
+    },
+    "status": "active",
+    "base_url": "https://api.anthropic.com",
+    "platform": "direct",
+    "managed_api": "openai_compatible",
+    "proxy_paths": [],
+    "display_name": "Anthropic",
+    "default_timeout_seconds": 600
+   }
+  },
+  {
+   "id": "prv_01a1441aa20372cda945027ce3132a63",
+   "kind": "provider",
+   "name": "openai",
+   "doc": {
+    "name": "openai",
+    "family": "openai",
+    "quirks": {
+     "drop_fields": [],
+     "error_rules": {
+      "quota": [
+       "insufficient_quota"
+      ],
+      "code_at": [
+       "error.code",
+       "error.type"
+      ]
+     },
+     "extra_params": [
+      "parallel_tool_calls",
+      "seed",
+      "n",
+      "logprobs",
+      "top_logprobs",
+      "logit_bias",
+      "metadata",
+      "service_tier",
+      "store"
+     ],
+     "stream_usage": true,
+     "cache_control": false,
+     "echo_reasoning": "never",
+     "request_fields": {},
+     "reasoning_field": "reasoning_content",
+     "reasoning_param": "reasoning_effort",
+     "thinking_object": false,
+     "cached_tokens_at": [
+      "prompt_tokens_details.cached_tokens",
+      "prompt_cache_hit_tokens"
+     ],
+     "normalise_history": false,
+     "thought_signatures": false,
+     "reasoning_tokens_at": [
+      "completion_tokens_details.reasoning_tokens"
+     ],
+     "cache_write_tokens_at": [
+      "prompt_tokens_details.cache_write_tokens"
+     ],
+     "reasoning_outside_completion": false
+    },
+    "status": "active",
+    "base_url": "https://api.openai.com/v1",
+    "platform": "direct",
+    "managed_api": "openai_compatible",
+    "proxy_paths": [],
+    "display_name": "OpenAI",
+    "default_timeout_seconds": 600
+   }
+  },
+  {
+   "id": "prv_01a1441aa20c760988b8566fada51680",
+   "kind": "provider",
+   "name": "gemini",
+   "doc": {
+    "name": "gemini",
+    "family": "gemini",
+    "quirks": {
+     "drop_fields": [],
+     "error_rules": {
+      "quota": [
+       "insufficient_quota"
+      ],
+      "code_at": [
+       "error.code",
+       "error.type"
+      ]
+     },
+     "extra_params": [
+      "parallel_tool_calls",
+      "seed",
+      "n",
+      "logprobs",
+      "top_logprobs",
+      "logit_bias",
+      "metadata",
+      "service_tier",
+      "store"
+     ],
+     "stream_usage": true,
+     "cache_control": false,
+     "echo_reasoning": "never",
+     "request_fields": {},
+     "reasoning_field": "reasoning_content",
+     "reasoning_param": "reasoning_effort",
+     "thinking_object": false,
+     "cached_tokens_at": [
+      "prompt_tokens_details.cached_tokens",
+      "prompt_cache_hit_tokens"
+     ],
+     "normalise_history": false,
+     "thought_signatures": false,
+     "reasoning_tokens_at": [
+      "completion_tokens_details.reasoning_tokens"
+     ],
+     "cache_write_tokens_at": [
+      "prompt_tokens_details.cache_write_tokens"
+     ],
+     "reasoning_outside_completion": false
+    },
+    "status": "active",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta",
+    "platform": "direct",
+    "managed_api": "native",
+    "proxy_paths": [],
+    "display_name": "Google Gemini",
+    "default_timeout_seconds": 600
+   }
+  },
+  {
+   "id": "prv_01a1441aa2127444b5524f623830b2d8",
+   "kind": "provider",
+   "name": "deepseek",
+   "doc": {
+    "name": "deepseek",
+    "family": "openai",
+    "quirks": {
+     "drop_fields": [],
+     "error_rules": {
+      "quota": [
+       "insufficient_quota"
+      ],
+      "code_at": [
+       "error.code",
+       "error.type"
+      ]
+     },
+     "extra_params": [
+      "parallel_tool_calls",
+      "seed",
+      "n",
+      "logprobs",
+      "top_logprobs",
+      "logit_bias",
+      "metadata",
+      "service_tier",
+      "store"
+     ],
+     "stream_usage": true,
+     "cache_control": false,
+     "echo_reasoning": "with_tools",
+     "request_fields": {},
+     "reasoning_field": "reasoning_content",
+     "reasoning_param": "reasoning_effort",
+     "thinking_object": false,
+     "cached_tokens_at": [
+      "prompt_tokens_details.cached_tokens",
+      "prompt_cache_hit_tokens"
+     ],
+     "normalise_history": false,
+     "thought_signatures": false,
+     "reasoning_tokens_at": [
+      "completion_tokens_details.reasoning_tokens"
+     ],
+     "cache_write_tokens_at": [
+      "prompt_tokens_details.cache_write_tokens"
+     ],
+     "reasoning_outside_completion": false
+    },
+    "status": "active",
+    "base_url": "https://api.deepseek.com",
+    "platform": "direct",
+    "managed_api": "openai_compatible",
+    "proxy_paths": [],
+    "display_name": "DeepSeek",
+    "default_timeout_seconds": 600
+   }
+  },
+  {
+   "id": "prv_01a1441aa21674a595be4e80cf44f7d2",
+   "kind": "provider",
+   "name": "glm",
+   "doc": {
+    "name": "glm",
+    "family": "openai",
+    "quirks": {
+     "drop_fields": [],
+     "error_rules": {
+      "quota": [
+       "1113",
+       "1308",
+       "1309",
+       "1310",
+       "1311",
+       "1313",
+       "1314",
+       "1315",
+       "1316",
+       "1317",
+       "1318",
+       "1319",
+       "1320",
+       "1321"
+      ],
+      "code_at": [
+       "error.code"
+      ]
+     },
+     "extra_params": [
+      "parallel_tool_calls",
+      "seed",
+      "n",
+      "logprobs",
+      "top_logprobs",
+      "logit_bias",
+      "metadata",
+      "service_tier",
+      "store"
+     ],
+     "stream_usage": false,
+     "cache_control": false,
+     "echo_reasoning": "always",
+     "request_fields": {},
+     "reasoning_field": "reasoning_content",
+     "reasoning_param": "thinking_toggle",
+     "thinking_object": false,
+     "cached_tokens_at": [
+      "prompt_tokens_details.cached_tokens",
+      "prompt_cache_hit_tokens"
+     ],
+     "normalise_history": false,
+     "thought_signatures": false,
+     "reasoning_tokens_at": [
+      "completion_tokens_details.reasoning_tokens"
+     ],
+     "cache_write_tokens_at": [
+      "prompt_tokens_details.cache_write_tokens"
+     ],
+     "reasoning_outside_completion": false
+    },
+    "status": "active",
+    "base_url": "https://api.z.ai/api/paas/v4",
+    "platform": "direct",
+    "managed_api": "openai_compatible",
+    "proxy_paths": [],
+    "display_name": "GLM (z.ai)",
+    "default_timeout_seconds": 600
+   }
+  },
+  {
+   "id": "mdl_01a1440b65d277dc879da653fcb29edb",
+   "kind": "model",
+   "name": "anthropic/claude-sonnet-5-5",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "anthropic/claude-sonnet-5-5",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa1ff74549afaccca669cbc4c",
+    "upstream_id": "claude-sonnet-5-5",
+    "capabilities": {
+     "tools": true,
+     "top_k": "default_only",
+     "top_p": "default_only",
+     "vision": true,
+     "documents": true,
+     "penalties": "rejected",
+     "reasoning": "adaptive",
+     "temperature": "default_only",
+     "prompt_cache": "explicit",
+     "server_tools": true,
+     "thinking_off": "between_tools",
+     "max_tokens_field": "max_tokens",
+     "tool_choice_none": true,
+     "assistant_prefill": false,
+     "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ],
+     "structured_output": true,
+     "tool_choice_forced": false,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b661977359e57dde2788f7a26",
+   "kind": "model",
+   "name": "anthropic/claude-opus-5",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "anthropic/claude-opus-5",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa1ff74549afaccca669cbc4c",
+    "upstream_id": "claude-opus-5",
+    "capabilities": {
+     "tools": true,
+     "top_k": "rejected",
+     "top_p": "rejected",
+     "vision": true,
+     "documents": true,
+     "penalties": "rejected",
+     "reasoning": "adaptive",
+     "temperature": "rejected",
+     "prompt_cache": "explicit",
+     "server_tools": true,
+     "thinking_off": "disabled",
+     "max_tokens_field": "max_tokens",
+     "tool_choice_none": true,
+     "assistant_prefill": false,
+     "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ],
+     "structured_output": true,
+     "tool_choice_forced": true,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b66317720bdbf0c2eca8f26a9",
+   "kind": "model",
+   "name": "anthropic/claude-haiku-4-5",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "anthropic/claude-haiku-4-5",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa1ff74549afaccca669cbc4c",
+    "upstream_id": "claude-haiku-4-5",
+    "capabilities": {
+     "tools": true,
+     "top_k": "accepted",
+     "top_p": "accepted",
+     "vision": true,
+     "documents": true,
+     "penalties": "rejected",
+     "reasoning": "budget",
+     "temperature": "accepted",
+     "prompt_cache": "explicit",
+     "server_tools": true,
+     "thinking_off": "disabled",
+     "max_tokens_field": "max_tokens",
+     "tool_choice_none": true,
+     "assistant_prefill": true,
+     "reasoning_efforts": [],
+     "structured_output": true,
+     "tool_choice_forced": true,
+     "reasoning_min_budget": 1024
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b6643746c99c2b3dc10e82ff4",
+   "kind": "model",
+   "name": "openai/gpt-5.6-sol",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "openai/gpt-5.6-sol",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa20372cda945027ce3132a63",
+    "upstream_id": "gpt-5.6-sol",
+    "capabilities": {
+     "tools": true,
+     "top_k": "rejected",
+     "top_p": "rejected",
+     "vision": true,
+     "documents": true,
+     "penalties": "rejected",
+     "reasoning": "effort",
+     "temperature": "rejected",
+     "prompt_cache": "automatic",
+     "server_tools": false,
+     "thinking_off": "disabled",
+     "max_tokens_field": "max_completion_tokens",
+     "tool_choice_none": true,
+     "assistant_prefill": true,
+     "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ],
+     "structured_output": true,
+     "tool_choice_forced": true,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b665773b1a6de3de5c6c0e591",
+   "kind": "model",
+   "name": "openai/gpt-5.6-luna",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "openai/gpt-5.6-luna",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa20372cda945027ce3132a63",
+    "upstream_id": "gpt-5.6-luna",
+    "capabilities": {
+     "tools": true,
+     "top_k": "rejected",
+     "top_p": "rejected",
+     "vision": true,
+     "documents": true,
+     "penalties": "rejected",
+     "reasoning": "effort",
+     "temperature": "rejected",
+     "prompt_cache": "automatic",
+     "server_tools": false,
+     "thinking_off": "disabled",
+     "max_tokens_field": "max_completion_tokens",
+     "tool_choice_none": true,
+     "assistant_prefill": true,
+     "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ],
+     "structured_output": true,
+     "tool_choice_forced": true,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b666c731f9d0e2c8f8d3e97e4",
+   "kind": "model",
+   "name": "gemini-3.1-pro-preview",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "gemini-3.1-pro-preview",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa20c760988b8566fada51680",
+    "upstream_id": "gemini-3.1-pro-preview",
+    "capabilities": {
+     "tools": true,
+     "top_k": "accepted",
+     "top_p": "accepted",
+     "vision": true,
+     "documents": false,
+     "penalties": "rejected",
+     "reasoning": "always_on",
+     "temperature": "accepted",
+     "prompt_cache": "automatic",
+     "server_tools": false,
+     "thinking_off": "unsupported",
+     "reasoning_param": "reasoning_effort",
+     "max_tokens_field": "max_tokens",
+     "tool_choice_none": true,
+     "assistant_prefill": false,
+     "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+     ],
+     "structured_output": true,
+     "tool_choice_forced": true,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b668273fa8e114aebec3d0ec3",
+   "kind": "model",
+   "name": "gemini-3.8-flash",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "gemini-3.8-flash",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa20c760988b8566fada51680",
+    "upstream_id": "gemini-3.8-flash",
+    "capabilities": {
+     "tools": true,
+     "top_k": "default_only",
+     "top_p": "default_only",
+     "vision": true,
+     "documents": false,
+     "penalties": "rejected",
+     "reasoning": "always_on",
+     "temperature": "default_only",
+     "prompt_cache": "automatic",
+     "server_tools": false,
+     "thinking_off": "unsupported",
+     "reasoning_param": "reasoning_effort",
+     "max_tokens_field": "max_tokens",
+     "tool_choice_none": true,
+     "assistant_prefill": false,
+     "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+     ],
+     "structured_output": true,
+     "tool_choice_forced": true,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b669c72ab82066313a57dcef4",
+   "kind": "model",
+   "name": "gemini-3.5-flash-lite",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "gemini-3.5-flash-lite",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa20c760988b8566fada51680",
+    "upstream_id": "gemini-3.5-flash-lite",
+    "capabilities": {
+     "tools": true,
+     "top_k": "default_only",
+     "top_p": "default_only",
+     "vision": true,
+     "documents": false,
+     "penalties": "rejected",
+     "reasoning": "always_on",
+     "temperature": "default_only",
+     "prompt_cache": "automatic",
+     "server_tools": false,
+     "thinking_off": "unsupported",
+     "reasoning_param": "reasoning_effort",
+     "max_tokens_field": "max_tokens",
+     "tool_choice_none": true,
+     "assistant_prefill": false,
+     "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+     ],
+     "structured_output": true,
+     "tool_choice_forced": true,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b66c274948608ff692009d83a",
+   "kind": "model",
+   "name": "deepseek/deepseek-flash",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "deepseek/deepseek-flash",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa2127444b5524f623830b2d8",
+    "upstream_id": "deepseek-flash",
+    "capabilities": {
+     "tools": true,
+     "top_k": "rejected",
+     "top_p": "accepted",
+     "vision": false,
+     "documents": false,
+     "penalties": "accepted",
+     "reasoning": "effort",
+     "temperature": "accepted",
+     "prompt_cache": "automatic",
+     "server_tools": false,
+     "thinking_off": "disabled",
+     "max_tokens_field": "max_tokens",
+     "tool_choice_none": true,
+     "assistant_prefill": false,
+     "reasoning_efforts": [
+      "none",
+      "low",
+      "high",
+      "max"
+     ],
+     "structured_output": false,
+     "tool_choice_forced": false,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b66d7717489207df85e55b557",
+   "kind": "model",
+   "name": "deepseek/deepseek-v4-pro",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "deepseek/deepseek-v4-pro",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa2127444b5524f623830b2d8",
+    "upstream_id": "deepseek-v4-pro",
+    "capabilities": {
+     "tools": true,
+     "top_k": "rejected",
+     "top_p": "accepted",
+     "vision": false,
+     "documents": false,
+     "penalties": "accepted",
+     "reasoning": "effort",
+     "temperature": "accepted",
+     "prompt_cache": "automatic",
+     "server_tools": false,
+     "thinking_off": "disabled",
+     "max_tokens_field": "max_tokens",
+     "tool_choice_none": true,
+     "assistant_prefill": false,
+     "reasoning_efforts": [
+      "none",
+      "low",
+      "high",
+      "max"
+     ],
+     "structured_output": false,
+     "tool_choice_forced": false,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b66ea734aa3da7be64c996bae",
+   "kind": "model",
+   "name": "glm/glm-5.3",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "glm/glm-5.3",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa21674a595be4e80cf44f7d2",
+    "upstream_id": "glm-5.3",
+    "capabilities": {
+     "tools": true,
+     "top_k": "rejected",
+     "top_p": "accepted",
+     "vision": false,
+     "documents": false,
+     "penalties": "rejected",
+     "reasoning": "effort",
+     "temperature": "accepted",
+     "prompt_cache": "automatic",
+     "server_tools": false,
+     "thinking_off": "unsupported",
+     "reasoning_param": "reasoning_effort",
+     "max_tokens_field": "max_tokens",
+     "tool_choice_none": false,
+     "assistant_prefill": false,
+     "reasoning_efforts": [
+      "low",
+      "high",
+      "max"
+     ],
+     "structured_output": false,
+     "tool_choice_forced": true,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b66fc763d86bee76cdd0a658c",
+   "kind": "model",
+   "name": "glm/glm-4.7",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "glm/glm-4.7",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa21674a595be4e80cf44f7d2",
+    "upstream_id": "glm-4.7",
+    "capabilities": {
+     "tools": true,
+     "top_k": "rejected",
+     "top_p": "accepted",
+     "vision": false,
+     "documents": false,
+     "penalties": "rejected",
+     "reasoning": "effort",
+     "temperature": "accepted",
+     "prompt_cache": "automatic",
+     "server_tools": false,
+     "thinking_off": "disabled",
+     "reasoning_param": "thinking_toggle",
+     "max_tokens_field": "max_tokens",
+     "tool_choice_none": false,
+     "assistant_prefill": false,
+     "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ],
+     "structured_output": false,
+     "tool_choice_forced": true,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "mdl_01a1440b671276fdb8ae471a240056a2",
+   "kind": "model",
+   "name": "glm/glm-4.5-air",
+   "doc": {
+    "free": false,
+    "kind": "chat",
+    "name": "glm/glm-4.5-air",
+    "notes": "",
+    "state": "active",
+    "modalities": {
+     "input": [],
+     "output": []
+    },
+    "provider_id": "prv_01a1441aa21674a595be4e80cf44f7d2",
+    "upstream_id": "glm-4.5-air",
+    "capabilities": {
+     "tools": true,
+     "top_k": "rejected",
+     "top_p": "accepted",
+     "vision": false,
+     "documents": false,
+     "penalties": "rejected",
+     "reasoning": "effort",
+     "temperature": "accepted",
+     "prompt_cache": "automatic",
+     "server_tools": false,
+     "thinking_off": "disabled",
+     "reasoning_param": "thinking_toggle",
+     "max_tokens_field": "max_tokens",
+     "tool_choice_none": false,
+     "assistant_prefill": false,
+     "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ],
+     "structured_output": false,
+     "tool_choice_forced": true,
+     "reasoning_min_budget": null
+    },
+    "display_name": "",
+    "context_window": null,
+    "retire_at_sunset": false,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "prc_01a1440b65d57521b6ff02489de05a92",
+   "kind": "price",
+   "parent": "mdl_01a1440b65d277dc879da653fcb29edb",
+   "name": "1",
+   "doc": {
+    "input": 2.0,
+    "output": 10.0,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b65d277dc879da653fcb29edb",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": 0.2,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": 2.5,
+    "effective_from": "2026-10-16T09:29:20.085815926Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b661d771588919284488dc752",
+   "kind": "price",
+   "parent": "mdl_01a1440b661977359e57dde2788f7a26",
+   "name": "1",
+   "doc": {
+    "input": 5.0,
+    "output": 25.0,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b661977359e57dde2788f7a26",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": 0.5,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": 6.25,
+    "effective_from": "2026-10-16T09:29:20.157299926Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b663473e89fb535b31e97ac24",
+   "kind": "price",
+   "parent": "mdl_01a1440b66317720bdbf0c2eca8f26a9",
+   "name": "1",
+   "doc": {
+    "input": 1.0,
+    "output": 5.0,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b66317720bdbf0c2eca8f26a9",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": 0.1,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": 1.25,
+    "effective_from": "2026-10-16T09:29:20.180633468Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b664676af9164570c3f5d52f0",
+   "kind": "price",
+   "parent": "mdl_01a1440b6643746c99c2b3dc10e82ff4",
+   "name": "1",
+   "doc": {
+    "input": 4.0,
+    "output": 20.0,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b6643746c99c2b3dc10e82ff4",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": 0.4,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": null,
+    "effective_from": "2026-10-16T09:29:20.198509093Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b665a72f6b7ef92c9c1a965bc",
+   "kind": "price",
+   "parent": "mdl_01a1440b665773b1a6de3de5c6c0e591",
+   "name": "1",
+   "doc": {
+    "input": 0.2,
+    "output": 1.2,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b665773b1a6de3de5c6c0e591",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": 0.02,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": null,
+    "effective_from": "2026-10-16T09:29:20.218651134Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b6671771f9293e7eaa9791c0b",
+   "kind": "price",
+   "parent": "mdl_01a1440b666c731f9d0e2c8f8d3e97e4",
+   "name": "1",
+   "doc": {
+    "input": 2.0,
+    "output": 12.0,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b666c731f9d0e2c8f8d3e97e4",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": null,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": null,
+    "effective_from": "2026-10-16T09:29:20.241845343Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b6685763aa209d48752b0e7dc",
+   "kind": "price",
+   "parent": "mdl_01a1440b668273fa8e114aebec3d0ec3",
+   "name": "1",
+   "doc": {
+    "input": 0.75,
+    "output": 3.75,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b668273fa8e114aebec3d0ec3",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": null,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": null,
+    "effective_from": "2026-10-16T09:29:20.261401343Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b66a3720e879c46ff59bee8a4",
+   "kind": "price",
+   "parent": "mdl_01a1440b669c72ab82066313a57dcef4",
+   "name": "1",
+   "doc": {
+    "input": 0.3,
+    "output": 2.5,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b669c72ab82066313a57dcef4",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": null,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": null,
+    "effective_from": "2026-10-16T09:29:20.291006384Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b66c673cfa06e34bc0e0d11f9",
+   "kind": "price",
+   "parent": "mdl_01a1440b66c274948608ff692009d83a",
+   "name": "1",
+   "doc": {
+    "input": 0.3,
+    "output": 1.2,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b66c274948608ff692009d83a",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": null,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": null,
+    "effective_from": "2026-10-16T09:29:20.326055176Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b66da76778cf8f3c065333a57",
+   "kind": "price",
+   "parent": "mdl_01a1440b66d7717489207df85e55b557",
+   "name": "1",
+   "doc": {
+    "input": 1.32,
+    "output": 3.96,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b66d7717489207df85e55b557",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": null,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": null,
+    "effective_from": "2026-10-16T09:29:20.346194301Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b66ec778bb51ed56bd4f97e6a",
+   "kind": "price",
+   "parent": "mdl_01a1440b66ea734aa3da7be64c996bae",
+   "name": "1",
+   "doc": {
+    "input": 1.4,
+    "output": 4.4,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b66ea734aa3da7be64c996bae",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": null,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": null,
+    "effective_from": "2026-10-16T09:29:20.364814760Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b66ff74a79e85867ef844b58d",
+   "kind": "price",
+   "parent": "mdl_01a1440b66fc763d86bee76cdd0a658c",
+   "name": "1",
+   "doc": {
+    "input": 0.6,
+    "output": 2.2,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b66fc763d86bee76cdd0a658c",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": null,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": null,
+    "effective_from": "2026-10-16T09:29:20.383141176Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "prc_01a1440b67157039ad2615470817d7cc",
+   "kind": "price",
+   "parent": "mdl_01a1440b671276fdb8ae471a240056a2",
+   "name": "1",
+   "doc": {
+    "input": 0.2,
+    "output": 1.1,
+    "source": "manual",
+    "status": "active",
+    "version": 1,
+    "currency": "USD",
+    "model_id": "mdl_01a1440b671276fdb8ae471a240056a2",
+    "variants": {},
+    "reasoning": null,
+    "cache_read": null,
+    "per_request": null,
+    "evidence_url": "",
+    "evidence_text": "",
+    "per_character": null,
+    "cache_write_1h": null,
+    "cache_write_5m": null,
+    "effective_from": "2026-10-16T09:29:20.405731510Z",
+    "per_server_tool_call": null
+   }
+  },
+  {
+   "id": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "kind": "organisation",
+   "name": "pacod",
+   "doc": {
+    "name": "pacod",
+    "status": "active",
+    "settings": {},
+    "display_name": "PACOD platform"
+   }
+  },
+  {
+   "id": "ogr_01a1440b66157183916b23003aac3d30",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b65d277dc879da653fcb29edb",
+   "doc": {
+    "model_id": "mdl_01a1440b65d277dc879da653fcb29edb",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b662e75d5a99a6d33a05f6f10",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b661977359e57dde2788f7a26",
+   "doc": {
+    "model_id": "mdl_01a1440b661977359e57dde2788f7a26",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b66407490a68007c172850412",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b66317720bdbf0c2eca8f26a9",
+   "doc": {
+    "model_id": "mdl_01a1440b66317720bdbf0c2eca8f26a9",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b665473229688a95c3723445d",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b6643746c99c2b3dc10e82ff4",
+   "doc": {
+    "model_id": "mdl_01a1440b6643746c99c2b3dc10e82ff4",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b6668726babaf1abf0f8cd427",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b665773b1a6de3de5c6c0e591",
+   "doc": {
+    "model_id": "mdl_01a1440b665773b1a6de3de5c6c0e591",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b667f729eb04b2a7ee4260aef",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b666c731f9d0e2c8f8d3e97e4",
+   "doc": {
+    "model_id": "mdl_01a1440b666c731f9d0e2c8f8d3e97e4",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b669772a89c5b50a27dd7bc21",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b668273fa8e114aebec3d0ec3",
+   "doc": {
+    "model_id": "mdl_01a1440b668273fa8e114aebec3d0ec3",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b66be708a889602953382ba2b",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b669c72ab82066313a57dcef4",
+   "doc": {
+    "model_id": "mdl_01a1440b669c72ab82066313a57dcef4",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b66d47086a6420ada766838ca",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b66c274948608ff692009d83a",
+   "doc": {
+    "model_id": "mdl_01a1440b66c274948608ff692009d83a",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b66e77710b283a9223057e621",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b66d7717489207df85e55b557",
+   "doc": {
+    "model_id": "mdl_01a1440b66d7717489207df85e55b557",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b66f9722cb07216b9a93f8142",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b66ea734aa3da7be64c996bae",
+   "doc": {
+    "model_id": "mdl_01a1440b66ea734aa3da7be64c996bae",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b670e73a3ad0bcaf0d3ee0f34",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b66fc763d86bee76cdd0a658c",
+   "doc": {
+    "model_id": "mdl_01a1440b66fc763d86bee76cdd0a658c",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ogr_01a1440b672370469f496bd3b734a7e5",
+   "kind": "org_grant",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "mdl_01a1440b671276fdb8ae471a240056a2",
+   "doc": {
+    "model_id": "mdl_01a1440b671276fdb8ae471a240056a2",
+    "follow_successor": true,
+    "max_output_tokens": null
+   }
+  },
+  {
+   "id": "ws_01a1440b65cf749a88900044ef7c5520",
+   "kind": "workspace",
+   "parent": "org_01a1440b65cc73db8af5e6c66204ce66",
+   "name": "pacod",
+   "doc": {
+    "name": "pacod",
+    "status": "active",
+    "settings": {
+     "provider_tools": [
+      "web_search"
+     ]
+    },
+    "tag_keys": [
+     "profile",
+     "purpose",
+     "site",
+     "variant"
+    ],
+    "time_zone": "UTC",
+    "display_name": "PACOD agents"
+   }
+  },
+  {
+   "id": "lim_01a1440b6726747a8cd62103ac0fa073",
+   "kind": "limit",
+   "parent": "ws_01a1440b65cf749a88900044ef7c5520",
+   "name": "user-daily-tokens",
+   "doc": {
+    "name": "user-daily-tokens",
+    "amount": 100000.0,
+    "filter": {
+     "tags": {},
+     "models": [],
+     "templates": []
+    },
+    "metric": "tokens",
+    "status": "active",
+    "window": "day",
+    "subject": "end_user",
+    "description": "Each person's daily token budget; the app enforces it.",
+    "enforcement": "advisory",
+    "alert_thresholds": []
+   }
+  },
+  {
+   "id": "lim_01a1440b977175b5a3b5fa6d7b402ad4",
+   "kind": "limit",
+   "parent": "ws_01a1440b65cf749a88900044ef7c5520",
+   "name": "workspace-monthly-spend",
+   "doc": {
+    "name": "workspace-monthly-spend",
+    "amount": 500.0,
+    "filter": {
+     "tags": {},
+     "models": [],
+     "templates": []
+    },
+    "metric": "spend",
+    "status": "active",
+    "window": "month",
+    "subject": "workspace",
+    "description": "The platform's monthly LLM spend.",
+    "enforcement": "advisory",
+    "alert_thresholds": [
+     50,
+     80,
+     100
+    ]
+   }
+  }
+ ]
+}

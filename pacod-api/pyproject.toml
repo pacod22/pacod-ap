@@ -1,0 +1,29 @@
+[project]
+name = "pacod-api"
+version = "0.1.0"
+description = "Bilingual BG/EN AI agent for personal accounting consulting in Bulgaria"
+requires-python = ">=3.13"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom is a function call in a default argument
+# by design; without this every `Depends()` / `Query()` is a B008 false positive.
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Query", "fastapi.Form", "fastapi.Body",
+    "fastapi.Path", "fastapi.Header", "fastapi.File", "fastapi.Cookie",
+]
+
+[tool.mypy]
+python_version = "3.13"
+strict_optional = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
+exclude = ["tests/", "scripts/"]

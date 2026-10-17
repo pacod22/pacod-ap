@@ -1,0 +1,33 @@
+{
+ "case": "error_429_upstream_rate_limited",
+ "note": "the provider answered 429",
+ "request": {
+  "model": "anthropic/claude-sonnet-5-5",
+  "max_tokens": 64,
+  "messages": [
+   {
+    "role": "user",
+    "content": "hello"
+   }
+  ],
+  "gateway": {
+   "trace_id": "fixture",
+   "tags": {
+    "purpose": "synthesizer"
+   }
+  }
+ },
+ "status": 429,
+ "headers": {
+  "content-type": "application/json",
+  "retry-after": "7"
+ },
+ "body": {
+  "error": {
+   "message": "the provider's rate limit was reached: mock: scripted error 429",
+   "type": "rate_limit_error",
+   "param": null,
+   "code": "upstream_rate_limited"
+  }
+ }
+}

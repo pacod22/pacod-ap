@@ -1,0 +1,523 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+
+/* =========================================================
+   Design tokens
+   ========================================================= */
+@theme {
+	/* Fiscus type system — Manrope (display) · Inter (body) · JetBrains Mono (figures) */
+	--font-sans: 'Inter', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
+	--font-display: 'Manrope', system-ui, sans-serif;
+
+	/* Main surfaces — warm off-white base, white raised surfaces */
+	--color-surface: #fbfbf8; /* page background (Fiscus --bg) */
+	--color-surface-2: #ffffff; /* cards, inputs, topbar (Fiscus --surface) */
+	--color-surface-3: #f4f5f0; /* alt fills, hovers, chips (Fiscus --bg-tint) */
+	--color-border: #e8e7e0; /* hairline */
+	--color-border-strong: #d8d7cd; /* input borders, emphasis dividers */
+	--color-text: #13211d; /* ink */
+	--color-text-muted: #5e6e68; /* muted */
+	--color-text-faint: #8a978f; /* hints, captions */
+
+	/* Brand — deep teal-green */
+	--color-brand: #0e6e57;
+	--color-brand-fg: #ffffff;
+	--color-brand-soft: #e7f1ed; /* primary-wash — tinted fills, focus ring */
+	--color-brand-muted: #0a5443; /* primary-deep — hover, dark panels */
+
+	/* Gold — secondary accent, used sparingly */
+	--color-gold: #bf9540;
+	--color-gold-soft: #f1e8d4;
+
+	/* Sidebar — light bg-tint surface (Fiscus app shell) */
+	--color-sidebar: #f4f5f0;
+	--color-sidebar-2: #ffffff;
+	--color-sidebar-border: #e8e7e0;
+	--color-sidebar-text: #13211d;
+	--color-sidebar-muted: #5e6e68;
+	--color-sidebar-hover: #ffffff;
+	--color-sidebar-active: #e7f1ed;
+	--color-sidebar-active-text: #0a5443;
+
+	/* Semantic */
+	--color-success: #2f8f5b;
+	--color-success-soft: #e6f2ea;
+	--color-warning: #bf9540;
+	--color-warning-soft: #f1e8d4;
+	--color-danger: #b23b32;
+	--color-danger-soft: #f6e7e5;
+
+	/* Radius — Fiscus: 9px chips · 14px cards · 22px hero */
+	--radius-sm: 9px;
+	--radius-md: 11px;
+	--radius-lg: 14px;
+	--radius-xl: 18px;
+}
+
+/* =========================================================
+   Theme overrides (dark mode)
+   ========================================================= */
+@layer base {
+	/* Dark variant: navy/slate-blue palette ported from the knowledgebase
+	   project's night theme (web/static/style.css [data-bs-theme="dark"]). */
+	[data-theme='dark'] {
+		/* Make the UA render system colors + native controls (scrollbars, select
+		   option popups, checkboxes, dialog defaults) in dark — fixes black-on-dark
+		   text from system colors like CanvasText. */
+		color-scheme: dark;
+		--color-surface: #0f1117; /* --kb-bg — deep navy page */
+		--color-surface-2: #1a1d2e; /* --kb-card — raised surfaces */
+		--color-surface-3: #22263a; /* --kb-card-header — alt fills, hovers */
+		--color-border: #2a2f4a; /* --kb-border */
+		--color-border-strong: #3a4068; /* emphasis dividers, input borders */
+		--color-text: #dde2f0; /* --kb-text */
+		--color-text-muted: #7a85a8; /* --kb-text-muted */
+		--color-text-faint: #5a6480; /* nav-section dim */
+
+		/* Accent — blue (knowledgebase "info" hue) replaces teal in dark */
+		--color-brand: #6ea8fe;
+		--color-brand-fg: #0f1117;
+		--color-brand-soft: #0c2545; /* job-running wash — tinted fills, focus ring */
+		--color-brand-muted: #9ec5ff; /* hover, active text */
+
+		/* Semantic — knowledgebase dark badge palette. Main colors are
+		   mid-tones that work as solid fills (white fg) AND as ghost text
+		   on the matching -soft background; -soft values are the exact
+		   knowledgebase dark badge backgrounds. */
+		--color-success: #3fae77;
+		--color-success-soft: #0a2e1a;
+		--color-warning: #d9a93e;
+		--color-gold-soft: #3d2e00;
+		--color-warning-soft: #3d2e00;
+		--color-danger: #e5484d;
+		--color-danger-soft: #2e0a10;
+
+		/* Sidebar — always-dark navy (knowledgebase .sidebar #1e2330) */
+		--color-sidebar: #1e2330;
+		--color-sidebar-2: #1a1d2e;
+		--color-sidebar-border: #2a2f4a;
+		--color-sidebar-text: #e8ecf5;
+		--color-sidebar-muted: #9aa3b5;
+		--color-sidebar-hover: #262b3d;
+		--color-sidebar-active: #2e3447;
+		--color-sidebar-active-text: #ffffff;
+	}
+
+	html {
+		color-scheme: light; /* default; [data-theme='dark'] flips this to dark */
+		background-color: var(--color-surface);
+		color: var(--color-text);
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+
+	body {
+		font-family: var(--font-sans);
+	}
+
+	h1,
+	h2,
+	h3,
+	h4 {
+		font-family: var(--font-display);
+		font-weight: 700;
+		letter-spacing: -0.02em;
+		line-height: 1.12;
+	}
+
+	*:focus-visible {
+		outline: 2px solid var(--color-brand);
+		outline-offset: 2px;
+		border-radius: var(--radius-sm);
+	}
+
+	* {
+		scrollbar-width: thin;
+		scrollbar-color: var(--color-border) transparent;
+	}
+}
+
+/* =========================================================
+   Fiscus signature elements
+   ========================================================= */
+
+/* Gold-tick eyebrow: a small mono uppercase label preceded by a gold rule */
+.eyebrow {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.625rem;
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: var(--color-brand);
+}
+
+.eyebrow::before {
+	content: '';
+	width: 26px;
+	height: 1px;
+	background: var(--color-gold);
+}
+
+/* Monospaced ledger figures — every numeral, id, price, label */
+.figure {
+	font-family: var(--font-mono);
+	font-feature-settings: 'tnum';
+}
+
+/* =========================================================
+   Sidebar navigation — always-dark surface, no theme switch
+   ========================================================= */
+.sidebar-item {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	border-radius: 0.5rem;
+	padding: 0.5rem 0.75rem;
+	font-size: 0.875rem;
+	font-weight: 500;
+	transition:
+		background-color 0.15s,
+		color 0.15s;
+	color: var(--color-sidebar-muted);
+	position: relative;
+	text-decoration: none;
+}
+
+.sidebar-item:hover {
+	background: var(--color-sidebar-hover);
+	color: var(--color-sidebar-text);
+}
+
+.sidebar-item.active {
+	background: var(--color-sidebar-active);
+	color: var(--color-sidebar-active-text);
+}
+
+.sidebar-action {
+	display: flex;
+	width: 100%;
+	align-items: center;
+	gap: 0.75rem;
+	border-radius: 0.5rem;
+	padding: 0.375rem 0.75rem;
+	font-size: 0.75rem;
+	font-weight: 500;
+	transition:
+		background-color 0.15s,
+		color 0.15s;
+	color: var(--color-sidebar-muted);
+	background: none;
+	border: none;
+	cursor: pointer;
+	text-align: left;
+}
+
+.sidebar-action:hover {
+	background: var(--color-sidebar-hover);
+	color: var(--color-sidebar-text);
+}
+
+/* =========================================================
+   Shared form field inputs
+   ========================================================= */
+.field-input {
+	height: 2.5rem;
+	width: 100%;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--color-border-strong);
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	padding: 0 0.75rem;
+	font-size: 0.875rem;
+	transition:
+		border-color 0.15s,
+		box-shadow 0.15s;
+	outline: none;
+	font-family: inherit;
+}
+
+.field-input:focus {
+	border-color: var(--color-brand);
+	box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-brand) 18%, transparent);
+}
+
+.field-input::placeholder {
+	color: var(--color-text-muted);
+	opacity: 0.7;
+}
+
+.field-textarea {
+	width: 100%;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--color-border-strong);
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	padding: 0.5rem 0.75rem;
+	font-size: 0.875rem;
+	transition:
+		border-color 0.15s,
+		box-shadow 0.15s;
+	outline: none;
+	resize: vertical;
+	font-family: inherit;
+	line-height: 1.5;
+}
+
+.field-textarea:focus {
+	border-color: var(--color-brand);
+	box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-brand) 18%, transparent);
+}
+
+.field-label {
+	display: block;
+	margin-bottom: 0.375rem;
+	font-family: var(--font-mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	color: var(--color-text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+}
+
+/* =========================================================
+   Dialog animation
+   ========================================================= */
+dialog {
+	border: none;
+	padding: 0;
+	/* Without this, a dialog keeps the UA default `color: CanvasText` (black) even
+	   when its background is a dark theme token → black text on a dark dialog in the
+	   night theme. Bind it to the theme's text token instead. */
+	color: var(--color-text);
+}
+
+dialog[open] {
+	animation: dialog-slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+dialog::backdrop {
+	background: oklch(0% 0 0 / 0.55);
+	backdrop-filter: blur(4px);
+	animation: backdrop-fade-in 0.2s ease-out;
+}
+
+@keyframes dialog-slide-in {
+	from {
+		opacity: 0;
+		transform: translateY(-10px) scale(0.97);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+@keyframes backdrop-fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+/* =========================================================
+   Chat Markdown prose — overrides typography plugin vars to
+   use design tokens so light/dark theme switching works.
+   ========================================================= */
+.chat-prose {
+	--tw-prose-body: var(--color-text);
+	--tw-prose-headings: var(--color-text);
+	--tw-prose-lead: var(--color-text-muted);
+	--tw-prose-links: var(--color-brand);
+	--tw-prose-bold: var(--color-text);
+	--tw-prose-counters: var(--color-text-muted);
+	--tw-prose-bullets: var(--color-text-muted);
+	--tw-prose-hr: var(--color-border);
+	--tw-prose-quotes: var(--color-text-muted);
+	--tw-prose-quote-borders: var(--color-border);
+	--tw-prose-captions: var(--color-text-muted);
+	--tw-prose-code: var(--color-text);
+	--tw-prose-pre-code: var(--color-text);
+	--tw-prose-pre-bg: var(--color-surface-3);
+	--tw-prose-th-borders: var(--color-border);
+	--tw-prose-td-borders: var(--color-border);
+}
+
+/* =========================================================
+   Table utilities
+   ========================================================= */
+.data-table {
+	width: 100%;
+	font-size: 0.875rem;
+	border-collapse: collapse;
+}
+
+.data-table th {
+	padding: 0.75rem 1rem;
+	text-align: left;
+	font-family: var(--font-mono);
+	font-size: 0.6875rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+	color: var(--color-text-muted);
+	background: var(--color-surface-3);
+	white-space: nowrap;
+}
+
+.data-table th:first-child {
+	border-radius: 0.75rem 0 0 0;
+}
+
+.data-table th:last-child {
+	border-radius: 0 0.75rem 0 0;
+}
+
+.data-table td {
+	padding: 0.75rem 1rem;
+	border-top: 1px solid var(--color-border);
+}
+
+.data-table tr:hover td {
+	background: var(--color-surface-2);
+}
+
+.data-table tr:last-child td:first-child {
+	border-radius: 0 0 0 0.75rem;
+}
+
+.data-table tr:last-child td:last-child {
+	border-radius: 0 0 0.75rem 0;
+}
+
+.noborder {
+	border: none;
+}
+
+/* =========================================================
+   Responsive table → stacked cards (mobile-first)
+   Opt-in via the `.data-table-stack` class on a `.data-table`.
+   Below the `md` breakpoint each row collapses into a card and
+   every `<td>` shows its column name from `data-label`. Cells
+   that carry an empty `data-label=""` (e.g. the actions column)
+   render without a label and right-align their contents.
+   ========================================================= */
+@media (max-width: 767px) {
+	.data-table-stack thead {
+		display: none;
+	}
+
+	.data-table-stack tr {
+		display: block;
+		margin-bottom: 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-surface-2);
+		overflow: hidden;
+	}
+
+	.data-table-stack tr:hover td {
+		background: transparent;
+	}
+
+	.data-table-stack td {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.5rem 0.875rem;
+		border-top: none;
+		border-bottom: 1px solid var(--color-border);
+		text-align: right;
+		/* Defeat fixed-width utilities (w-16/w-20/w-24/w-28/w-40…) that pages set
+		   for desktop action columns. In the stacked card every cell must fill the
+		   card width; otherwise the flex row of touch-target buttons (min-width
+		   44px each) overflows the narrow cell and is clipped by `tr {overflow:hidden}`,
+		   making the leftmost action (Edit/View) untappable. */
+		width: auto;
+	}
+
+	.data-table-stack td:last-child {
+		border-bottom: none;
+	}
+
+	.data-table-stack td::before {
+		content: attr(data-label);
+		flex-shrink: 0;
+		font-family: var(--font-mono);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--color-text-muted);
+		text-align: left;
+	}
+
+	/* Full-span cells (loading / empty / error states) stay centered blocks
+	   rather than being flexed and pushed to one side. */
+	.data-table-stack td[colspan] {
+		display: block;
+		text-align: center;
+	}
+
+	.data-table-stack td[colspan]::before {
+		display: none;
+	}
+
+	/* Action / unlabelled cells: no label, contents pushed right */
+	.data-table-stack td[data-label='']::before {
+		display: none;
+	}
+
+	.data-table-stack td[data-label=''] {
+		justify-content: flex-end;
+	}
+
+	/* Let truncating description cells use the full remaining width */
+	.data-table-stack td.stack-block {
+		flex-direction: column;
+		align-items: stretch;
+		text-align: left;
+	}
+
+	.data-table-stack td.stack-block::before {
+		margin-bottom: 0.25rem;
+	}
+
+	/* Defeat desktop truncation/clamps on stacked block cells (and any
+	   truncating descendant) so long text wraps inside the card. */
+	.data-table-stack td.stack-block,
+	.data-table-stack td.stack-block .truncate {
+		max-width: none !important;
+		overflow: visible;
+		white-space: normal;
+		text-overflow: clip;
+	}
+
+	/* Inline form controls (rating / status selects, filters) inside a stacked
+	   card must NOT stretch to `.field-input`'s desktop `width:100%` — that makes
+	   them span the whole card and look "too long". Size them to their content
+	   and let `justify-content:space-between` align them to the right of the label.
+	   Excludes stack-block cells, whose full-width inputs (dialogs) are intended. */
+	.data-table-stack td:not(.stack-block) .field-input {
+		width: auto;
+		max-width: 65%;
+	}
+}
+
+/* Touch-friendly tap targets for icon buttons on small screens */
+@media (max-width: 767px) {
+	.touch-target {
+		min-height: 44px;
+		min-width: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+}

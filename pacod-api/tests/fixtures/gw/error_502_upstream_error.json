@@ -1,0 +1,32 @@
+{
+ "case": "error_502_upstream_error",
+ "note": "the provider answered 503",
+ "request": {
+  "model": "anthropic/claude-sonnet-5-5",
+  "max_tokens": 64,
+  "messages": [
+   {
+    "role": "user",
+    "content": "hello"
+   }
+  ],
+  "gateway": {
+   "trace_id": "fixture",
+   "tags": {
+    "purpose": "synthesizer"
+   }
+  }
+ },
+ "status": 502,
+ "headers": {
+  "content-type": "application/json"
+ },
+ "body": {
+  "error": {
+   "message": "the provider answered 503: mock: scripted error 503",
+   "type": "api_error",
+   "param": null,
+   "code": "upstream_error"
+  }
+ }
+}

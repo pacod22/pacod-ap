@@ -1,0 +1,150 @@
+# Golden evaluation set for the Bulgarian Personal Accounting Agent.
+#
+# Categories:
+#   - on_topic_factual:    expects an answer citing a specific rate/threshold
+#   - on_topic_explanatory: expects a coherent explanation, no specific number
+#   - off_topic:           expects rejection at the topic guard
+#   - language_reject:     expects rejection at the language guard
+#   - calculation:         expects a multi-step computation showing parameters
+#
+# Each case carries an `expected_language` (which language the agent should
+# answer in) and may declare `expected_facts` — substrings that MUST appear
+# in a correct response, and `forbidden` — substrings that must NOT.
+
+cases:
+  # ------------------------------------------------------------- BG factual
+  - id: bg_pit_rate
+    category: on_topic_factual
+    language: bg
+    question: "Каква е ставката на данъка върху доходите на физическите лица за 2026 г.?"
+    expected_language: bg
+    expected_facts: ["10%"]
+    expected_topic_relevant: true
+
+  - id: bg_dividend_rate
+    category: on_topic_factual
+    language: bg
+    question: "Какъв е данъкът върху дивидентите за местни физически лица през 2026 г.?"
+    expected_language: bg
+    expected_facts: ["5%"]
+    expected_topic_relevant: true
+
+  - id: bg_vat_standard
+    category: on_topic_factual
+    language: bg
+    question: "Каква е стандартната ставка на ДДС в България през 2026?"
+    expected_language: bg
+    expected_facts: ["20%"]
+    expected_topic_relevant: true
+
+  - id: bg_filing_deadline
+    category: on_topic_factual
+    language: bg
+    question: "До коя дата трябва да подам годишната си данъчна декларация за 2025 г.?"
+    expected_language: bg
+    expected_facts: ["30", "април"]
+    expected_topic_relevant: true
+
+  - id: bg_rental_deduction
+    category: on_topic_factual
+    language: bg
+    question: "Какъв процент нормативно признати разходи се приспада при доходи от наем?"
+    expected_language: bg
+    expected_facts: ["10%"]
+    expected_topic_relevant: true
+
+  # ------------------------------------------------------------- EN factual
+  - id: en_pit_rate
+    category: on_topic_factual
+    language: en
+    question: "What is the personal income tax rate in Bulgaria for 2026?"
+    expected_language: en
+    expected_facts: ["10%"]
+    expected_topic_relevant: true
+
+  - id: en_vat_threshold
+    category: on_topic_factual
+    language: en
+    question: "What is the VAT registration threshold for self-employed in Bulgaria?"
+    expected_language: en
+    expected_facts: ["166", "BGN"]
+    expected_topic_relevant: true
+
+  - id: en_ssi_payment_deadline
+    category: on_topic_factual
+    language: en
+    question: "By which date must self-employed persons pay social security for a given month?"
+    expected_language: en
+    expected_facts: ["25"]
+    expected_topic_relevant: true
+
+  # ----------------------------------------------------------- explanatory
+  - id: bg_who_must_register_vat
+    category: on_topic_explanatory
+    language: bg
+    question: "Кога самоосигуряващо се лице е длъжно да се регистрира по ДДС?"
+    expected_language: bg
+    expected_facts: ["12", "месеца"]
+    forbidden: []
+    expected_topic_relevant: true
+
+  - id: en_voluntary_vat_for_freelancers
+    category: on_topic_explanatory
+    language: en
+    question: "Why might a Bulgarian freelancer working with foreign clients voluntarily register for VAT?"
+    expected_language: en
+    expected_facts: ["deduct"]
+    expected_topic_relevant: true
+
+  # -------------------------------------------------------------- calculation
+  - id: bg_rental_calc
+    category: calculation
+    language: bg
+    question: "Получавам 1000 лв. наем месечно от апартамент, който давам на физическо лице. Какъв ще е годишният ми облагаем доход и колко данък ще дължа?"
+    expected_language: bg
+    expected_facts: ["10%", "10800"]   # 12000 - 10% deduction = 10800 base; 1080 tax
+    expected_topic_relevant: true
+
+  # ------------------------------------------------------------- off-topic
+  - id: off_recipe
+    category: off_topic
+    language: bg
+    question: "Дай ми рецепта за шкембе чорба."
+    expected_topic_relevant: false
+
+  - id: off_code_help
+    category: off_topic
+    language: en
+    question: "Can you write me a Python function that reverses a linked list?"
+    expected_topic_relevant: false
+
+  - id: off_investment_advice
+    category: off_topic
+    language: en
+    question: "Should I invest in NVIDIA stock right now?"
+    expected_topic_relevant: false
+
+  - id: off_german_company_tax
+    category: off_topic
+    language: en
+    question: "How does corporate tax work in Germany for a GmbH?"
+    expected_topic_relevant: false
+
+  # ---------------------------------------------------- language rejection
+  - id: lang_german
+    category: language_reject
+    language: de
+    question: "Wie hoch ist der Einkommensteuersatz in Bulgarien für 2026?"
+    expected_language_rejected: true
+
+  - id: lang_russian
+    category: language_reject
+    language: ru
+    question: "Какая ставка налога на доходы физических лиц в Болгарии в 2026 году?"
+    expected_language_rejected: true
+
+  - id: lang_french
+    category: language_reject
+    language: fr
+    question: "Quel est le taux de l'impôt sur le revenu en Bulgarie pour 2026?"
+    expected_language_rejected: true

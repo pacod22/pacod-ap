@@ -1,0 +1,27 @@
+[
+  {
+    "id": "user1",
+    "email": "user1@example.local",
+    "display_name": "Demo User 1"
+  },
+  {
+    "id": "user2",
+    "email": "user2@example.local",
+    "display_name": "Demo User 2"
+  },
+  {
+    "id": "test_user",
+    "email": "test@example.local",
+    "display_name": "Integration Test User"
+  },
+  {
+    "id": "test_regular",
+    "email": "user@test.local",
+    "display_name": "Test User"
+  },
+  {
+    "id": "test_admin",
+    "email": "admin@test.local",
+    "display_name": "Test Admin"
+  }
+]

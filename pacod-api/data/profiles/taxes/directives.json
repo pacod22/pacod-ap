@@ -1,0 +1,50 @@
+[
+  {
+    "title": "Annual VAT threshold — always web-search",
+    "content": "За всеки въпрос относно прага за задължителна регистрация по ДДС винаги извиквай web_search (към nra.bg / lex.bg) в допълнение към другите инструменти. Прагът се променя често и базата знания може да не съдържа последната стойност.",
+    "language": "all",
+    "legal_year": null,
+    "priority": 10,
+    "is_active": true
+  },
+  {
+    "title": "Minimum wage 2026 — temporary correction",
+    "content": "От 1 януари 2026 г. минималната месечна работна заплата е 1213 лв. Използвай тази стойност при изчисления, дори ако структурираните данни все още показват друга стойност (изчаква се актуализация в базата).",
+    "language": "all",
+    "legal_year": 2026,
+    "priority": 5,
+    "is_active": true
+  },
+  {
+    "title": "Answer format — summary first",
+    "content": "Започвай всеки отговор с едно обобщаващо изречение, след което давай детайлите. Поддържай отговорите кратки и структурирани.",
+    "language": "all",
+    "legal_year": null,
+    "priority": 100,
+    "is_active": true
+  },
+  {
+    "title": "Self-employed — advance contributions reminder",
+    "content": "Когато въпросът засяга самоосигуряващи се лица, винаги напомняй за месечните авансови осигурителни вноски и годишното изравняване на осигурителния доход с подаването на ГДД.",
+    "language": "all",
+    "legal_year": null,
+    "priority": 50,
+    "is_active": true
+  },
+  {
+    "title": "English answers — dual currency",
+    "content": "When answering in English, render every monetary amount in both BGN and EUR (e.g. \"1000 BGN (~511 EUR)\"), using the official fixed rate of 1.95583 BGN/EUR.",
+    "language": "en",
+    "legal_year": null,
+    "priority": 60,
+    "is_active": true
+  },
+  {
+    "title": "Complex topics — flag and recommend a consultant",
+    "content": "Ако въпросът засяга трансферно ценообразуване, ДДС при вътреобщностни доставки/придобивания, или преобразуване на дружества, изрично отбележи че казусът е сложен и препоръчай консултация с лицензиран счетоводител или данъчен консултант.",
+    "language": "all",
+    "legal_year": null,
+    "priority": 40,
+    "is_active": false
+  }
+]

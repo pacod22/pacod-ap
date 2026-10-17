@@ -1,0 +1,86 @@
+# Application-level alerts. Starter set — tune thresholds to your traffic.
+groups:
+  - name: pacod-app
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Target {{ $labels.job }} ({{ $labels.instance }}) is down"
+          description: "Prometheus cannot scrape {{ $labels.job }} for >2m."
+
+      - alert: HighHttp5xxRate
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[5m]))
+            / sum by (service) (rate(http_requests_total[5m])) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "High 5xx rate on {{ $labels.service }}"
+          description: ">5% of requests on {{ $labels.service }} returned 5xx over 10m."
+
+      - alert: HighRequestLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))) > 5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "High p95 latency on {{ $labels.service }}"
+          description: "p95 request latency on {{ $labels.service }} > 5s over 10m."
+
+      - alert: GuardRejectionSpike
+        expr: sum by (reason) (rate(guard_rejections_total[5m])) > 1
+        for: 10m
+        labels: { severity: info }
+        annotations:
+          summary: "Elevated ingress-guard rejections ({{ $labels.reason }})"
+          description: ">1 rejection/s for reason={{ $labels.reason }} over 10m."
+
+  # LLM call outcomes AS THE APP SAW THEM — from llm_requests_total{service,site,
+  # profile,model,purpose,outcome} emitted by `api` / `admin-api` (one sample per
+  # LOGICAL call, after retries; outcome = ok|error|timeout). They include what the
+  # gateway cannot count: client timeouts and an unreachable gateway. Everything the
+  # gateway sees (provider errors, rejections, limits, prices) is its own alerts in
+  # gw.rules.yml. Worker processes are not scraped, so these only cover LLM calls made
+  # inside the HTTP services.
+  - name: pacod-llm
+    rules:
+      # Gated on >10 calls per 15m per (site, model) so one failure on a quiet
+      # model can't trip a 100% ratio.
+      - alert: LlmErrorRateHigh
+        expr: |
+          (
+            sum by (site, model) (increase(llm_requests_total{outcome!="ok"}[15m]))
+              / sum by (site, model) (increase(llm_requests_total[15m]))
+          ) > 0.1
+          and sum by (site, model) (increase(llm_requests_total[15m])) > 10
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "High LLM failure rate for {{ $labels.model }} on {{ $labels.site }}"
+          description: ">10% of LLM calls to {{ $labels.model }} from site={{ $labels.site }} ended in error/timeout (after retries) over 15m. Check the gateway console's Errors page (provider status, refusals) and the gateway's own alerts."
+
+      # Timeouts are never retried (a retry could double-bill), so each one is a
+      # user-visible failure — a burst usually means a slow/overloaded provider.
+      - alert: LlmTimeoutsSpike
+        expr: sum(increase(llm_requests_total{outcome="timeout"}[15m])) > 5
+        for: 5m
+        labels: { severity: info }
+        annotations:
+          summary: "LLM timeouts spiking"
+          description: ">5 LLM calls timed out in the last 15m. See the Usage dashboard (Failed LLM calls) for the affected models; tune LLM_TIMEOUT_SECONDS only if the provider is legitimately slower."
+
+      # `or vector(0)`: if no call has EVER succeeded since the services started,
+      # no outcome="ok" series exists and a bare sum() would return nothing, so
+      # the alert could never fire in exactly the worst case.
+      - alert: LlmAllCallsFailing
+        expr: |
+          (sum(increase(llm_requests_total{outcome="ok"}[15m])) or vector(0)) == 0
+          and sum(increase(llm_requests_total[15m])) > 5
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "All LLM calls are failing"
+          description: "No LLM call succeeded in the last 15m while >5 were attempted — agents cannot answer. Check that the gateway is up (job pacod-gw-core), its provider credentials and limits, and outbound network."

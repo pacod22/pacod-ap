@@ -1,0 +1,108 @@
+# Golden evaluation set for the starter agent (the Nimbus Notes help desk demo).
+#
+# Categories:
+#   - on_topic_factual:     expects an answer quoting a specific reference fact
+#   - on_topic_explanatory: expects a coherent explanation from the knowledge base
+#   - calculation:          expects a computation that shows its parameters
+#   - off_topic:            expects rejection at the topic guard
+#   - language_reject:      expects rejection at the language guard
+#
+# Each case carries an `expected_language` (which language the agent should
+# answer in) and may declare `expected_facts` — substrings that MUST appear
+# in a correct response, and `forbidden` — substrings that must NOT.
+
+cases:
+  # ------------------------------------------------------------- EN factual
+  - id: en_plus_price
+    category: on_topic_factual
+    language: en
+    question: "How much does the Plus plan cost per month?"
+    expected_language: en
+    expected_facts: ["6"]
+    expected_topic_relevant: true
+
+  - id: en_team_uptime
+    category: on_topic_factual
+    language: en
+    question: "What uptime does Nimbus Notes commit to on the Team plan?"
+    expected_language: en
+    expected_facts: ["99.9"]
+    expected_topic_relevant: true
+
+  - id: en_free_file_size
+    category: on_topic_factual
+    language: en
+    question: "What is the largest attachment I can add on the Free plan?"
+    expected_language: en
+    expected_facts: ["25"]
+    expected_topic_relevant: true
+
+  - id: en_refund_window
+    category: on_topic_factual
+    language: en
+    question: "How many days do I have to get a refund after my first payment?"
+    expected_language: en
+    expected_facts: ["14"]
+    expected_topic_relevant: true
+
+  # ------------------------------------------------------------- BG factual
+  - id: bg_team_price
+    category: on_topic_factual
+    language: bg
+    question: "Колко струва планът Team на потребител на месец?"
+    expected_language: bg
+    expected_facts: ["12"]
+    expected_topic_relevant: true
+
+  - id: bg_retention
+    category: on_topic_factual
+    language: bg
+    question: "Колко дни се пазят данните ми след като закрия акаунта си?"
+    expected_language: bg
+    expected_facts: ["30"]
+    expected_topic_relevant: true
+
+  # -------------------------------------------------------- explanatory
+  - id: en_trial_end
+    category: on_topic_explanatory
+    language: en
+    question: "What happens to my notes when my Team trial ends and I don't pay?"
+    expected_language: en
+    expected_facts: ["read-only"]
+    expected_topic_relevant: true
+
+  - id: en_export
+    category: on_topic_explanatory
+    language: en
+    question: "Can I export all my notes on the Free plan?"
+    expected_language: en
+    expected_facts: ["Markdown"]
+    expected_topic_relevant: true
+
+  # -------------------------------------------------------- calculation
+  - id: en_annual_cost
+    category: calculation
+    language: en
+    question: "We are 10 people. What would the Team plan cost us for a year if we pay annually?"
+    expected_language: en
+    expected_facts: ["1152"]   # 10 users x 12 EUR x 12 months x 0.8
+    expected_topic_relevant: true
+
+  # ------------------------------------------------------------- off-topic
+  - id: off_recipe
+    category: off_topic
+    language: en
+    question: "Give me a recipe for banana bread."
+    expected_topic_relevant: false
+
+  - id: off_code_help
+    category: off_topic
+    language: en
+    question: "Can you write me a Python function that reverses a linked list?"
+    expected_topic_relevant: false
+
+  - id: off_bg_weather
+    category: off_topic
+    language: bg
+    question: "Какво ще бъде времето в София утре?"
+    expected_topic_relevant: false

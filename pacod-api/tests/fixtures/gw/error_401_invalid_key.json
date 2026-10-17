@@ -1,0 +1,33 @@
+{
+ "case": "error_401_invalid_key",
+ "note": "unknown API key",
+ "request": {
+  "model": "anthropic/claude-sonnet-5-5",
+  "max_tokens": 64,
+  "messages": [
+   {
+    "role": "user",
+    "content": "hello"
+   }
+  ],
+  "gateway": {
+   "trace_id": "fixture",
+   "tags": {
+    "purpose": "synthesizer"
+   }
+  }
+ },
+ "status": 401,
+ "headers": {
+  "content-type": "application/json",
+  "x-should-retry": "false"
+ },
+ "body": {
+  "error": {
+   "message": "the API key is unknown, expired or revoked",
+   "type": "authentication_error",
+   "param": null,
+   "code": "invalid_key"
+  }
+ }
+}

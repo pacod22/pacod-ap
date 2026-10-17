@@ -1,0 +1,85 @@
+<!doctype html>
+<meta charset="utf-8" />
+<style>
+	* {
+		margin: 0;
+		padding: 0;
+		box-sizing: border-box;
+	}
+	html,
+	body {
+		width: 1200px;
+		height: 630px;
+	}
+	body {
+		background: linear-gradient(150deg, #0e6e57 0%, #06342a 100%);
+		color: #fff;
+		font-family: 'Manrope', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		padding: 88px 96px;
+		position: relative;
+		overflow: hidden;
+	}
+	/* Soft light bloom, echoing the landing hero. */
+	body::after {
+		content: '';
+		position: absolute;
+		right: -180px;
+		top: -220px;
+		width: 720px;
+		height: 720px;
+		border-radius: 50%;
+		background: radial-gradient(circle, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 70%);
+	}
+	.mark {
+		width: 96px;
+		height: 96px;
+		border-radius: 24px;
+		background: rgba(255, 255, 255, 0.14);
+		border: 2px solid rgba(255, 255, 255, 0.28);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 54px;
+		font-weight: 800;
+		letter-spacing: -2px;
+		margin-bottom: 44px;
+	}
+	h1 {
+		font-size: 92px;
+		font-weight: 800;
+		letter-spacing: -3px;
+		line-height: 1;
+	}
+	p {
+		font-size: 38px;
+		font-weight: 500;
+		line-height: 1.3;
+		margin-top: 24px;
+		color: rgba(255, 255, 255, 0.86);
+		max-width: 900px;
+	}
+	.rule {
+		width: 108px;
+		height: 6px;
+		border-radius: 3px;
+		background: rgba(255, 255, 255, 0.55);
+		margin-top: 44px;
+	}
+	.langs {
+		position: absolute;
+		left: 96px;
+		bottom: 64px;
+		font-size: 24px;
+		font-weight: 600;
+		letter-spacing: 5px;
+		color: rgba(255, 255, 255, 0.62);
+	}
+</style>
+<div class="mark">P</div>
+<h1>PACOD</h1>
+<p>Your personal team of AI assistants</p>
+<div class="rule"></div>
+<div class="langs">БГ · EN · DE · RU</div>

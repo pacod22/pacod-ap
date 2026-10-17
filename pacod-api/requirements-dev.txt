@@ -1,0 +1,11 @@
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==5.0.0
+pytest-mock==3.14.0
+httpx==0.28.1
+respx==0.22.0
+fakeredis[lua]==2.25.1
+aiosqlite==0.22.1  # in-memory SQLite for the DB-backed unit tests
+
+ruff==0.7.1
+mypy==1.13.0

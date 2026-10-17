@@ -1,0 +1,12 @@
+# `COPY . .` in the Dockerfile runs AFTER `npm ci`; without this file the host's
+# node_modules (a macOS tree, in an alpine image) overwrote the freshly installed
+# one, every build's cache was busted, and .env files could land in an image layer.
+node_modules
+.git
+build
+.svelte-kit
+.env
+.env.*
+playwright-report
+test-results
+src/lib/paraglide

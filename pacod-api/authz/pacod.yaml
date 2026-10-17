@@ -1,0 +1,42 @@
+# The app's roles and permissions, for pacod-id's rules engine.
+#
+# The api pushes this file to pacod-id as the `pacod` catalogue at boot (client pacod-api);
+# authz/vectors/pacod.yaml pins what each role may do and runs in the unit tests
+# (tests/unit/test_authz_manifest.py) through the vendored pacod_id engine.
+#
+# Permissions:
+#   chat.use              chat with the agents assigned to you (user_profiles stays local)
+#   admin.read            the admin console, read only
+#   admin.write           the admin console's changes; also gives and takes roles (grant.default)
+#   profiles.assign       assign agents to users
+#   profiles.manage       create, edit and delete agents
+#   prompts.edit          edit the agents' phase prompts and the agent editor
+#   webui.admin           an Open-WebUI admin (who can usually read every user's chats)
+#   superuser.grant       give and take the superuser role
+#   attribution.forward   assert the person behind a call (the Open-WebUI service account)
+#
+# The scope type `profile` is declared for later use; bindings are all at the platform today.
+product: pacod
+scope_types:
+  profile: { parent: platform }
+roles:
+  user:
+    at: [platform]
+    permissions: [chat.use]
+    implicit: true
+  admin:
+    at: [platform]
+    permissions: [admin.read, admin.write, profiles.assign]
+    # Nobody removes the last admin.
+    protected: true
+  superuser:
+    at: [platform]
+    permissions: [admin.read, admin.write, profiles.assign, profiles.manage, prompts.edit, webui.admin, superuser.grant]
+  webui_service:
+    at: [platform]
+    permissions: [chat.use, attribution.forward]
+custom_roles: { at: [platform] }
+grant:
+  # Admins give and take roles; only a superuser makes (or unmakes) a superuser.
+  default: admin.write
+  superuser: superuser.grant

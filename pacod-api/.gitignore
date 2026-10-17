@@ -1,0 +1,38 @@
+.env
+# Local test-stack overrides (see .env.local.example). Machine-specific and may
+# hold personal API keys — never commit. `make up-local` seeds it from the example.
+.env.local
+# The gateway's keys and tokens for the services (written by `make gw-bootstrap` /
+# `make id-bootstrap`). Never commit.
+.env.gateway
+# Local-only Compose override (e.g. macOS Docker Desktop can't bind-mount the
+# committed /data/... host paths). Machine-specific — never commit.
+docker-compose.override.yml
+docker-compose.override.yaml
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries/
+.idea/shelf/
+*.log
+data/qdrant_storage/
+data/postgres_data/
+data/redis_data/
+.DS_Store
+# Agent worktrees — local scratch, never track
+.claude/worktrees/
+# gw_bootstrap.py's transient file while it rewrites .env.gateway.
+.env.tmp

@@ -1,0 +1,15 @@
+.git
+.idea
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage
+*.log
+data/qdrant_storage
+data/postgres_data
+data/redis_data

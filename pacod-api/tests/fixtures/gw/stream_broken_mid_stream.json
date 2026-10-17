@@ -1,0 +1,84 @@
+{
+ "case": "stream_broken_mid_stream",
+ "note": "the provider's connection broke after two chunks: an error event ends the stream",
+ "request": {
+  "model": "anthropic/claude-sonnet-5-5",
+  "max_tokens": 200,
+  "messages": [
+   {
+    "role": "user",
+    "content": "hello"
+   }
+  ],
+  "gateway": {
+   "trace_id": "fixture",
+   "tags": {
+    "purpose": "synthesizer"
+   }
+  },
+  "stream": true,
+  "stream_options": {
+   "include_usage": true
+  }
+ },
+ "status": 200,
+ "headers": {
+  "content-type": "text/event-stream"
+ },
+ "body": [
+  {
+   "id": "msg_mock95005573ab8b2b95",
+   "object": "chat.completion.chunk",
+   "created": 1792144128,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [
+    {
+     "index": 0,
+     "delta": {
+      "role": "assistant",
+      "content": ""
+     },
+     "finish_reason": null
+    }
+   ]
+  },
+  {
+   "id": "msg_mock95005573ab8b2b95",
+   "object": "chat.completion.chunk",
+   "created": 1792144128,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [
+    {
+     "index": 0,
+     "delta": {
+      "content": "echo:"
+     },
+     "finish_reason": null
+    }
+   ]
+  },
+  {
+   "id": "msg_mock95005573ab8b2b95",
+   "object": "chat.completion.chunk",
+   "created": 1792144128,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [
+    {
+     "index": 0,
+     "delta": {
+      "content": " hello"
+     },
+     "finish_reason": null
+    }
+   ]
+  },
+  {
+   "error": {
+    "message": "error reading a body from connection",
+    "type": "api_error",
+    "param": null,
+    "code": "upstream_error"
+   }
+  }
+ ]
+}

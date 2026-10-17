@@ -1,0 +1,339 @@
+{
+  "uid": "pacod-crawlers",
+  "title": "pacod \u2014 Crawler traffic",
+  "tags": [
+    "pacod",
+    "seo",
+    "crawlers"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Crawl rate by site & bot (req/s)",
+      "description": "Which crawlers are fetching this site right now. A search engine going flat here is the first sign that indexing has stalled; the CrawlerAbsent alerts fire on the same series.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "topk(10, sum by (site, bot) (rate(pacod_frontend_crawler_requests_total[5m])))",
+          "legendFormat": "{{site}} \u00b7 {{bot}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Crawl rate by site & category (req/s)",
+      "description": "search = the SEO signal. ai = LLM training/answer crawlers. seo = third-party backlink tools, often heavy with no benefit to us. social = link-preview fetchers reading the Open Graph tags.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (site, category) (rate(pacod_frontend_crawler_requests_total[5m]))",
+          "legendFormat": "{{site}} \u00b7 {{category}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Crawler error rate (4xx/5xx %)",
+      "description": "Share of crawler requests answered with an error. A rise means bots are discovering broken or removed URLs \u2014 usually a stale sitemap entry or a route that moved.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(pacod_frontend_crawler_requests_total{status=~\"4..|5..\"}[5m])) / clamp_min(sum(rate(pacod_frontend_crawler_requests_total[5m])), 1e-9)",
+          "legendFormat": "error share"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Verified vs spoofed vs unchecked (req/s)",
+      "description": "unverified = the User-Agent claimed a bot that publishes a reverse-DNS contract, and the address failed it \u2014 almost always a scraper in disguise. unknown is NOT a failure: most AI and SEO crawlers publish no contract at all, so there is nothing to check against.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (verified) (rate(pacod_frontend_crawler_requests_total[5m]))",
+          "legendFormat": "{{verified}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Crawler requests (24h)",
+      "description": "Total identified crawler traffic over the last day.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(pacod_frontend_crawler_requests_total[24h]))",
+          "legendFormat": "hits"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Googlebot requests (24h)",
+      "description": "Zero here for a full day is the signal to check Search Console \u2014 it means Google has stopped fetching the site.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(pacod_frontend_crawler_requests_total{bot=\"googlebot\"}[24h]))",
+          "legendFormat": "googlebot"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Spoofed crawler requests (24h)",
+      "description": "Requests claiming to be a verifiable search engine that failed reverse-DNS confirmation.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(pacod_frontend_crawler_requests_total{verified=\"unverified\"}[24h]))",
+          "legendFormat": "spoofed"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Crawler errors (24h)",
+      "description": "Error responses served to crawlers in the last day.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(pacod_frontend_crawler_requests_total{status=~\"4..|5..\"}[24h]))",
+          "legendFormat": "errors"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Top crawled routes (req/s)",
+      "description": "Route templates, not raw URLs \u2014 the exact paths (and the client IPs) live in the admin Crawlers page, because a URL label would blow up Prometheus cardinality.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "topk(10, sum by (bot, status) (rate(pacod_frontend_crawler_requests_total[5m])))",
+          "legendFormat": "{{bot}} \u00b7 {{status}}"
+        }
+      ]
+    }
+  ]
+}

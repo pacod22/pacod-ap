@@ -1,0 +1,123 @@
+# Edge & web-traffic alerts (Caddy + SvelteKit frontend). Auto-loaded via
+# `rule_files: alerts/*.rules.yml`. Starter set — tune thresholds to your traffic.
+#
+# NOTE: Alertmanager's receiver is currently a stub (monitoring/alertmanager/
+# alertmanager.yml), so these rules fire and show in the Prometheus/Alertmanager
+# UIs but are NOT delivered anywhere until a Slack/SMTP receiver is wired.
+groups:
+  - name: pacod-web
+    rules:
+      # The SvelteKit frontend container.
+      - alert: FrontendDown
+        expr: up{job="frontend"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "SvelteKit {{ $labels.job }} is down"
+          description: "Prometheus cannot scrape {{ $labels.job }} (/internal/metrics) for >2m — that site's web app is unreachable."
+
+      - alert: CaddyEdgeDown
+        expr: up{job="caddy"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Caddy edge metrics are down"
+          description: "Prometheus cannot scrape caddy:9180/metrics for >2m — the edge proxy may be down or metrics disabled."
+
+      # Status code is carried by the duration histogram's _count series — the
+      # caddy_http_requests_total counter has only {server, handler} labels, no code.
+      # Exclude the internal metrics handler so scrape traffic isn't counted.
+      - alert: HighEdge5xxRate
+        expr: |
+          sum(rate(caddy_http_request_duration_seconds_count{code=~"5..", handler!="metrics"}[5m]))
+            / clamp_min(sum(rate(caddy_http_request_duration_seconds_count{handler!="metrics"}[5m])), 1e-9) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "High 5xx rate at the edge"
+          description: ">5% of edge (Caddy) requests returned 5xx over 10m."
+
+      # Exclude handler="metrics": Prometheus scraping caddy:9180 itself increments
+      # the counter, so without this filter the alert could never fire.
+      - alert: EdgeTrafficDropToZero
+        expr: sum(rate(caddy_http_request_duration_seconds_count{handler!="metrics"}[10m])) == 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Edge traffic dropped to zero"
+          description: "No public requests reached Caddy for 10m — likely an outage upstream of the app (DNS/TLS/proxy) rather than a single service."
+
+  # Crawler traffic — from pacod_frontend_crawler_requests_total, emitted by the
+  # SvelteKit frontend (crawlers never reach FastAPI, so this is the only tier
+  # that sees them). Its series carry a `site` label (prom-client default label),
+  # so rules aggregate `by (site)` wherever a per-site view matters. Per-visit detail with URLs and IPs is in the admin
+  # /crawlers page; these rules only need the aggregate.
+  - name: pacod-crawlers
+    rules:
+      # The single highest-value signal here. Search Console reports crawl stats
+      # with days of lag, so a silent Googlebot is otherwise invisible until
+      # rankings move. `increase(...[48h]) == 0` would not fire if the series
+      # never existed, hence the absence arm.
+      # - First arm is per site: fires for a site whose googlebot series exists
+      #   (Googlebot visited at some point since that container started) but
+      #   did not grow in 48h.
+      # - Absence arm stays GLOBAL (no googlebot series on any site for 48h).
+      #   A per-site absence arm would fire forever for a site that is not
+      #   meant to be crawled, and fire on every new deploy. absent_over_time
+      #   (not absent) so a frontend restart — which drops the counter until
+      #   the next Googlebot hit — doesn't page after the 1h `for`.
+      - alert: GooglebotAbsent
+        expr: |
+          sum by (site) (increase(pacod_frontend_crawler_requests_total{bot="googlebot"}[48h])) == 0
+            or absent_over_time(pacod_frontend_crawler_requests_total{bot="googlebot"}[48h])
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "Googlebot has not crawled {{ if $labels.site }}site={{ $labels.site }}{{ else }}any site{{ end }} in 48h"
+          description: "No Googlebot requests for 48h. Indexing may have stalled — check Search Console coverage, robots.txt and that the sitemap still resolves."
+
+      - alert: BingbotAbsent
+        expr: |
+          sum by (site) (increase(pacod_frontend_crawler_requests_total{bot="bingbot"}[7d])) == 0
+            or absent_over_time(pacod_frontend_crawler_requests_total{bot="bingbot"}[7d])
+        for: 6h
+        labels: { severity: info }
+        annotations:
+          summary: "Bingbot has not crawled {{ if $labels.site }}site={{ $labels.site }}{{ else }}any site{{ end }} in 7 days"
+          description: "No Bingbot requests for a week. Lower urgency than Googlebot — Bing crawls less often — but worth checking Bing Webmaster Tools."
+
+      # Crawlers finding errors is how a broken sitemap entry or a moved route
+      # shows up. Gated on a minimum request rate so a couple of 404s during a
+      # quiet hour cannot trip it.
+      - alert: CrawlerErrorRateHigh
+        expr: |
+          sum by (site) (rate(pacod_frontend_crawler_requests_total{status=~"4..|5.."}[30m]))
+            / clamp_min(sum by (site) (rate(pacod_frontend_crawler_requests_total[30m])), 1e-9) > 0.10
+          and sum by (site) (rate(pacod_frontend_crawler_requests_total[30m])) > 0.01
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "Crawlers are receiving errors for >10% of requests on {{ $labels.site }}"
+          description: "Bots are hitting broken or missing URLs on site={{ $labels.site }}. Check the admin /crawlers page filtered to errors — the exact paths are there."
+
+      # A single bot monopolising the site. Aggressive SEO tools are the usual
+      # cause and can be blocked in robots.txt (lib/seo/routes.ts). Per site:
+      # each site is its own container, so the load that matters is per site.
+      - alert: CrawlerFloodDetected
+        expr: sum by (site, bot) (rate(pacod_frontend_crawler_requests_total[5m])) > 5
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.bot }} is crawling {{ $labels.site }} at >5 req/s"
+          description: "Sustained heavy crawling from a single bot on site={{ $labels.site }} for 15m. If it is an SEO tool rather than a search engine, consider disallowing it in robots.txt."
+
+      # `unverified` means the User-Agent claimed a bot that publishes a
+      # reverse-DNS contract and the address failed it. `unknown` is excluded on
+      # purpose — that is "no contract published", not "failed the check".
+      - alert: SpoofedBotTraffic
+        expr: sum by (site) (rate(pacod_frontend_crawler_requests_total{verified="unverified"}[15m])) > 0.5
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Sustained traffic impersonating a verified crawler on {{ $labels.site }}"
+          description: "Requests claim to be a search engine but fail reverse-DNS confirmation — typically a scraper using a Googlebot User-Agent to bypass limits. Source IPs are in the admin /crawlers page."

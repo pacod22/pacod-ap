@@ -1,0 +1,33 @@
+{
+ "case": "error_402_quota_exceeded",
+ "note": "a spend cap reached",
+ "request": {
+  "model": "anthropic/claude-sonnet-5-5",
+  "max_tokens": 64,
+  "messages": [
+   {
+    "role": "user",
+    "content": "hello"
+   }
+  ],
+  "gateway": {
+   "trace_id": "fixture",
+   "tags": {
+    "purpose": "synthesizer"
+   }
+  }
+ },
+ "status": 402,
+ "headers": {
+  "content-type": "application/json",
+  "x-should-retry": "false"
+ },
+ "body": {
+  "error": {
+   "message": "the limit \"fixture-scratch-cap\" for this key is used up",
+   "type": "insufficient_quota",
+   "param": null,
+   "code": "quota_exceeded"
+  }
+ }
+}

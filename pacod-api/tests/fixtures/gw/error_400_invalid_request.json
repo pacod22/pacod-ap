@@ -1,0 +1,21 @@
+{
+ "case": "error_400_invalid_request",
+ "note": "a request without messages",
+ "request": {
+  "model": "anthropic/claude-sonnet-5-5",
+  "max_tokens": 64
+ },
+ "status": 400,
+ "headers": {
+  "content-type": "application/json",
+  "x-should-retry": "false"
+ },
+ "body": {
+  "error": {
+   "message": "messages is required and must be a list",
+   "type": "invalid_request_error",
+   "param": null,
+   "code": "invalid_request"
+  }
+ }
+}

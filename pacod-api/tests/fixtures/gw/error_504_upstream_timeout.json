@@ -1,0 +1,33 @@
+{
+ "case": "error_504_upstream_timeout",
+ "note": "the provider never answered (1 s timeout)",
+ "request": {
+  "model": "anthropic/claude-sonnet-5-5",
+  "max_tokens": 64,
+  "messages": [
+   {
+    "role": "user",
+    "content": "hello"
+   }
+  ],
+  "gateway": {
+   "trace_id": "fixture",
+   "tags": {
+    "purpose": "synthesizer"
+   }
+  }
+ },
+ "status": 504,
+ "headers": {
+  "content-type": "application/json",
+  "x-should-retry": "false"
+ },
+ "body": {
+  "error": {
+   "message": "the provider did not answer within 1s",
+   "type": "api_error",
+   "param": null,
+   "code": "upstream_timeout"
+  }
+ }
+}

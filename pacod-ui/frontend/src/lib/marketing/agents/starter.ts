@@ -1,0 +1,233 @@
+/**
+ * `/agents/starter` — the Starter help-desk assistant.
+ *
+ * Backed by the `starter` profile, the platform's default demo agent: a small
+ * fictional SaaS help desk (plans, prices, limits, support hours, SLA) built on
+ * the generic template — knowledge-base search plus reference facts. It shows
+ * what an agent built on the platform does before you build your own.
+ */
+import type { AgentDefinition } from './types';
+
+export const starter: AgentDefinition = {
+	slug: 'starter',
+	profileId: 'starter',
+	accent: '#3f7cc4',
+	doc: {
+		en: {
+			eyebrow: 'Demo agent',
+			title: 'Starter Help-Desk Assistant',
+			lead: 'A ready-made support assistant for a fictional software product: plans, prices, limits, support hours and service levels — answered from its knowledge base and reference facts, with the source behind every answer.',
+			metaTitle: 'Starter Help-Desk AI Assistant — demo agent',
+			metaDescription:
+				'Try the demo agent of the platform: a help-desk assistant that answers product questions from a curated knowledge base and exact reference facts, in four languages.',
+			valuePropsTitle: 'What it shows',
+			valueProps: [
+				{
+					title: 'Answers grounded in your content',
+					body: 'Explanations come from the agent’s own knowledge base — documents you upload and curate — not from a model’s general memory.'
+				},
+				{
+					title: 'Exact numbers from reference facts',
+					body: 'Prices, limits and service levels are kept as structured reference facts, so the agent quotes them exactly and cites where they come from.'
+				},
+				{
+					title: 'A template to build on',
+					body: 'Clone it in the agent editor, swap in your own documents and facts, adjust the prompts — and you have your own specialist agent.'
+				}
+			],
+			useCasesTitle: 'Typical questions',
+			useCases: [
+				'What does the Team plan cost per month, and what is included?',
+				'How much storage and how large an attachment does the Free plan allow?',
+				'When is support available, and how fast do you respond to an urgent ticket?',
+				'What uptime does the service level agreement guarantee?',
+				'How do I export my data before cancelling?'
+			],
+			faqTitle: 'Frequently asked',
+			faq: [
+				{
+					q: 'Is the product real?',
+					a: 'No. The help desk describes a fictional software product. It exists to demonstrate how an agent on this platform uses a knowledge base and reference facts.'
+				},
+				{
+					q: 'Can I build an agent like this for my own domain?',
+					a: 'Yes. Administrators create agents in the agent editor, upload their own documents, maintain reference facts and tune the prompts — without code.'
+				},
+				{
+					q: 'Which languages can I ask in?',
+					a: 'The interface is available in Bulgarian, English, German and Russian; the demo agent answers in English and Bulgarian.'
+				},
+				{
+					q: 'Where do the numbers come from?',
+					a: 'From the agent’s reference facts — a structured table an administrator maintains — never from the model’s memory.'
+				}
+			],
+			ctaTitle: 'Ask the demo agent',
+			ctaBody: 'Create an account and start a conversation — no setup, no configuration.',
+			ctaLabel: 'Start a conversation',
+			homeLabel: 'Home'
+		},
+		bg: {
+			eyebrow: 'Демо агент',
+			title: 'Асистент за клиентска поддръжка',
+			lead: 'Готов асистент за поддръжка на измислен софтуерен продукт: планове, цени, ограничения, работно време на поддръжката и нива на обслужване — отговори от базата знания и справочните данни, с посочен източник.',
+			metaTitle: 'AI асистент за клиентска поддръжка — демо агент',
+			metaDescription:
+				'Изпробвайте демо агента на платформата: асистент за поддръжка, който отговаря на въпроси за продукта от подбрана база знания и точни справочни данни, на четири езика.',
+			valuePropsTitle: 'Какво показва',
+			valueProps: [
+				{
+					title: 'Отговори на база вашето съдържание',
+					body: 'Обясненията идват от собствената база знания на агента — документи, които качвате и подбирате, — а не от общите знания на модела.'
+				},
+				{
+					title: 'Точни числа от справочните данни',
+					body: 'Цените, ограниченията и нивата на обслужване се пазят като структурирани справочни данни, затова агентът ги цитира точно и посочва източника.'
+				},
+				{
+					title: 'Шаблон, върху който да градите',
+					body: 'Копирайте го в редактора на агенти, заменете документите и данните със свои, настройте подсказките — и имате собствен специализиран агент.'
+				}
+			],
+			useCasesTitle: 'Типични въпроси',
+			useCases: [
+				'Колко струва планът Team на месец и какво включва?',
+				'Колко място и колко голям прикачен файл позволява планът Free?',
+				'Кога работи поддръжката и колко бързо отговаряте на спешен сигнал?',
+				'Каква наличност гарантира споразумението за ниво на обслужване?',
+				'Как да експортирам данните си, преди да прекратя абонамента?'
+			],
+			faqTitle: 'Често задавани въпроси',
+			faq: [
+				{
+					q: 'Истински ли е продуктът?',
+					a: 'Не. Поддръжката описва измислен софтуерен продукт. Тя показва как агент на платформата използва база знания и справочни данни.'
+				},
+				{
+					q: 'Мога ли да изградя такъв агент за своята област?',
+					a: 'Да. Администраторите създават агенти в редактора, качват свои документи, поддържат справочни данни и настройват подсказките — без код.'
+				},
+				{
+					q: 'На какви езици мога да питам?',
+					a: 'Интерфейсът е на български, английски, немски и руски; демо агентът отговаря на английски и български.'
+				},
+				{
+					q: 'Откъде идват числата?',
+					a: 'От справочните данни на агента — структурирана таблица, която администраторът поддържа, — никога от паметта на модела.'
+				}
+			],
+			ctaTitle: 'Попитайте демо агента',
+			ctaBody: 'Създайте профил и започнете разговор — без настройки и без конфигурация.',
+			ctaLabel: 'Започнете разговор',
+			homeLabel: 'Начало'
+		},
+		de: {
+			eyebrow: 'Demo-Agent',
+			title: 'Starter-Helpdesk-Assistent',
+			lead: 'Ein fertiger Support-Assistent für ein fiktives Softwareprodukt: Tarife, Preise, Limits, Support-Zeiten und Service-Level — beantwortet aus seiner Wissensbasis und seinen Referenzdaten, mit der Quelle hinter jeder Antwort.',
+			metaTitle: 'Starter-Helpdesk-KI-Assistent — Demo-Agent',
+			metaDescription:
+				'Testen Sie den Demo-Agenten der Plattform: ein Helpdesk-Assistent, der Produktfragen aus einer kuratierten Wissensbasis und exakten Referenzdaten beantwortet, in vier Sprachen.',
+			valuePropsTitle: 'Was er zeigt',
+			valueProps: [
+				{
+					title: 'Antworten auf Basis Ihrer Inhalte',
+					body: 'Erklärungen stammen aus der eigenen Wissensbasis des Agenten — Dokumente, die Sie hochladen und pflegen — und nicht aus dem allgemeinen Gedächtnis eines Modells.'
+				},
+				{
+					title: 'Exakte Zahlen aus Referenzdaten',
+					body: 'Preise, Limits und Service-Level werden als strukturierte Referenzdaten geführt, sodass der Agent sie exakt zitiert und ihre Herkunft angibt.'
+				},
+				{
+					title: 'Eine Vorlage zum Weiterbauen',
+					body: 'Klonen Sie ihn im Agenten-Editor, ersetzen Sie Dokumente und Daten durch Ihre eigenen, passen Sie die Prompts an — und Sie haben Ihren eigenen Fach-Agenten.'
+				}
+			],
+			useCasesTitle: 'Typische Fragen',
+			useCases: [
+				'Was kostet der Team-Tarif pro Monat, und was ist enthalten?',
+				'Wie viel Speicher und wie große Anhänge erlaubt der Free-Tarif?',
+				'Wann ist der Support erreichbar, und wie schnell antworten Sie auf ein dringendes Ticket?',
+				'Welche Verfügbarkeit garantiert das Service-Level-Agreement?',
+				'Wie exportiere ich meine Daten vor einer Kündigung?'
+			],
+			faqTitle: 'Häufige Fragen',
+			faq: [
+				{
+					q: 'Ist das Produkt echt?',
+					a: 'Nein. Der Helpdesk beschreibt ein fiktives Softwareprodukt. Er zeigt, wie ein Agent auf dieser Plattform eine Wissensbasis und Referenzdaten nutzt.'
+				},
+				{
+					q: 'Kann ich einen solchen Agenten für mein eigenes Fachgebiet bauen?',
+					a: 'Ja. Administratoren erstellen Agenten im Agenten-Editor, laden eigene Dokumente hoch, pflegen Referenzdaten und passen die Prompts an — ohne Code.'
+				},
+				{
+					q: 'In welchen Sprachen kann ich fragen?',
+					a: 'Die Oberfläche ist auf Bulgarisch, Englisch, Deutsch und Russisch verfügbar; der Demo-Agent antwortet auf Englisch und Bulgarisch.'
+				},
+				{
+					q: 'Woher stammen die Zahlen?',
+					a: 'Aus den Referenzdaten des Agenten — einer strukturierten Tabelle, die ein Administrator pflegt — niemals aus dem Gedächtnis des Modells.'
+				}
+			],
+			ctaTitle: 'Fragen Sie den Demo-Agenten',
+			ctaBody: 'Konto erstellen und ein Gespräch beginnen — ohne Einrichtung, ohne Konfiguration.',
+			ctaLabel: 'Gespräch beginnen',
+			homeLabel: 'Startseite'
+		},
+		ru: {
+			eyebrow: 'Демо-агент',
+			title: 'Ассистент службы поддержки',
+			lead: 'Готовый ассистент поддержки вымышленного программного продукта: тарифы, цены, ограничения, часы работы поддержки и уровни обслуживания — ответы из базы знаний и справочных данных, с указанием источника.',
+			metaTitle: 'ИИ-ассистент службы поддержки — демо-агент',
+			metaDescription:
+				'Попробуйте демо-агента платформы: ассистент поддержки, который отвечает на вопросы о продукте по подобранной базе знаний и точным справочным данным, на четырёх языках.',
+			valuePropsTitle: 'Что он показывает',
+			valueProps: [
+				{
+					title: 'Ответы на основе Вашего содержания',
+					body: 'Объяснения берутся из собственной базы знаний агента — документов, которые Вы загружаете и курируете, — а не из общих знаний модели.'
+				},
+				{
+					title: 'Точные числа из справочных данных',
+					body: 'Цены, ограничения и уровни обслуживания хранятся как структурированные справочные данные, поэтому агент цитирует их точно и указывает источник.'
+				},
+				{
+					title: 'Шаблон для собственного агента',
+					body: 'Скопируйте его в редакторе агентов, замените документы и данные своими, настройте подсказки — и у Вас собственный специализированный агент.'
+				}
+			],
+			useCasesTitle: 'Типичные вопросы',
+			useCases: [
+				'Сколько стоит тариф Team в месяц и что в него входит?',
+				'Сколько места и какой размер вложения допускает тариф Free?',
+				'Когда работает поддержка и как быстро вы отвечаете на срочное обращение?',
+				'Какую доступность гарантирует соглашение об уровне обслуживания?',
+				'Как экспортировать мои данные перед отменой подписки?'
+			],
+			faqTitle: 'Частые вопросы',
+			faq: [
+				{
+					q: 'Это настоящий продукт?',
+					a: 'Нет. Служба поддержки описывает вымышленный программный продукт. Она показывает, как агент на этой платформе использует базу знаний и справочные данные.'
+				},
+				{
+					q: 'Могу ли я создать такого агента для своей области?',
+					a: 'Да. Администраторы создают агентов в редакторе, загружают свои документы, ведут справочные данные и настраивают подсказки — без кода.'
+				},
+				{
+					q: 'На каких языках можно задавать вопросы?',
+					a: 'Интерфейс доступен на болгарском, английском, немецком и русском; демо-агент отвечает на английском и болгарском.'
+				},
+				{
+					q: 'Откуда берутся числа?',
+					a: 'Из справочных данных агента — структурированной таблицы, которую ведёт администратор, — и никогда из памяти модели.'
+				}
+			],
+			ctaTitle: 'Спросите демо-агента',
+			ctaBody: 'Создайте учётную запись и начните разговор — без настройки и конфигурации.',
+			ctaLabel: 'Начать разговор',
+			homeLabel: 'Главная'
+		}
+	}
+};

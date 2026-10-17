@@ -1,0 +1,24 @@
+apiVersion: 1
+
+providers:
+  - name: pacod
+    orgId: 1
+    folder: pacod
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
+  # The LLM gateway's dashboards (vendored from pacod-gw/deploy/grafana/dashboards).
+  - name: pacod-gw
+    orgId: 1
+    folder: pacod-gw
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards-gw
+      foldersFromFilesStructure: false

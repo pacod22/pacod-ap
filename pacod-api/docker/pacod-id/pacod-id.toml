@@ -1,0 +1,82 @@
+# pacod-id for the platform: one realm, `pacod`, for the app, its admin console and the
+# gateway console: one sign-in covers all three.
+#
+# ${NAME} is filled in from the pacod-id service's environment before the file is parsed
+# (docker-compose.yml); a name that is unset or empty stops pacod-id with an error that names
+# it. Secrets are never written here: a client's secret comes from the variable its
+# `secret_env` names (deploy/secrets/id.env, made by `make secrets-init`).
+#
+# pacod-id.local.toml is this file plus the development client gw-smoke; a unit test
+# (tests/unit/test_pacod_id_config.py) keeps the two in step.
+
+[[realm]]
+name = "pacod"
+issuer = "${PACOD_ID_ISSUER}"
+# The hosted pages' and the mails' look: one of pacod-id's built-in brands (gateway, shop,
+# bazaar). "gateway" is the base teal and gold; its wordmark reads "pacod-gw · AI Gateway".
+brand = "gateway"
+locales = ["en", "bg", "de", "ru"]
+default_locale = "en"
+mail_locales = ["en", "bg"]
+self_signup = ${PACOD_ID_SELF_SIGNUP}
+terms_url = "${PACOD_PUBLIC_URL}/terms"
+# The version of the Terms a sign-up accepts (recorded with its consent); the same value
+# as TERMS_VERSION in pacod-ui/frontend/src/lib/legal/company.ts.
+terms_version = "2026-10-16"
+privacy_url = "${PACOD_PUBLIC_URL}/privacy"
+# Who creates, disables and resets accounts: the app's admins (its users pages, through
+# pacod-id's admin API) and the gateway's platform admins (the console's users page).
+accounts_managed_by = ["pacod.admin", "pacod.superuser", "gw.platform_admin"]
+
+# The app's SvelteKit server: a BFF that keeps the tokens. Its access tokens are for the
+# app's own API (aud pacod-api).
+[[client]]
+id = "pacod-web"
+realm = "pacod"
+kind = "confidential"
+secret_env = "PACOD_WEB_CLIENT_SECRET"
+redirect_uris = ["${PACOD_PUBLIC_URL}/auth/callback"]
+post_logout_redirect_uris = ["${PACOD_PUBLIC_URL}/"]
+backchannel_logout_uri = "http://frontend:3000/auth/backchannel-logout"
+initiate_login_uri = "${PACOD_PUBLIC_URL}/auth/login"
+audience = "pacod-api"
+access_ttl_seconds = 300
+
+# The app's API and admin API: push the `pacod` catalogue (authz/pacod.yaml), follow the feed,
+# introspect service tokens and exchange a caller's token for the admin facades.
+[[client]]
+id = "pacod-api"
+realm = "pacod"
+kind = "service"
+product = "pacod"
+secret_env = "PACOD_API_CLIENT_SECRET"
+audience = "pacod-api"
+
+# The gateway console (pacod-gw ui), reached on PGW_CONSOLE_URL.
+[[client]]
+id = "pacod-gw-console"
+realm = "pacod"
+kind = "confidential"
+secret_env = "PGW_UI_CLIENT_SECRET"
+redirect_uris = ["${PGW_CONSOLE_URL}/auth/callback"]
+post_logout_redirect_uris = ["${PGW_CONSOLE_URL}/"]
+initiate_login_uri = "${PGW_CONSOLE_URL}/auth/login"
+audience = "pacod-gw"
+
+# The gateway core: pushes the `gw` catalogue, registers organisations and workspaces,
+# follows the feed and acts for the console's caller (token exchange).
+[[client]]
+id = "pacod-gw-core"
+realm = "pacod"
+kind = "service"
+product = "gw"
+secret_env = "PGW_ID_CLIENT_SECRET"
+audience = "pacod-gw"
+
+# The gateway tester: a test run works with a delegated grant of the admin's session.
+[[client]]
+id = "pacod-gw-tester"
+realm = "pacod"
+kind = "service"
+secret_env = "TESTER_ID_CLIENT_SECRET"
+audience = "pacod-gw"

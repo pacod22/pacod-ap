@@ -1,0 +1,885 @@
+[
+  {
+    "fact_key": "corporate_income_tax",
+    "category": "income_tax",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Корпоративен данък",
+    "label_en": "Corporate Income Tax",
+    "source_url": "https://nra.bg/bg/page/14",
+    "valid_from": "2007-01-01",
+    "value_type": "percent",
+    "value_num": 10,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 10
+    }
+  },
+  {
+    "fact_key": "personal_income_tax",
+    "category": "income_tax",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Данък върху доходите на физическите лица",
+    "label_en": "Personal Income Tax",
+    "source_url": "https://lex.bg/laws/ldoc/2135533201",
+    "valid_from": "2008-01-01",
+    "value_type": "percent",
+    "value_num": 10,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 10
+    }
+  },
+  {
+    "fact_key": "personal_income_tax",
+    "category": "income_tax",
+    "variant": "sole_trader",
+    "legal_year": 2026,
+    "label_bg": "Данък върху доходите на едноличен търговец (ЕТ)",
+    "label_en": "Sole Trader Income Tax",
+    "source_url": "https://lex.bg/laws/ldoc/2135533201",
+    "valid_from": "2008-01-01",
+    "value_type": "percent",
+    "value_num": 15,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 15
+    }
+  },
+  {
+    "fact_key": "dividend_tax_rate",
+    "category": "income_tax",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Данък върху дивидентите",
+    "label_en": "Dividend Tax",
+    "source_url": "https://lex.bg/laws/ldoc/2135533201",
+    "valid_from": "2008-01-01",
+    "value_type": "percent",
+    "value_num": 5,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 5
+    }
+  },
+  {
+    "fact_key": "vat_registration_threshold",
+    "category": "vat",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Праг за задължителна регистрация по ДДС",
+    "label_en": "Mandatory VAT Registration Threshold",
+    "source_url": "https://lex.bg/laws/ldoc/2135533636",
+    "valid_from": "2026-01-01",
+    "value_type": "money",
+    "value_num": 51130,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 100000,
+      "threshold_amount_eur": 51130
+    }
+  },
+  {
+    "fact_key": "vat_rate",
+    "category": "vat",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Стандартна ставка по ДДС",
+    "label_en": "Standard VAT Rate",
+    "source_url": "https://lex.bg/laws/ldoc/2135533636",
+    "valid_from": "1999-01-01",
+    "value_type": "percent",
+    "value_num": 20,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 20
+    }
+  },
+  {
+    "fact_key": "vat_rate",
+    "category": "vat",
+    "variant": "reduced_tourism",
+    "legal_year": 2026,
+    "label_bg": "Намалена ставка по ДДС",
+    "label_en": "Reduced VAT Rate",
+    "source_url": "https://lex.bg/laws/ldoc/2135533636",
+    "valid_from": "2011-04-01",
+    "value_type": "percent",
+    "value_num": 9,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 9
+    }
+  },
+  {
+    "fact_key": "vat_rate",
+    "category": "vat",
+    "variant": "zero_rated",
+    "legal_year": 2026,
+    "label_bg": "Нулева ставка по ДДС",
+    "label_en": "Zero VAT Rate",
+    "source_url": "https://lex.bg/laws/ldoc/2135533636",
+    "valid_from": "2007-01-01",
+    "value_type": "percent",
+    "value_num": 0,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 0
+    }
+  },
+  {
+    "fact_key": "social_security_min_insurable_income",
+    "category": "social_security",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Минимален осигурителен доход за служители",
+    "label_en": "Minimum Insurable Income for Employees",
+    "source_url": "https://nssi.bg/osiguriavane/osiguritelen-dohod/",
+    "valid_from": "2026-01-01",
+    "valid_to": "2026-12-31",
+    "value_type": "money",
+    "value_num": 620.2,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 1213,
+      "threshold_amount_eur": 620.2
+    }
+  },
+  {
+    "fact_key": "social_security_min_insurable_income",
+    "category": "social_security",
+    "variant": "self_employed",
+    "legal_year": 2026,
+    "label_bg": "Минимален осигурителен доход за самоосигуряващи се",
+    "label_en": "Minimum Insurable Income for Self-Employed",
+    "source_url": "https://nssi.bg/osiguriavane/osiguritelen-dohod/",
+    "valid_from": "2026-01-01",
+    "valid_to": "2026-12-31",
+    "value_type": "money",
+    "value_num": 550.66,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 1077,
+      "threshold_amount_eur": 550.66
+    }
+  },
+  {
+    "fact_key": "social_security_max_insurable_income",
+    "category": "social_security",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Максимален осигурителен доход (преходни правила за 2026 г., запазени параметри от 2025 г.)",
+    "label_en": "Maximum Insurable Income Base (2026 transitional rules, 2025 parameters retained)",
+    "source_url": "https://nssi.bg/osiguriavane/osiguritelen-dohod/",
+    "valid_from": "2026-01-01",
+    "valid_to": "2026-12-31",
+    "value_type": "money",
+    "value_num": 2111.64,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 4130,
+      "threshold_amount_eur": 2111.64
+    }
+  },
+  {
+    "fact_key": "social_security_pensions_rate",
+    "category": "social_security",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Вноска за фонд \"Пенсии\" (ДОО)",
+    "label_en": "State Pension Fund Contribution (1st Pillar)",
+    "source_url": "https://nssi.bg/osiguriavane/osiguritelni-vnoski/",
+    "valid_from": "2026-01-01",
+    "value_type": "percent",
+    "value_num": 16.8,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 16.8
+    }
+  },
+  {
+    "fact_key": "social_security_supplementary_pension",
+    "category": "social_security",
+    "variant": "born_after_1959",
+    "legal_year": 2026,
+    "label_bg": "Допълнително задължително пенсионно осигуряване",
+    "label_en": "Supplementary Pension Contribution (2nd Pillar)",
+    "source_url": "https://nssi.bg/osiguriavane/osiguritelni-vnoski/",
+    "valid_from": "2002-01-01",
+    "value_type": "percent",
+    "value_num": 5,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 5
+    }
+  },
+  {
+    "fact_key": "health_insurance_rate",
+    "category": "social_security",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Здравноосигурителна вноска (обща ставка)",
+    "label_en": "Health Insurance Contribution Rate (combined)",
+    "source_url": "https://nra.bg/bg/page/11",
+    "valid_from": "2009-01-01",
+    "value_type": "percent",
+    "value_num": 8,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 8
+    }
+  },
+  {
+    "fact_key": "health_insurance_rate",
+    "category": "social_security",
+    "variant": "employer",
+    "legal_year": 2026,
+    "label_bg": "Здравноосигурителна вноска — дял на работодателя (60% от 8%)",
+    "label_en": "Health Insurance Contribution — employer share (60% of 8%)",
+    "source_url": "https://nra.bg/bg/page/11",
+    "valid_from": "2009-01-01",
+    "value_type": "percent",
+    "value_num": 4.8,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 4.8
+    }
+  },
+  {
+    "fact_key": "health_insurance_rate",
+    "category": "social_security",
+    "variant": "employee",
+    "legal_year": 2026,
+    "label_bg": "Здравноосигурителна вноска — дял на осигуреното лице (40% от 8%)",
+    "label_en": "Health Insurance Contribution — employee share (40% of 8%)",
+    "source_url": "https://nra.bg/bg/page/11",
+    "valid_from": "2009-01-01",
+    "value_type": "percent",
+    "value_num": 3.2,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 3.2
+    }
+  },
+  {
+    "fact_key": "statutory_expense_deduction",
+    "category": "income_tax",
+    "variant": "freelance_professions",
+    "legal_year": 2026,
+    "label_bg": "Нормативно признати разходи за свободни професии",
+    "label_en": "Statutory Deduction for Freelance Professionals",
+    "source_url": "https://lex.bg/laws/ldoc/2135533201",
+    "valid_from": "2008-01-01",
+    "value_type": "percent",
+    "value_num": 25,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 25
+    }
+  },
+  {
+    "fact_key": "rental_income_expense_deduction",
+    "category": "income_tax",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Нормативно признати разходи за наеми",
+    "label_en": "Statutory Deduction for Rental Income",
+    "source_url": "https://lex.bg/laws/ldoc/2135533201",
+    "valid_from": "2008-01-01",
+    "value_type": "percent",
+    "value_num": 10,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 10
+    }
+  },
+  {
+    "fact_key": "early_filing_discount",
+    "category": "income_tax",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Отстъпка за ранно електронно подаване",
+    "label_en": "Early E-Filing Discount",
+    "source_url": "https://nra.bg/bg/page/13",
+    "valid_from": "2017-01-01",
+    "value_type": "percent",
+    "value_num": 5,
+    "unit": "%",
+    "extra": {
+      "rate_percent": 5,
+      "threshold_amount_bgn": 500,
+      "threshold_amount_eur": 255.65
+    }
+  },
+  {
+    "fact_key": "sme_scheme_threshold",
+    "category": "vat",
+    "variant": "eu_wide",
+    "legal_year": 2026,
+    "label_bg": "Праг за общия оборот в ЕС по режима за малки предприятия (трансграничен режим) — до тази стойност доставки в други държави членки могат да са освободени от ДДС",
+    "label_en": "EU-wide turnover threshold for the cross-border SME VAT scheme — below it, supplies in other Member States may be VAT-exempt",
+    "source_url": "https://sme-vat-rules.ec.europa.eu/national-vat-rules/bulgaria-sme-rules_en",
+    "valid_from": "2026-01-01",
+    "value_type": "money",
+    "value_num": 100000,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 195583,
+      "threshold_amount_eur": 100000
+    }
+  },
+  {
+    "fact_key": "sme_scheme_threshold",
+    "category": "vat",
+    "variant": "in_country",
+    "legal_year": 2026,
+    "label_bg": "Праг в страната по режима за малки предприятия (съвпада с прага за задължителна регистрация по ДДС)",
+    "label_en": "Domestic threshold for the SME VAT scheme (equal to the mandatory VAT registration threshold)",
+    "source_url": "https://sme-vat-rules.ec.europa.eu/national-vat-rules/bulgaria-sme-rules_en",
+    "valid_from": "2026-01-01",
+    "value_type": "money",
+    "value_num": 51130,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 100000,
+      "threshold_amount_eur": 51130
+    }
+  },
+  {
+    "fact_key": "oss_distance_sales_threshold",
+    "category": "vat",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Праг за вътреобщностни дистанционни продажби (OSS) — над него мястото на доставка е в държавата на потребителя",
+    "label_en": "Intra-EU distance-sales threshold (OSS) — above it, the place of supply shifts to the customer's Member State",
+    "source_url": "https://lex.bg/laws/ldoc/2135533636",
+    "valid_from": "2021-07-01",
+    "value_type": "money",
+    "value_num": 10000,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 19558.3,
+      "threshold_amount_eur": 10000
+    }
+  },
+  {
+    "fact_key": "min_wage",
+    "category": "payroll",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Минимална месечна работна заплата от 01.01.2026 г. (ПМС № 243/2025 г.); съвпада с минималния осигурителен доход за служители",
+    "label_en": "Minimum monthly wage from 1 Jan 2026 (Council of Ministers Decree No. 243/2025); equals the minimum insurable income for employees",
+    "source_url": "https://www.postedworkers.gli.government.bg/bg/19/minimum-wage/",
+    "valid_from": "2026-01-01",
+    "valid_to": "2026-12-31",
+    "value_type": "money",
+    "value_num": 620.2,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 1213,
+      "threshold_amount_eur": 620.2
+    }
+  },
+  {
+    "fact_key": "min_hourly_wage",
+    "category": "payroll",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Минимална часова работна заплата от 01.01.2026 г. (при 8-часов работен ден и 5-дневна работна седмица)",
+    "label_en": "Minimum hourly wage from 1 Jan 2026 (8-hour day, 5-day week)",
+    "source_url": "https://www.postedworkers.gli.government.bg/bg/19/minimum-wage/",
+    "valid_from": "2026-01-01",
+    "valid_to": "2026-12-31",
+    "value_type": "money",
+    "value_num": 3.74,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 7.31,
+      "threshold_amount_eur": 3.74
+    }
+  },
+  {
+    "fact_key": "disability_reduced_capacity_deduction",
+    "category": "payroll",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Годишно данъчно облекчение по ЗДДФЛ за лица с 50 и над 50% намалена работоспособност (намаление на годишната данъчна основа; месечно 660 лв. / 337.45 евро)",
+    "label_en": "Annual PIT relief for persons with 50%+ reduced work capacity (reduction of the annual tax base; 660 BGN / 337.45 EUR monthly)",
+    "source_url": "https://lex.bg/laws/ldoc/2135533201",
+    "valid_from": "2026-01-01",
+    "value_type": "money",
+    "value_num": 4049.43,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 7920,
+      "threshold_amount_eur": 4049.43
+    }
+  },
+  {
+    "fact_key": "cash_payment_limit",
+    "category": "cash_restrictions",
+    "variant": "standard",
+    "legal_year": 2026,
+    "label_bg": "Праг по Закона за ограничаване на плащанията в брой — плащания на или над тази стойност се извършват само по банков път; законът продължава да реферира към 10 000 лв. и след въвеждането на еврото",
+    "label_en": "Threshold under the Law on Limiting Cash Payments — payments equal to or above it must be made by bank transfer; the law still references 10,000 BGN after euro adoption",
+    "source_url": "https://lex.bg/bg/laws/ldoc/2135718725",
+    "valid_from": "2016-01-01",
+    "value_type": "money",
+    "value_num": 5112.92,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 10000,
+      "threshold_amount_eur": 5112.92
+    }
+  },
+  {
+    "fact_key": "enterprise_category_assets",
+    "category": "enterprise_category",
+    "variant": "micro",
+    "legal_year": 2026,
+    "label_bg": "Микропредприятие — горна граница на балансовата стойност на активите (Закон за счетоводството, прагове в сила от 2024 г.)",
+    "label_en": "Micro-enterprise — upper limit of book value of assets (Accountancy Act, thresholds in force from 2024)",
+    "source_url": "https://accountancybulgaria.com/bulgarian-accounting-act/",
+    "valid_from": "2024-07-06",
+    "value_type": "money",
+    "value_num": 460162.69,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 900000,
+      "threshold_amount_eur": 460162.69
+    }
+  },
+  {
+    "fact_key": "enterprise_category_net_sales",
+    "category": "enterprise_category",
+    "variant": "micro",
+    "legal_year": 2026,
+    "label_bg": "Микропредприятие — горна граница на нетните приходи от продажби",
+    "label_en": "Micro-enterprise — upper limit of net sales revenue",
+    "source_url": "https://accountancybulgaria.com/bulgarian-accounting-act/",
+    "valid_from": "2024-07-06",
+    "value_type": "money",
+    "value_num": 920325.38,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 1800000,
+      "threshold_amount_eur": 920325.38
+    }
+  },
+  {
+    "fact_key": "enterprise_category_headcount",
+    "category": "enterprise_category",
+    "variant": "micro",
+    "legal_year": 2026,
+    "label_bg": "Микропредприятие — горна граница на средната численост на персонала",
+    "label_en": "Micro-enterprise — upper limit of average number of employees",
+    "source_url": "https://accountancybulgaria.com/bulgarian-accounting-act/",
+    "valid_from": "2024-07-06",
+    "value_type": "count",
+    "value_num": 10,
+    "extra": {
+      "threshold_count": 10
+    }
+  },
+  {
+    "fact_key": "enterprise_category_assets",
+    "category": "enterprise_category",
+    "variant": "small",
+    "legal_year": 2026,
+    "label_bg": "Малко предприятие — горна граница на балансовата стойност на активите",
+    "label_en": "Small enterprise — upper limit of book value of assets",
+    "source_url": "https://accountancybulgaria.com/bulgarian-accounting-act/",
+    "valid_from": "2024-07-06",
+    "value_type": "money",
+    "value_num": 5112919.78,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 10000000,
+      "threshold_amount_eur": 5112919.78
+    }
+  },
+  {
+    "fact_key": "enterprise_category_net_sales",
+    "category": "enterprise_category",
+    "variant": "small",
+    "legal_year": 2026,
+    "label_bg": "Малко предприятие — горна граница на нетните приходи от продажби",
+    "label_en": "Small enterprise — upper limit of net sales revenue",
+    "source_url": "https://accountancybulgaria.com/bulgarian-accounting-act/",
+    "valid_from": "2024-07-06",
+    "value_type": "money",
+    "value_num": 10225839.57,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 20000000,
+      "threshold_amount_eur": 10225839.57
+    }
+  },
+  {
+    "fact_key": "enterprise_category_headcount",
+    "category": "enterprise_category",
+    "variant": "small",
+    "legal_year": 2026,
+    "label_bg": "Малко предприятие — горна граница на средната численост на персонала",
+    "label_en": "Small enterprise — upper limit of average number of employees",
+    "source_url": "https://accountancybulgaria.com/bulgarian-accounting-act/",
+    "valid_from": "2024-07-06",
+    "value_type": "count",
+    "value_num": 50,
+    "extra": {
+      "threshold_count": 50
+    }
+  },
+  {
+    "fact_key": "enterprise_category_assets",
+    "category": "enterprise_category",
+    "variant": "medium",
+    "legal_year": 2026,
+    "label_bg": "Средно предприятие — горна граница на балансовата стойност на активите (над нея предприятието е голямо)",
+    "label_en": "Medium enterprise — upper limit of book value of assets (above it, the enterprise is large)",
+    "source_url": "https://accountancybulgaria.com/bulgarian-accounting-act/",
+    "valid_from": "2024-07-06",
+    "value_type": "money",
+    "value_num": 25564598.92,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 50000000,
+      "threshold_amount_eur": 25564598.92
+    }
+  },
+  {
+    "fact_key": "enterprise_category_net_sales",
+    "category": "enterprise_category",
+    "variant": "medium",
+    "legal_year": 2026,
+    "label_bg": "Средно предприятие — горна граница на нетните приходи от продажби (над нея предприятието е голямо)",
+    "label_en": "Medium enterprise — upper limit of net sales revenue (above it, the enterprise is large)",
+    "source_url": "https://accountancybulgaria.com/bulgarian-accounting-act/",
+    "valid_from": "2024-07-06",
+    "value_type": "money",
+    "value_num": 51129197.85,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 100000000,
+      "threshold_amount_eur": 51129197.85
+    }
+  },
+  {
+    "fact_key": "enterprise_category_headcount",
+    "category": "enterprise_category",
+    "variant": "medium",
+    "legal_year": 2026,
+    "label_bg": "Средно предприятие — горна граница на средната численост на персонала (над нея предприятието е голямо)",
+    "label_en": "Medium enterprise — upper limit of average number of employees (above it, the enterprise is large)",
+    "source_url": "https://accountancybulgaria.com/bulgarian-accounting-act/",
+    "valid_from": "2024-07-06",
+    "value_type": "count",
+    "value_num": 250,
+    "extra": {
+      "threshold_count": 250
+    }
+  },
+  {
+    "fact_key": "mandatory_audit_threshold_assets",
+    "category": "audit",
+    "variant": "small_enterprise",
+    "legal_year": 2026,
+    "label_bg": "Праг за задължителен независим финансов одит — балансова стойност на активите (малки предприятия подлежат на одит при надвишаване на поне два от трите прага; средните и големите предприятия се одитират винаги)",
+    "label_en": "Mandatory independent financial audit threshold — book value of assets (small enterprises are audited if they exceed at least two of the three thresholds; medium and large enterprises are always audited)",
+    "source_url": "https://www.innovires.com/en/blog/annual-financial-statements-bulgaria.html",
+    "valid_from": "2024-07-06",
+    "value_type": "money",
+    "value_num": 1022583.96,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 2000000,
+      "threshold_amount_eur": 1022583.96
+    }
+  },
+  {
+    "fact_key": "mandatory_audit_threshold_net_sales",
+    "category": "audit",
+    "variant": "small_enterprise",
+    "legal_year": 2026,
+    "label_bg": "Праг за задължителен независим финансов одит — нетни приходи от продажби",
+    "label_en": "Mandatory independent financial audit threshold — net sales revenue",
+    "source_url": "https://www.innovires.com/en/blog/annual-financial-statements-bulgaria.html",
+    "valid_from": "2024-07-06",
+    "value_type": "money",
+    "value_num": 2045167.91,
+    "unit": "EUR",
+    "extra": {
+      "threshold_amount_bgn": 4000000,
+      "threshold_amount_eur": 2045167.91
+    }
+  },
+  {
+    "fact_key": "mandatory_audit_threshold_headcount",
+    "category": "audit",
+    "variant": "small_enterprise",
+    "legal_year": 2026,
+    "label_bg": "Праг за задължителен независим финансов одит — средна численост на персонала",
+    "label_en": "Mandatory independent financial audit threshold — average number of employees",
+    "source_url": "https://www.innovires.com/en/blog/annual-financial-statements-bulgaria.html",
+    "valid_from": "2024-07-06",
+    "value_type": "count",
+    "value_num": 50,
+    "extra": {
+      "threshold_count": 50
+    }
+  },
+  {
+    "fact_key": "patent_tax_q1",
+    "category": "deadline",
+    "variant": "self_employed",
+    "legal_year": 2026,
+    "label_bg": "Патентен данък - първо тримесечие",
+    "label_en": "Patent Tax - Q1",
+    "source_url": "https://lex.bg/laws/ldoc/2134174720",
+    "extra": {
+      "due_day": 2,
+      "due_month": 2
+    },
+    "value_type": "annual_date",
+    "value_text": "02-02"
+  },
+  {
+    "fact_key": "annual_pit_return_early_filing",
+    "category": "deadline",
+    "variant": "individual",
+    "legal_year": 2026,
+    "label_bg": "Годишна данъчна декларация с 5% отстъпка",
+    "label_en": "Annual PIT Return with 5% discount",
+    "source_url": "https://nra.bg/bg/page/13",
+    "extra": {
+      "due_day": 31,
+      "due_month": 3
+    },
+    "value_type": "annual_date",
+    "value_text": "03-31"
+  },
+  {
+    "fact_key": "cit_advance_quarterly_q1",
+    "category": "deadline",
+    "variant": "corporate",
+    "legal_year": 2026,
+    "label_bg": "Авансова вноска по ЗКПО (Q1)",
+    "label_en": "Advance CIT Payment (Q1)",
+    "source_url": "https://nra.bg/bg/page/14",
+    "extra": {
+      "due_day": 15,
+      "due_month": 4
+    },
+    "value_type": "annual_date",
+    "value_text": "04-15"
+  },
+  {
+    "fact_key": "annual_pit_return_filing",
+    "category": "deadline",
+    "variant": "individual",
+    "legal_year": 2026,
+    "label_bg": "Годишна данъчна декларация по чл. 50 ЗДДФЛ",
+    "label_en": "Annual PIT Return (Art. 50 PITA)",
+    "source_url": "https://lex.bg/laws/ldoc/2135533201",
+    "extra": {
+      "due_day": 30,
+      "due_month": 4
+    },
+    "value_type": "annual_date",
+    "value_text": "04-30"
+  },
+  {
+    "fact_key": "q1_advance_pit_rental",
+    "category": "deadline",
+    "variant": "individual",
+    "legal_year": 2026,
+    "label_bg": "Авансов данък за доходи от наем (Q1)",
+    "label_en": "Advance PIT on Rental Income (Q1)",
+    "source_url": "https://nra.bg/bg/page/11",
+    "extra": {
+      "due_day": 30,
+      "due_month": 4
+    },
+    "value_type": "annual_date",
+    "value_text": "04-30"
+  },
+  {
+    "fact_key": "patent_tax_q2",
+    "category": "deadline",
+    "variant": "self_employed",
+    "legal_year": 2026,
+    "label_bg": "Патентен данък - второ тримесечие",
+    "label_en": "Patent Tax - Q2",
+    "source_url": "https://lex.bg/laws/ldoc/2134174720",
+    "extra": {
+      "due_day": 30,
+      "due_month": 4
+    },
+    "value_type": "annual_date",
+    "value_text": "04-30"
+  },
+  {
+    "fact_key": "annual_cit_return_filing",
+    "category": "deadline",
+    "variant": "corporate",
+    "legal_year": 2026,
+    "label_bg": "Годишна данъчна декларация по чл. 92 ЗКПО",
+    "label_en": "Annual CIT Return (Art. 92 CITA)",
+    "source_url": "https://lex.bg/laws/ldoc/2135540562",
+    "extra": {
+      "due_day": 30,
+      "due_month": 6
+    },
+    "value_type": "annual_date",
+    "value_text": "06-30"
+  },
+  {
+    "fact_key": "annual_pit_return_sole_trader",
+    "category": "deadline",
+    "variant": "sole_trader",
+    "legal_year": 2026,
+    "label_bg": "Годишна данъчна декларация за ЕТ",
+    "label_en": "Annual PIT Return for Sole Traders",
+    "source_url": "https://nra.bg/bg/page/11",
+    "extra": {
+      "due_day": 30,
+      "due_month": 6
+    },
+    "value_type": "annual_date",
+    "value_text": "06-30"
+  },
+  {
+    "fact_key": "cit_advance_quarterly_q2",
+    "category": "deadline",
+    "variant": "corporate",
+    "legal_year": 2026,
+    "label_bg": "Авансова вноска по ЗКПО (Q2)",
+    "label_en": "Advance CIT Payment (Q2)",
+    "source_url": "https://nra.bg/bg/page/14",
+    "extra": {
+      "due_day": 15,
+      "due_month": 7
+    },
+    "value_type": "annual_date",
+    "value_text": "07-15"
+  },
+  {
+    "fact_key": "q2_advance_pit_rental",
+    "category": "deadline",
+    "variant": "individual",
+    "legal_year": 2026,
+    "label_bg": "Авансов данък за доходи от наем (Q2)",
+    "label_en": "Advance PIT on Rental Income (Q2)",
+    "source_url": "https://nra.bg/bg/page/11",
+    "extra": {
+      "due_day": 31,
+      "due_month": 7
+    },
+    "value_type": "annual_date",
+    "value_text": "07-31"
+  },
+  {
+    "fact_key": "patent_tax_q3",
+    "category": "deadline",
+    "variant": "self_employed",
+    "legal_year": 2026,
+    "label_bg": "Патентен данък - трето тримесечие",
+    "label_en": "Patent Tax - Q3",
+    "source_url": "https://lex.bg/laws/ldoc/2134174720",
+    "extra": {
+      "due_day": 31,
+      "due_month": 7
+    },
+    "value_type": "annual_date",
+    "value_text": "07-31"
+  },
+  {
+    "fact_key": "annual_cit_correction",
+    "category": "deadline",
+    "variant": "corporate",
+    "legal_year": 2026,
+    "label_bg": "Коригираща декларация по ЗКПО",
+    "label_en": "Corrective CIT Return",
+    "source_url": "https://nra.bg/bg/page/14",
+    "extra": {
+      "due_day": 30,
+      "due_month": 9
+    },
+    "value_type": "annual_date",
+    "value_text": "09-30"
+  },
+  {
+    "fact_key": "q3_advance_pit_rental",
+    "category": "deadline",
+    "variant": "individual",
+    "legal_year": 2026,
+    "label_bg": "Авансов данък за доходи от наем (Q3)",
+    "label_en": "Advance PIT on Rental Income (Q3)",
+    "source_url": "https://nra.bg/bg/page/11",
+    "extra": {
+      "due_day": 2,
+      "due_month": 11
+    },
+    "value_type": "annual_date",
+    "value_text": "11-02"
+  },
+  {
+    "fact_key": "patent_tax_q4",
+    "category": "deadline",
+    "variant": "self_employed",
+    "legal_year": 2026,
+    "label_bg": "Патентен данък - четвърто тримесечие",
+    "label_en": "Patent Tax - Q4",
+    "source_url": "https://lex.bg/laws/ldoc/2134174720",
+    "extra": {
+      "due_day": 2,
+      "due_month": 11
+    },
+    "value_type": "annual_date",
+    "value_text": "11-02"
+  },
+  {
+    "fact_key": "cit_advance_quarterly_q3",
+    "category": "deadline",
+    "variant": "corporate",
+    "legal_year": 2026,
+    "label_bg": "Авансова вноска по ЗКПО (Q3)",
+    "label_en": "Advance CIT Payment (Q3)",
+    "source_url": "https://nra.bg/bg/page/14",
+    "extra": {
+      "due_day": 1,
+      "due_month": 12
+    },
+    "value_type": "annual_date",
+    "value_text": "12-01"
+  },
+  {
+    "fact_key": "monthly_vat_return",
+    "category": "deadline",
+    "variant": "vat_registered",
+    "legal_year": 2026,
+    "label_bg": "Справка-декларация по ЗДДС",
+    "label_en": "Monthly VAT Return",
+    "source_url": "https://lex.bg/laws/ldoc/2135533636",
+    "extra": {
+      "due_day": 14
+    },
+    "value_type": "monthly_day",
+    "value_num": 14
+  },
+  {
+    "fact_key": "ssi_monthly_payment",
+    "category": "deadline",
+    "variant": "employer",
+    "legal_year": 2026,
+    "label_bg": "Осигурителни вноски (ДОО, ДЗПО, ЗО)",
+    "label_en": "Social Security Contributions",
+    "source_url": "https://nssi.bg/osiguriavane/osiguritelni-vnoski/srokove/",
+    "extra": {
+      "due_day": 25
+    },
+    "value_type": "monthly_day",
+    "value_num": 25
+  }
+]

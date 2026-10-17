@@ -1,0 +1,86 @@
+# pacod-gw on the platform, part 2: the gateway signs people in through pacod-ap's pacod-id
+# (one sign-in for the app and the console), and pacod-ap's Caddy is the only public edge.
+#
+# Applied after pacod-gw's own files and docker-compose.link.yml by the root Makefile
+# (GW_COMPOSE). Its --env-file is deploy/secrets/gw.env (`make secrets-init`), never
+# pacod-gw/deploy/.env: the client secrets below are the ones pacod-id has in
+# deploy/secrets/id.env, and the generator writes both.
+#
+# What it changes:
+#   - PGW_AUTH=oidc for the core, the console and the tester, with pacod-id's issuer and its
+#     internal listener as pacod-ap names it: http://pacod-id:8071 on pacod-link. The gateway's
+#     compose names its own service "id" (http://id:8071); that service, its database step
+#     and the mailpit of the development file are switched off (profile gw-own-id);
+#   - the gateway's Caddy is switched off (profile gw-own-edge): pacod-ap's Caddy serves the
+#     console, and nothing outside the platform calls the gateway's data plane. Its
+#     management API is never routed;
+#   - Alertmanager is switched off (profile gw-alertmanager): pacod-ap's monitoring is the
+#     only alert owner (plan, Phase 6);
+#   - the console asks the gateway's Prometheus by its pacod-link alias, so it can never reach
+#     pacod-ap's Prometheus by accident.
+#
+# Every `${VAR:?}` below must come from gw.env; compose stops with the variable's name when one
+# is missing. A value set under `environment:` in pacod-gw's own files is replaced here, because
+# `environment:` keys of a later file win (env_file never would).
+
+x-identity: &identity
+  PGW_AUTH: oidc
+  PGW_ID_ISSUER: ${PACOD_ID_ISSUER:-https://id.pacod.io}
+  PGW_ID_INTERNAL_URL: http://pacod-id:8071
+
+services:
+  # Preflight still checks pacod-id's secrets in OIDC mode, for the identity service it
+  # expects next to it. That service is pacod-ap's here, with secrets of its own, so these
+  # three are placeholders that nothing reads. The client secrets are the real ones.
+  preflight:
+    environment:
+      PGW_AUTH: oidc
+      PGW_ID_HOST: ${PACOD_ID_HOST:-id.pacod.io}
+      PGW_ID_ISSUER: ${PACOD_ID_ISSUER:-https://id.pacod.io}
+      PGW_CONSOLE_HOST: ${PGW_CONSOLE_HOST:-console.pacod.io}
+      PGW_CONSOLE_URL: ${PGW_CONSOLE_URL:-https://console.pacod.io}
+      PID_DB_PASSWORD: unused-pacod-id-runs-in-pacod-ap
+      PID_KEK: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      PID_TOKEN_PEPPER: unused-pacod-id-runs-in-pacod-ap-000000
+      PGW_ID_CLIENT_SECRET: ${PGW_ID_CLIENT_SECRET:?run make secrets-init}
+      PGW_UI_CLIENT_SECRET: ${PGW_UI_CLIENT_SECRET:?run make secrets-init}
+      TESTER_ID_CLIENT_SECRET: ${TESTER_ID_CLIENT_SECRET:?run make secrets-init}
+      PGW_UI_SESSION_SECRET: ${PGW_UI_SESSION_SECRET:?run make secrets-init}
+
+  id:
+    profiles: [gw-own-id]
+  id-db:
+    profiles: [gw-own-id]
+  caddy:
+    profiles: [gw-own-edge]
+    depends_on: !override
+      core: { condition: service_healthy }
+  alertmanager:
+    profiles: [gw-alertmanager]
+
+  core:
+    environment:
+      <<: *identity
+      PGW_ID_CLIENT_SECRET: ${PGW_ID_CLIENT_SECRET:?run make secrets-init}
+      PGW_CONSOLE_URL: ${PGW_CONSOLE_URL:-https://console.pacod.io}
+    # Without the gateway's own "id". In OIDC mode the core waits for pacod-id itself
+    # (management calls answer 503 identity_unavailable until it does).
+    depends_on: !override
+      preflight: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+
+  ui:
+    environment:
+      <<: *identity
+      PGW_UI_CLIENT_SECRET: ${PGW_UI_CLIENT_SECRET:?run make secrets-init}
+      PGW_UI_SESSION_SECRET: ${PGW_UI_SESSION_SECRET:?run make secrets-init}
+      PGW_CONSOLE_URL: ${PGW_CONSOLE_URL:-https://console.pacod.io}
+      PROMETHEUS_URL: http://gw-prometheus:9090
+      GRAFANA_URL: ${PGW_GRAFANA_URL:-}
+
+  tester:
+    environment:
+      PGW_AUTH: oidc
+      PGW_ID_INTERNAL_URL: http://pacod-id:8071
+      TESTER_ID_CLIENT_SECRET: ${TESTER_ID_CLIENT_SECRET:?run make secrets-init}

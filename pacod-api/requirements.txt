@@ -1,0 +1,13 @@
+# Full runtime deps for the PDF-capable images = slim base + heavy ML extras.
+#
+# marker-pdf pulls torch + triton + the nvidia CUDA wheels (multi-GB) and is used
+# ONLY by the ingestion pipeline (ingestion/parser.py, a lazy function-scoped import).
+# Slim images that never do PDF work — e.g. newsletter-worker — install
+# requirements-base.txt instead, so torch is not baked into them.
+#
+# Add new *shared* dependencies to requirements-base.txt (not here) so every image
+# picks them up; keep only PDF/ML-specific packages below.
+-r requirements-base.txt
+
+# Deep-learning PDF→markdown converter (pulls torch/triton); ingestion images only.
+marker-pdf>=1.10,<2.0

@@ -1,0 +1,189 @@
+{
+ "case": "ok_stream_thinking",
+ "note": "reasoning deltas, then text, then usage with cost",
+ "request": {
+  "model": "anthropic/claude-sonnet-5-5",
+  "max_tokens": 2048,
+  "messages": [
+   {
+    "role": "user",
+    "content": "hello"
+   }
+  ],
+  "gateway": {
+   "trace_id": "fixture",
+   "tags": {
+    "purpose": "synthesizer"
+   }
+  },
+  "stream": true,
+  "stream_options": {
+   "include_usage": true
+  },
+  "thinking": {
+   "type": "adaptive",
+   "display": "summarized"
+  }
+ },
+ "status": 200,
+ "headers": {
+  "content-type": "text/event-stream"
+ },
+ "body": [
+  {
+   "id": "msg_mockfa273cc25e5075ae",
+   "object": "chat.completion.chunk",
+   "created": 1792144130,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [
+    {
+     "index": 0,
+     "delta": {
+      "role": "assistant",
+      "content": ""
+     },
+     "finish_reason": null
+    }
+   ]
+  },
+  {
+   "id": "msg_mockfa273cc25e5075ae",
+   "object": "chat.completion.chunk",
+   "created": 1792144130,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [
+    {
+     "index": 0,
+     "delta": {
+      "reasoning_content": "thinking"
+     },
+     "finish_reason": null
+    }
+   ]
+  },
+  {
+   "id": "msg_mockfa273cc25e5075ae",
+   "object": "chat.completion.chunk",
+   "created": 1792144130,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [
+    {
+     "index": 0,
+     "delta": {
+      "reasoning_content": " about:"
+     },
+     "finish_reason": null
+    }
+   ]
+  },
+  {
+   "id": "msg_mockfa273cc25e5075ae",
+   "object": "chat.completion.chunk",
+   "created": 1792144130,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [
+    {
+     "index": 0,
+     "delta": {
+      "reasoning_content": " hello"
+     },
+     "finish_reason": null
+    }
+   ]
+  },
+  {
+   "id": "msg_mockfa273cc25e5075ae",
+   "object": "chat.completion.chunk",
+   "created": 1792144130,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [
+    {
+     "index": 0,
+     "delta": {
+      "provider_specific_fields": {
+       "thinking_blocks": [
+        {
+         "type": "thinking",
+         "thinking": "thinking about: hello",
+         "signature": "PdHWuVrUxa891da5Wtiuhj3L1rla0FoBPc/WuVrUQtg9xda5WsvuUz3H1rlazHEq"
+        }
+       ]
+      }
+     },
+     "finish_reason": null
+    }
+   ]
+  },
+  {
+   "id": "msg_mockfa273cc25e5075ae",
+   "object": "chat.completion.chunk",
+   "created": 1792144130,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [
+    {
+     "index": 0,
+     "delta": {
+      "content": "echo:"
+     },
+     "finish_reason": null
+    }
+   ]
+  },
+  {
+   "id": "msg_mockfa273cc25e5075ae",
+   "object": "chat.completion.chunk",
+   "created": 1792144130,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [
+    {
+     "index": 0,
+     "delta": {
+      "content": " hello"
+     },
+     "finish_reason": null
+    }
+   ]
+  },
+  {
+   "id": "msg_mockfa273cc25e5075ae",
+   "object": "chat.completion.chunk",
+   "created": 1792144130,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [
+    {
+     "index": 0,
+     "delta": {
+      "provider_specific_fields": {
+       "native_finish_reason": "end_turn"
+      }
+     },
+     "finish_reason": "stop"
+    }
+   ]
+  },
+  {
+   "id": "msg_mockfa273cc25e5075ae",
+   "object": "chat.completion.chunk",
+   "created": 1792144130,
+   "model": "anthropic/claude-sonnet-5-5",
+   "choices": [],
+   "usage": {
+    "prompt_tokens": 42,
+    "completion_tokens": 9,
+    "total_tokens": 51,
+    "prompt_tokens_details": {
+     "cached_tokens": 40
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 0
+    },
+    "cost": {
+     "amount": 0.000102,
+     "currency": "USD",
+     "price_version": 1
+    }
+   }
+  },
+  "[DONE]"
+ ]
+}

@@ -1,0 +1,272 @@
+# docker-compose.local.yml — LOCAL TEST OVERLAY. Never deploy this.
+#
+#   make up-local     (== docker compose -f docker-compose.yml -f docker-compose.local.yml \
+#                          --profile cpu --profile tools --profile ui up -d --build)
+#
+# The committed docker-compose.yml targets the server: it bind-mounts host paths
+# under /data/** (logs, Caddy certs/state, Qdrant storage, Open-WebUI data) that
+# do not exist on a laptop — and on macOS Docker Desktop cannot be created,
+# because /data is outside the File Sharing list. Every such mount is redirected
+# here to a NAMED VOLUME, which is host-agnostic and needs no configuration.
+#
+# It also swaps the production Caddyfile for docker/caddy/Caddyfile.local (plain
+# HTTP on ports instead of TLS on real hostnames — see that file's header) and
+# publishes the edge on high ports so a local Postgres/nginx doesn't collide.
+#
+#   http://localhost:8080   main shell (chat + admin console)
+#   http://127.0.0.1:8070   pacod-id, the issuer        (sign-in, accounts)
+#   http://127.0.0.1:13000  the gateway console         (needs `make gw-up`)
+#   http://127.0.0.1:8025   mailpit: pacod-id's mail    (nothing leaves the laptop)
+#   http://localhost:3000   Open-WebUI                  (tools profile)
+#   http://localhost:3001   admin-api direct            (from the base compose)
+#   http://localhost:8081   Adminer                     (tools profile)
+#   http://localhost:6333   Qdrant dashboard            (from the base compose)
+#   localhost:15432         Postgres                    (remapped from 5432)
+#
+# `!override` replaces a list instead of appending to it. Without it Compose
+# would CONCATENATE ports (leaving 80/443 published) and keep the certs mount
+# pointing at a path that does not exist.
+#
+# ---------------------------------------------------------------------------
+# NOTE ON docker-compose.override.yml
+# Compose auto-loads docker-compose.override.yml ONLY when no explicit -f is
+# passed. The local targets pass -f, so that file is NOT read during a local
+# run. Everything it did (redirecting the api / admin-api log mounts) is
+# reproduced below, for every affected service rather than just those two.
+# ---------------------------------------------------------------------------
+
+services:
+  caddy:
+    # Production publishes 80/443/3000. Locally the edge moves to high ports so
+    # it can run without privileges and next to whatever else owns :80.
+    ports: !override
+      - "8080:8080"
+      - "3000:3000"
+      # pacod-id's public listener and the gateway console, on the addresses their
+      # configuration names (pacod-id.local.toml): loopback only, as in pacod-gw's own dev
+      # stack. 127.0.0.1, not localhost, so their cookies never meet the app's (cookies
+      # ignore ports, not host names).
+      - "127.0.0.1:8070:8070"
+      - "127.0.0.1:13000:13000"
+    volumes: !override
+      - ./docker/caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log
+      # NB: no /etc/caddy/certs mount — Caddyfile.local terminates no TLS.
+
+  # NB: the frontend deliberately gets NO `env_file` here. In production they
+  # receive only the handful of variables listed in their compose `environment:`
+  # block — handing them the backend `.env` would put the database password,
+  # APP_SECRETS_KEY and the search and SMTP credentials inside a public-facing Node
+  # process that has no use for them. Local overrides for these go through ${LOCAL_*}
+  # interpolation instead, which is why those live in .env.local *and* are read
+  # via --env-file.
+  frontend:
+    environment:
+      # The public origin as the BROWSER sees it. Production points this at
+      # ai.pacod.io, which is not running here.
+      OPENWEBUI_URL: ${LOCAL_OPENWEBUI_URL:-http://localhost:3000}
+      # Canonical/OG URLs must name the origin the browser actually used, or
+      # every link preview and canonical points at production from a laptop.
+      SITE_URL: ${LOCAL_PACOD_SITE_URL:-http://localhost:8080}
+      # Two things this off switch buys locally: robots.txt becomes a blanket
+      # `Disallow: /`, and the sitemap comes back empty — so a tunnelled or
+      # accidentally-exposed local stack cannot be crawled.
+      SITE_INDEXING_ENABLED: ${LOCAL_PACOD_SITE_INDEXING_ENABLED:-false}
+      # Blank every ad/measurement id, verification token and IndexNow key so a
+      # local click never fires a real pixel, pollutes production conversion
+      # data, or claims ownership of a production domain. The `:-` defaults in
+      # the base compose would otherwise pass whatever is in `.env` straight
+      # through. Keep this list in step with the base compose: a key missing
+      # here is a key that leaks into local runs.
+      GOOGLE_SITE_VERIFICATION: ""
+      BING_SITE_VERIFICATION: ""
+      YANDEX_SITE_VERIFICATION: ""
+      PINTEREST_SITE_VERIFICATION: ""
+      FACEBOOK_DOMAIN_VERIFICATION: ""
+      TIKTOK_SITE_VERIFICATION: ""
+      GTM_ID: ""
+      GA_MEASUREMENT_ID: ""
+      GOOGLE_ADS_ID: ""
+      GOOGLE_ADS_CONVERSION_LABEL: ""
+      META_PIXEL_ID: ""
+      META_APP_ID: ""
+      TIKTOK_PIXEL_ID: ""
+      X_PIXEL_ID: ""
+      X_EVENT_IDS: ""
+      YANDEX_METRICA_ID: ""
+      MS_UET_TAG_ID: ""
+      MS_CLARITY_ID: ""
+      PINTEREST_TAG_ID: ""
+      LINKEDIN_PARTNER_ID: ""
+      LINKEDIN_CONVERSION_IDS: ""
+      INDEXNOW_KEY: ""
+      # Crawler tracking stays ON locally — it is how you exercise the feature
+      # with a spoofed User-Agent — but reverse-DNS verification is OFF so a
+      # laptop run makes no outbound DNS queries. Everything a local bot hit
+      # produces therefore lands as `unknown`, which is the honest answer.
+      CRAWLER_VERIFY_ENABLED: ${LOCAL_CRAWLER_VERIFY_ENABLED:-false}
+
+  api:
+    # Production publishes nothing here — the browser only ever reaches the API
+    # through Caddy → SvelteKit. Locally the api is also reachable directly, for
+    # curl and scripts that call it with a dev token.
+    #
+    # Bound to 127.0.0.1 on purpose: it keeps the port — and with it the
+    # dev-token bearer that `.env.local` enables — off the LAN.
+    #
+    # No `!override`: the base compose declares no `ports:` for api, so there is
+    # no list to replace — only ones to append to.
+    ports:
+      - "127.0.0.1:8000:8000"
+    # `.env.local` holds the local-only deltas (APP_ENV, APP_PUBLIC_BASE_URL,
+    # a cheap model, …) and wins over `.env` because it is listed second.
+    # `required: false` keeps the stack starting before you create it.
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    volumes:
+      - api_logs:/srv/logs
+
+  admin-api:
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    volumes:
+      - admin_api_logs:/srv/logs
+
+  ingestion:
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    volumes:
+      - ingestion_logs:/srv/logs
+
+  ingestion-cpu:
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    volumes:
+      - ingestion_cpu_logs:/srv/logs
+
+  improvement-loop:
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    volumes:
+      - improvement_loop_logs:/srv/logs
+
+  improvement-loop-worker:
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    volumes:
+      - improvement_loop_worker_logs:/srv/logs
+
+  newsletter-worker:
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    volumes:
+      - newsletter_worker_logs:/srv/logs
+
+  # The MCP server checks the shared secret the api presents (fails closed), so
+  # it must read the same .env.local the api reads.
+  mcp-server:
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+
+  embeddings:
+    # CPU PyTorch: the server image's ROCm wheel has no arm64 build (Apple
+    # Silicon) and no laptop here has an AMD GPU anyway.
+    build:
+      args:
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cpu
+    environment:
+      # `auto` probes for CUDA/ROCm, which no laptop here has. Pin cpu so the
+      # first boot doesn't spend time discovering that.
+      EMBEDDINGS_DEVICE: cpu
+      # bge-m3 is the real embedder and the default here, so local retrieval
+      # behaves like production — at the cost of a ~2 GB model download on the
+      # first `up` (cached in the hf_cache volume afterwards) and slow CPU
+      # inference. Set LOCAL_EMBEDDINGS_BACKEND=hash in .env.local for a stack
+      # that boots in seconds — but be aware that hash embeddings are random
+      # projections: KB retrieval returns nonsense, so it is only useful for
+      # testing paths that don't depend on retrieval quality (auth, quotas,
+      # admin CRUD).
+      EMBEDDINGS_BACKEND: ${LOCAL_EMBEDDINGS_BACKEND:-bge}
+
+  qdrant:
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  postgres:
+    # 5432 collides with a locally installed Postgres more often than not.
+    ports: !override
+      - "127.0.0.1:15432:5432"
+
+  pacod-id:
+    environment:
+      # The addresses the browser uses here; pacod-id.local.toml adds the development client
+      # gw-smoke for `make gw-smoke`.
+      PACOD_ID_ISSUER: http://127.0.0.1:8070
+      PACOD_PUBLIC_URL: http://localhost:8080
+      PGW_CONSOLE_URL: http://127.0.0.1:13000
+      # Local mail goes to mailpit (http://127.0.0.1:8025), never to a real server — whatever
+      # deploy/secrets/id.env says.
+      PID_SMTP_HOST: mailpit
+      PID_SMTP_PORT: "1025"
+      PID_SMTP_TLS: none
+      PID_SMTP_USERNAME: ""
+      PID_SMTP_PASSWORD: ""
+      PID_EMAIL_FROM_ADDRESS: id@pacod.local.invalid
+      PID_EMAIL_FROM_NAME: PACOD (local)
+      PID_LOG_FORMAT: text
+    volumes: !override
+      - ./docker/pacod-id/pacod-id.local.toml:/etc/pacod-id/pacod-id.toml:ro
+    # The internal listener on loopback only, for `make id-bootstrap` on this machine (it is
+    # never routed: the admin API and the client-authenticated calls live there).
+    ports:
+      - "127.0.0.1:8071:8071"
+    depends_on:
+      mailpit:
+        condition: service_started
+
+  # pacod-id's mail in development; its web page on http://127.0.0.1:8025.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: pacod-mailpit
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    ports:
+      - "127.0.0.1:8025:8025"
+    networks:
+      - agent-net
+
+  open-webui:
+    volumes:
+      - open_webui_data:/app/backend/data
+      - open_webui_logs:/var/log/openwebui
+
+volumes:
+  caddy_data:
+  caddy_config:
+  caddy_logs:
+  api_logs:
+  admin_api_logs:
+  ingestion_logs:
+  ingestion_cpu_logs:
+  improvement_loop_logs:
+  improvement_loop_worker_logs:
+  newsletter_worker_logs:
+  open_webui_logs:

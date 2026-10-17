@@ -1,0 +1,107 @@
+# The relocatable monitoring SERVER: Prometheus + Alertmanager + Grafana.
+#
+# Same-instance (default): joins the app's external `agent-net`, scrapes app +
+#   exporters by Docker DNS, and `pacod-link` for the LLM gateway (gw-core:9100,
+#   pacod-gw's own Prometheus series). UIs bound to 127.0.0.1 (tunnel in, or rebind).
+#   This is the platform's one alerting stack: the gateway's rules are evaluated here
+#   (prometheus/alerts/gw.rules.yml), its dashboards are in Grafana's "pacod-gw" folder.
+#   Image versions follow pacod-gw's (its dashboards are made for Grafana 13).
+# Separate-instance (future): run this file on its own host WITHOUT agent-net,
+#   set the *_TARGET vars in .env to the app host's published ports, and drop the
+#   `networks` blocks below. See README.
+name: pacod-monitoring
+
+networks:
+  agent-net:
+    external: true
+  # Shared with the gateway stack (made by the root `make ensure-pacod-link`).
+  pacod-link:
+    external: true
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    container_name: pacod-prometheus
+    restart: unless-stopped
+    # Render prometheus.yml from the template (envsubst-free, busybox sed) then exec.
+    entrypoint: ["/bin/sh", "/etc/prometheus/entrypoint.sh"]
+    environment:
+      API_TARGET: "${API_TARGET:-api:8000}"
+      ADMIN_API_TARGET: "${ADMIN_API_TARGET:-admin-api:8000}"
+      MCP_TARGET: "${MCP_TARGET:-mcp-server:8000}"
+      EMBEDDINGS_TARGET: "${EMBEDDINGS_TARGET:-embeddings:8080}"
+      INGESTION_TARGET: "${INGESTION_TARGET:-ingestion:8000}"
+      CADDY_TARGET: "${CADDY_TARGET:-caddy:9180}"
+      FRONTEND_TARGET: "${FRONTEND_TARGET:-frontend:3000}"
+      QDRANT_TARGET: "${QDRANT_TARGET:-qdrant:6333}"
+      # The LLM gateway's core and the platform's identity provider.
+      GW_CORE_TARGET: "${GW_CORE_TARGET:-gw-core:9100}"
+      PACOD_ID_TARGET: "${PACOD_ID_TARGET:-pacod-id:9170}"
+      POSTGRES_EXPORTER_TARGET: "${POSTGRES_EXPORTER_TARGET:-postgres-exporter:9187}"
+      PGBOUNCER_EXPORTER_TARGET: "${PGBOUNCER_EXPORTER_TARGET:-pgbouncer-exporter:9127}"
+      REDIS_EXPORTER_TARGET: "${REDIS_EXPORTER_TARGET:-redis-exporter:9121}"
+      NODE_EXPORTER_TARGET: "${NODE_EXPORTER_TARGET:-node-exporter:9100}"
+      CADVISOR_TARGET: "${CADVISOR_TARGET:-cadvisor:8080}"
+    volumes:
+      - ./prometheus/prometheus.yml.tpl:/etc/prometheus/prometheus.yml.tpl:ro
+      - ./prometheus/entrypoint.sh:/etc/prometheus/entrypoint.sh:ro
+      - ./prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    ports:
+      # Not 9090 on the host: that port is often taken by another service.
+      - "127.0.0.1:${PROMETHEUS_PORT:-9095}:9090"
+    networks:
+      agent-net: {}
+      # On pacod-link the gateway's own Prometheus is also a "prometheus"; this one
+      # answers there as pacod-prometheus.
+      pacod-link:
+        aliases: [pacod-prometheus]
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1
+    container_name: pacod-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"
+    networks: [agent-net]
+
+  grafana:
+    image: grafana/grafana:13.2.3
+    container_name: pacod-grafana
+    restart: unless-stopped
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GF_SECURITY_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GF_SECURITY_ADMIN_PASSWORD:-changeme}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Served publicly behind Caddy at https://www.pacod.io/monitoring (see the
+      # /monitoring handle in pacod-api/docker/caddy/Caddyfile). Grafana must emit
+      # its asset/redirect URLs under that sub-path; Caddy does NOT strip the prefix.
+      GF_SERVER_ROOT_URL: "${GF_SERVER_ROOT_URL:-https://www.pacod.io/monitoring/}"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Embedded in the admin console at /metrics (an iframe on www.pacod.io).
+      # ALLOW_EMBEDDING removes Grafana's anti-framing headers; anonymous Viewer
+      # lets the same-origin iframe render dashboards without a separate Grafana
+      # login. Access is gated upstream by Caddy forward_auth (admins only) — see
+      # the /monitoring handle in pacod-api/docker/caddy/Caddyfile. The admin
+      # login below still works for editing.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
+      GF_SECURITY_COOKIE_SAMESITE: "lax"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      # pacod-gw's dashboards, vendored unchanged (datasource uid "prometheus").
+      - ./grafana/dashboards-gw:/var/lib/grafana/dashboards-gw:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3300}:3000"
+    networks: [agent-net]

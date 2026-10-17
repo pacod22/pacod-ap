@@ -1,0 +1,552 @@
+{
+  "uid": "pacod-usage",
+  "title": "pacod — Usage (sites, agents, LLM)",
+  "tags": [
+    "pacod",
+    "usage",
+    "llm"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "label": "Site",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(llm_requests_total, site)",
+        "query": {
+          "query": "label_values(llm_requests_total, site)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0
+      },
+      {
+        "name": "profile",
+        "label": "Profile",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(llm_requests_total, profile)",
+        "query": {
+          "query": "label_values(llm_requests_total, profile)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Where the rest of the usage data lives",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Aggregate, label-level usage only.** Per-user usage, page views and dwell time live in the admin console **Analytics** page (Postgres), not in Prometheus.\n\n**Worker-side LLM usage is missing here.** The improvement loop, newsletter worker and price refresh run in processes Prometheus does not scrape, so their `site=\"internal\"` calls/tokens/cost appear only partly (whatever runs inside `api`/`admin-api`) — the admin Analytics page has the complete picture. `$site`/`$profile` filter every panel whose series carry those labels (`llm_retries_total` has neither)."
+      }
+    },
+    {
+      "id": 2,
+      "type": "row",
+      "title": "Web",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "panels": []
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Frontend requests (req/s) by site & user type",
+      "description": "pacod_frontend_http_requests_total from the SvelteKit frontend (site label), bots excluded (see the Crawlers dashboard). Only the $site filter applies.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (site, user_type) (rate(pacod_frontend_http_requests_total{user_type!=\"bot\", site=~\"$site\"}[5m]))",
+          "legendFormat": "{{site}} · {{user_type}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Agent requests (req/s) by site",
+      "description": "Completed agent requests per site: chat turns (request_completed), from agent_events_total.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (site) (rate(agent_events_total{event_type=\"request_completed\", site=~\"$site\", profile=~\"$profile\"}[5m]))",
+          "legendFormat": "{{site}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "Agents",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Agent events (events/s) by site, profile & type",
+      "description": "All audit events (request_completed, request_accepted, rejected_*, …) as counted by agent_events_total.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (site, profile, event_type) (rate(agent_events_total{site=~\"$site\", profile=~\"$profile\"}[5m]))",
+          "legendFormat": "{{site}} · {{profile}} · {{event_type}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Chat turns (24h)",
+      "description": "request_completed events over the last 24h.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum(increase(agent_events_total{event_type=\"request_completed\", site=~\"$site\", profile=~\"$profile\"}[24h])) or vector(0))",
+          "legendFormat": "turns"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Rejected requests (24h)",
+      "description": "rejected_* events (guards, quotas, topic guard) over the last 24h.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum(increase(agent_events_total{event_type=~\"rejected_.*\", site=~\"$site\", profile=~\"$profile\"}[24h])) or vector(0))",
+          "legendFormat": "rejected"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "LLM calls (24h)",
+      "description": "Logical LLM calls (after retries), any outcome, over the last 24h.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum(increase(llm_requests_total{site=~\"$site\", profile=~\"$profile\"}[24h])) or vector(0))",
+          "legendFormat": "calls"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "LLM calls",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "LLM calls (calls/s) by site, profile & model",
+      "description": "Logical LLM calls (one per call after retries), all outcomes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (site, profile, model) (rate(llm_requests_total{site=~\"$site\", profile=~\"$profile\"}[5m]))",
+          "legendFormat": "{{site}} · {{profile}} · {{model}}"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "LLM error ratio by model (15m)",
+      "description": "Share of logical calls that ended in error or timeout (after retries).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (model) (rate(llm_requests_total{outcome!=\"ok\", site=~\"$site\", profile=~\"$profile\"}[15m])) / clamp_min(sum by (model) (rate(llm_requests_total{site=~\"$site\", profile=~\"$profile\"}[15m])), 1e-9)",
+          "legendFormat": "{{model}}"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Failed LLM calls per 15m by outcome & model",
+      "description": "Calls that ended in error or timeout. Timeouts are never retried (see LLM_TIMEOUT_SECONDS), so each one here is a user-visible failure.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (outcome, model) (increase(llm_requests_total{outcome!=\"ok\", site=~\"$site\", profile=~\"$profile\"}[15m]))",
+          "legendFormat": "{{outcome}} · {{model}}"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "LLM retries (retries/s) by model & purpose",
+      "description": "Transient failures that were retried (llm_retries_total). This series has no site/profile labels, so the dashboard filters do not apply.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (model, purpose) (rate(llm_retries_total[5m]))",
+          "legendFormat": "{{model}} · {{purpose}}"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "row",
+      "title": "Tokens",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "panels": []
+    },
+    {
+      "type": "text",
+      "title": "LLM tokens and cost: the gateway's",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Tokens, cost, latency and provider errors of every LLM call are recorded by the gateway (pacod-gw): see the **pacod-gw** dashboard folder (Overview, Providers & models, Workspaces) and its console. The panels on this dashboard count what the app itself sees: requests, turns, guard rejections, and LLM call outcomes including client timeouts."
+      },
+      "id": 22
+    },
+    {
+      "id": 19,
+      "type": "row",
+      "title": "Cost (estimated)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 53
+      },
+      "panels": []
+    }
+  ]
+}

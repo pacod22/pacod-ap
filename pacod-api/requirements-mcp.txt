@@ -1,0 +1,12 @@
+# Minimal dependencies for the MCP server only.
+# The mcp-server imports: fastapi, sqlalchemy, asyncpg, structlog, pydantic-settings.
+# Keep this in sync with mcp_server/server.py and the app/core modules it uses.
+
+fastapi==0.139.0
+uvicorn[standard]==0.32.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+structlog==24.4.0
+prometheus-client==0.21.0
