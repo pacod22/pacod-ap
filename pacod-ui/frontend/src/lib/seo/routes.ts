@@ -52,14 +52,12 @@ export function sitemapRoutes(agentSlugs: readonly string[] = AGENT_SLUGS): Site
  * Path prefixes that must never be crawled. Covers the whole `(app)` admin
  * console, pacod-id's sign-in routes (`/auth/`) and the old sign-in addresses
  * that now redirect there, the API/internal surfaces, and the Caddy-owned
- * paths that never reach SvelteKit at all (`/static/*` is Open-WebUI,
- * `/monitoring*` is Grafana).
+ * `/monitoring*` (Grafana), which never reaches SvelteKit at all.
  */
 export const DISALLOWED_PREFIXES = [
 	'/api/',
 	'/internal/',
 	'/auth/',
-	'/static/',
 	'/monitoring',
 	'/login',
 	'/register',

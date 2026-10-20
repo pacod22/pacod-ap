@@ -22,6 +22,7 @@ pacod-ap/
 │                   the improvement loop and newsletter workers, the visual agent editor
 ├── pacod-ui/       SvelteKit: the chat shell and the admin console (a BFF on pacod-id)
 ├── monitoring/     Prometheus, Alertmanager, Grafana (incl. the gateway's dashboards and alerts)
+├── platform/       pacod-ap's shares of the shared configuration: Caddy sites, database, scrape jobs
 ├── deploy/         the gateway's platform overrides and configuration; secrets (gitignored)
 ├── scripts/        bootstrap (gateway, identity), secrets, backup and restore
 └── docs/           RUNBOOK, LLM_GATEWAY, BUILD_YOUR_OWN_AGENT
@@ -29,12 +30,30 @@ pacod-ap/
 
 Three compose stacks, started in this order (`make up-all` does it):
 
-1. **The app** (project `pacod`, `pacod-api/docker-compose.yml`): the services, PostgreSQL 18.6,
-   Redis, Qdrant, Caddy, Open-WebUI — and **pacod-id** with its database (mailpit locally).
-2. **The gateway** (project `pacod-ap-gw`, from a pacod-gw checkout at `GW_DIR`, default
-   `../pacod-gw`, with `deploy/pacod-gw/*.yml`): signs in through the platform's pacod-id; joined
-   to the app over the external network `pacod-link`.
-3. **Monitoring** (optional, `monitoring/`).
+1. **The app** (project `pacod`): `pacod-api/docker-compose.yml`, the app file with pacod-ap's own
+   services (`ap-api`, `ap-frontend`, the workers, `ap-redis`, `ap-pgbouncer`, and the shared
+   `pacod-embeddings`), plus `pacod-api/docker-compose.standalone.yml`, its copies of the shared
+   components: `pacod-caddy`, `pacod-postgres` 18.6 with `pacod-db-init`, `pacod-qdrant`,
+   **`pacod-id`** (and `pacod-mailpit` locally).
+2. **The gateway** (project `pacod-ap-gw`): pacod-gw's app file only, from a pacod-gw checkout at
+   `GW_DIR` (default `../pacod-gw`), with `deploy/pacod-gw/*.yml`. It signs in through the
+   platform's pacod-id, keeps its data in the platform's `pacod-postgres`, and is served by its Caddy.
+3. **Monitoring** (`monitoring/`): `pacod-prometheus`, `pacod-alertmanager`, `pacod-grafana` and
+   the exporters; optional, and started by `make up-all` when `monitoring/.env` exists.
+
+## Shared network
+
+Every container joins one external Docker network, **`pacod-net`**, and has one name on it: the
+compose service key, the container name and the DNS name are the same. Shared components (used by
+more than one product) are named `pacod-*`, everything of pacod-ap's own `ap-*`; volumes follow the
+same rule. Each repository's compose is split in two — the app file (its own services) and the
+standalone file (its copies of the shared components) — so the full stack in **pacod-demo** can
+load the app file and run every shared component once. pacod-ap's shares of the shared
+configuration are under `platform/`: the Caddy sites (`platform/caddy/ap.caddy`), the database
+role and databases (`platform/postgres/ap-db.sh`) and the scrape jobs
+(`platform/prometheus/ap.yml`). The convention is
+[pacod-demo/docs/NETWORK.md](../pacod-demo/docs/NETWORK.md). Every `make up*` target creates the
+network when it is missing (`make ensure-pacod-net`).
 
 ## Requirements
 
@@ -63,7 +82,7 @@ for the full stack (the CPU ingestion image alone is ~10 GB; `LOCAL_EMBEDDINGS_B
 
 ```bash
 make secrets-init          # deploy/secrets/{id,gw,providers}.env — prints names, never values
-make up-all                # app + pacod-id, the gateway (mock providers), its bootstrap, Open-WebUI's account
+make up-all                # app + pacod-id, the gateway (mock providers), its bootstrap
 make bootstrap-local       # schema, the starter agent's facts and corpus
 make smoke-all             # health, a chat turn through the gateway, the gateway's own smoke test
 ```
@@ -74,7 +93,6 @@ make smoke-all             # health, a chat turn through the gateway, the gatewa
 | http://127.0.0.1:8070 | pacod-id (sign-in pages, account) |
 | http://127.0.0.1:13000 | the gateway console (same account) |
 | http://127.0.0.1:8025 | mailpit — every mail pacod-id sends locally |
-| http://localhost:3000 | Open-WebUI (signed in from the app) |
 
 The bootstrap admin is `PID_BOOTSTRAP_ADMIN_EMAIL` in `deploy/secrets/id.env`. Locally the gateway
 answers with its **mock** providers (scripted replies, no cost); real providers, their keys and the
@@ -98,7 +116,7 @@ production layout are in [docs/RUNBOOK.md](docs/RUNBOOK.md#real-providers).
   placeholders ("Example Operator Ltd", `legal@example.com`). Put your own legal entity there; the
   texts are written for an operator registered in Bulgaria, so adapt them if you are elsewhere.
 - **Domains.** The production defaults in the compose files and Caddyfile are `www.pacod.io`,
-  `id.pacod.io`, `console.pacod.io` and `ai.pacod.io`; set `PACOD_SITE_URL`, `PACOD_ID_ISSUER` and
+  `id.pacod.io` and `console.pacod.io`; set `PACOD_SITE_URL`, `PACOD_ID_ISSUER` and
   the other `PACOD_*` values (see `pacod-api/.env.example`) and your own Caddy vhosts.
 - **Account mail and sign-in pages** are pacod-id's: set its SMTP server and sender
   (`PID_SMTP_*`, `PID_EMAIL_FROM_*`) in `deploy/secrets/id.env`. The sign-in pages and mails use

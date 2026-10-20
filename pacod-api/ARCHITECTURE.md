@@ -74,7 +74,7 @@ is a **security boundary**, not a convenience feature.
    Redis cache → env default) makes models, params, web search, directives, prompts, cache, and the
    review process changeable live — keyed by `(profile_id, key)`. `get_settings()` stays a
    startup-cached singleton only for what is genuinely fixed.
-8. **Shared core, separate processes.** `api` and `admin-api` are different containers but import the
+8. **Shared core, separate processes.** `ap-api` and `ap-admin-api` are different containers but import the
    same `app.core.*` / `app.guards.*` — no logic duplication, strong process isolation.
 9. **Fire-and-forget side effects, fail-soft dependencies.** Audit, usage, and debug writes never raise
    into the request path; an unreachable gateway report or quota never blocks a page or a turn.
@@ -87,21 +87,21 @@ is a **security boundary**, not a convenience feature.
 
 ```mermaid
 flowchart TB
-    Client[Browser / Open-WebUI / OpenAI-compatible client]
-    Caddy[caddy: TLS + reverse proxy, SSE-aware]
-    FE[frontend: SvelteKit BFF - chat picker + admin pages]
-    API[api: chat API + LangGraph agent]
-    ADM[admin-api: CRUD + store mgmt + config + profiles]
-    ING[ingestion / ingestion-cpu]
-    MCP[mcp-server: reference facts]
-    EMB[embeddings: bge-m3 embed + rerank]
+    Client[Browser]
+    Caddy[pacod-caddy: TLS + reverse proxy, SSE-aware]
+    FE[ap-frontend: SvelteKit BFF - chat picker + admin pages]
+    API[ap-api: chat API + LangGraph agent]
+    ADM[ap-admin-api: CRUD + store mgmt + config + profiles]
+    ING[ap-ingestion / ap-ingestion-cpu]
+    MCP[ap-mcp: reference facts]
+    EMB[pacod-embeddings: bge-m3 embed + rerank]
     ID[pacod-id: identity provider]
     GW[pacod-gw: LLM gateway, own compose project]
-    LOOP[improvement-loop-worker: per-profile review]
-    NEWS[newsletter-worker]
-    PG[(postgres via pgbouncer)]
-    RD[(redis)]
-    QD[(qdrant)]
+    LOOP[ap-improvement-loop-worker: per-profile review]
+    NEWS[ap-newsletter-worker]
+    PG[(pacod-postgres via ap-pgbouncer)]
+    RD[(ap-redis)]
+    QD[(pacod-qdrant)]
 
     Client --> Caddy --> FE
     Caddy -->|id vhost| ID
@@ -135,24 +135,30 @@ flowchart TB
 
 | Container | Role | Notes |
 |---|---|---|
-| `caddy` | TLS termination, reverse proxy, SSE buffering off | The only public edge: the app, pacod-id's issuer, the gateway console and Open-WebUI each have a vhost; routes `/api/*` to the SvelteKit `frontend`. |
-| `frontend` | SvelteKit BFF (chat + admin) | Signs people in at pacod-id as the confidential client `pacod-web`, keeps the tokens server-side, sends the access token as the Bearer, and proxies admin paths to `admin-api`, everything else to `api`. Hosts the per-user chat profile picker and the admin global/profile scope selector. |
-| `api` | Chat API + agent runtime | The heart of the system (`app.main:app`); runs the schema pass, seeds the default profile, pushes the app's role catalogue to pacod-id and erases deleted accounts. |
-| `admin-api` | Control plane | CRUD, store management, KB curation, per-profile runtime config, **profile CRUD + user↔profile assignment**, and the facades over pacod-id (accounts, roles) and the gateway (reports, the users' token limit). |
-| `ingestion` / `ingestion-cpu` | Document ingestion pipeline over HTTP | Embeddings over HTTP vs in-process CPU bge-m3; writes into the target profile's collections. |
-| `mcp-server` | Reference-fact tools | `get_fact` / `list_facts` over Postgres, filtered by `profile_id`; shared-token guarded. |
-| `embeddings` | bge-m3 embeddings + bge-reranker cross-encoder | Auto-detects GPU; optional ONNX-INT8 reranker for CPU. Shared by all profiles (same 1024-dim space). |
-| `pacod-id` (+ `pacod-id-db`) | Identity provider | Accounts, hosted sign-in, sessions, role bindings, service tokens; its own database `pacod_id`, reached directly (not through PgBouncer). |
-| pacod-gw (`gw-core`, `gw-console`, …) | LLM gateway | A separate compose project (`pacod-ap-gw`) joined over the external `pacod-link` network: providers, credentials, models, prices, limits, usage reports, its own metrics. |
-| `improvement-loop-worker` | Always-on review engine | Drains the `loop_run_requests` queue and runs the per-profile continuous-improvement loop; fires the daily prunes. |
-| `newsletter-worker` | Always-on newsletter engine | Per-profile collect/send queue + calendar schedules. |
-| `postgres` (+ `pgbouncer`) | Relational source of truth | PostgreSQL 18.6: the app (`pacod`), Open-WebUI (`openwebui`), pacod-id (`pacod_id`). |
-| `redis` | Cache + rate limiting | Request quota + throttle, topic cache, per-profile config/response caches, the frontend's sessions. |
-| `qdrant` | Vector store | One base + `_parents` + curated collection **per profile**; 1024-dim bge-m3 dense, cosine. |
-| `open-webui` | Alternative chat UI | Calls the OpenAI-compatible `/v1` as the `pacod-webui` service account, forwarding the person. |
+| `pacod-caddy` | TLS termination, reverse proxy, SSE buffering off | The only public edge (pacod-ap's site: `platform/caddy/ap.caddy`): the app, pacod-id's issuer and the gateway console each have a vhost; routes `/api/*` to the SvelteKit `ap-frontend`. |
+| `ap-frontend` | SvelteKit BFF (chat + admin) | Signs people in at pacod-id as the confidential client `pacod-web`, keeps the tokens server-side, sends the access token as the Bearer, and proxies admin paths to `ap-admin-api`, everything else to `ap-api`. Hosts the per-user chat profile picker and the admin global/profile scope selector. |
+| `ap-api` | Chat API + agent runtime | The heart of the system (`app.main:app`); runs the schema pass, seeds the default profile, pushes the app's role catalogue to pacod-id and erases deleted accounts. |
+| `ap-admin-api` | Control plane | CRUD, store management, KB curation, per-profile runtime config, **profile CRUD + user↔profile assignment**, and the facades over pacod-id (accounts, roles) and the gateway (reports, the users' token limit). |
+| `ap-ingestion` / `ap-ingestion-cpu` | Document ingestion pipeline over HTTP | Embeddings over HTTP vs in-process CPU bge-m3; writes into the target profile's collections. |
+| `ap-mcp` | Reference-fact tools | `get_fact` / `list_facts` over Postgres, filtered by `profile_id`; shared-token guarded. |
+| `pacod-embeddings` | bge-m3 embeddings + bge-reranker cross-encoder | Auto-detects GPU; optional ONNX-INT8 reranker for CPU. Shared by all profiles (same 1024-dim space). |
+| `pacod-id` (+ `pacod-db-init`) | Identity provider | Accounts, hosted sign-in, sessions, role bindings, service tokens; its own database `pacod_id`, reached directly (not through PgBouncer). |
+| pacod-gw (`pacod-gw`, `gw-console`, …) | LLM gateway | A separate compose project (`pacod-ap-gw`, pacod-gw's app file only) on the shared `pacod-net` network: providers, credentials, models, prices, limits, usage reports, its own metrics. |
+| `ap-improvement-loop-worker` | Always-on review engine | Drains the `loop_run_requests` queue and runs the per-profile continuous-improvement loop; fires the daily prunes. |
+| `ap-newsletter-worker` | Always-on newsletter engine | Per-profile collect/send queue + calendar schedules. |
+| `pacod-postgres` (+ `ap-pgbouncer`) | Relational source of truth | PostgreSQL 18.6: the app (`pacod`), pacod-id (`pacod_id`). |
+| `ap-redis` | Cache + rate limiting | Request quota + throttle, topic cache, per-profile config/response caches, the frontend's sessions. |
+| `pacod-qdrant` | Vector store | One base + `_parents` + curated collection **per profile**; 1024-dim bge-m3 dense, cosine. |
 
-The repo root holds `pacod-api/` (this directory), `pacod-ui/` (SvelteKit), `monitoring/`, `deploy/`
-and `scripts/`; the gateway is a sibling checkout (`../pacod-gw`).
+Names follow the shared convention (pacod-demo/docs/NETWORK.md): `pacod-*` for the shared
+components (`pacod-caddy`, `pacod-postgres`, `pacod-qdrant`, `pacod-embeddings`, `pacod-id`), `ap-*`
+for pacod-ap's own; service key = container name = DNS name on the one network `pacod-net`.
+`docker-compose.yml` (the app file) holds the `ap-*` services and `pacod-embeddings`;
+`docker-compose.standalone.yml` holds pacod-ap's copies of the other shared components.
+
+The repo root holds `pacod-api/` (this directory), `pacod-ui/` (SvelteKit), `monitoring/`, `deploy/`,
+`platform/` (pacod-ap's Caddy, PostgreSQL and Prometheus fragments) and `scripts/`; the gateway is a
+sibling checkout (`../pacod-gw`).
 
 ---
 
@@ -209,8 +215,8 @@ state. Three further isolation guarantees back this up:
    `graph._execute_one_tool`) — `profile_id` and the reference year are never exposed to or filled by
    the planner LLM, so it cannot omit or forge them.
 2. **`GET /v1/models`** (OpenAI-compat) is filtered to the caller's assigned profiles — each profile
-   is exposed as one "model" (its slug) — and every Open-WebUI completion is authorized as the
-   forwarded person, so a user can't reach an unassigned profile through it.
+   is exposed as one "model" (its slug) — and every completion is authorized as its caller against
+   their assignments, so a user can't reach an unassigned profile through it.
 3. **Every per-profile Redis cache key and cache bucket carries the `profile_id`** — config,
    directives, topic classification, response cache, conversation summaries and stats keys are all
    namespaced, so no profile can read another's cached state. (Global config, per-user quota counters
@@ -460,8 +466,8 @@ request (file/url/text) carries a `profile_id`; the service resolves that profil
 upserts there. Packaged sources come from `data/profiles/<id>/`. PDFs use hierarchical parent-child
 ingest on the HTTP-embeddings path (the indexer targets the
 profile's collection); the CPU path uses a flat in-process pipeline. Admin upload/url/text requests
-are **delegated** from `admin-api` to the `ingestion` service over HTTP (forwarding the profile_id) —
-`admin-api` never runs the pipeline in-process. `/drop` is scoped to a profile.
+are **delegated** from `ap-admin-api` to the `ap-ingestion` service over HTTP (forwarding the profile_id) —
+`ap-admin-api` never runs the pipeline in-process. `/drop` is scoped to a profile.
 
 ### Curated knowledge as managed content
 
@@ -517,7 +523,7 @@ enforce "numbers only from these tools."
 ## 9. LLM gateway & model routing
 
 Every LLM call goes through **pacod-gw**, the platform's gateway: an OpenAI-compatible data plane
-(`GATEWAY_URL`/v1) run as its own compose project and reached over the `pacod-link` network. The
+(`GATEWAY_URL`/v1, `http://pacod-gw:8080`) run as its own compose project and reached by name on the shared `pacod-net` network. The
 gateway owns what used to be scattered over the app — provider credentials, the model repository and
 grants, prices, spend and token limits, and the authoritative record of every call (tokens, cost, the
 model actually served, errors) with its own metrics and console. `app/services/llm_client.py`
@@ -611,7 +617,7 @@ change the gateway refuses answers 502 so the admin sees it did not land.
 
 `improvement_loop/` mines each profile's recent conversations for failures and routes each to its
 remediation channel. **Execution model:** the admin "Run now" and the daily scheduler enqueue a
-`loop_run_requests` row (carrying `profile_id`); the always-on **improvement-loop-worker** drains the
+`loop_run_requests` row (carrying `profile_id`); the always-on **ap-improvement-loop-worker** drains the
 queue one at a time and calls `run_loop(profile_id)`. The pipeline (collect → triage → **evidence** →
 analyze → judge/critic → route → **remediate** → persist → **cluster**) runs entirely against that
 profile's conversations, KB (novelty/grounding), and config, and stamps `profile_id` on every
@@ -705,7 +711,7 @@ production streaming path rather than reimplementing it — a parallel copy woul
 testing a different agent) and asserts the expectations against the new answers; a cluster closes only
 when every re-asked question under it passes. It runs in-process in the worker rather than over HTTP,
 because the eval harness's dev-token bearer is rejected outside development and the alternatives were
-minting a service token or coupling the worker to the `api` container. It is off by default: one full
+minting a service token or coupling the worker to the `ap-api` container. It is off by default: one full
 agent turn per case.
 
 **And the loop is itself measured.** Findings carry a reviewer disposition (`useful` / `dismissed` /
@@ -791,8 +797,8 @@ Key tables:
 | `llm_call_errors`, `web_requests`, `page_views`, `crawler_visits`, `user_ip_addresses`, `user_activity` | Analytics and monitoring the gateway cannot provide |
 | `deleted_chat_sessions` | User-hidden chats (audit rows retained) |
 
-pacod-id has its own database (`pacod_id`) in the same server; Open-WebUI has `openwebui`. The
-gateway's Postgres and ClickHouse live in its own stack.
+pacod-id has its own database (`pacod_id`) in the same server. The gateway's Postgres and
+ClickHouse live in its own stack.
 
 ### Qdrant
 
@@ -842,12 +848,13 @@ never blocked. Global settings use the `__global__` profile_id.
   to the API. The API verifies issuer and audience (`pacod-api`), then checks the copy of pacod-id's
   feed: an ended session or a disabled account is refused within seconds. Roles are derived from
   permissions in the app's manifest (`authz/pacod.yaml`, pushed to pacod-id as the `pacod` catalogue):
-  `user`, `admin`, `superuser`, and the `webui_service` role of Open-WebUI's service account.
+  `user`, `admin` and `superuser`.
   `require_auth`/`require_admin`/`require_superuser` gate the routes; `AuthenticatedUser` is a frozen
   dataclass.
-- **Service tokens and forwarded identity.** Open-WebUI calls the API with a pacod-id service token
-  (`pidt_…`); only an account allowed `attribution.forward` may name the person behind a call, through
-  the forwarded user headers, and the call is then authorized, attributed and counted as that person.
+- **Service tokens.** A pacod-id service account calls the API (the OpenAI-compatible `/v1/*`
+  included) with its `pidt_…` token; the call is the service account's own, with the roles of its
+  bindings. A role dropped from the manifest is named in the catalogue push's `migrate`
+  (`identity.RETIRED_ROLES`), so pacod-id removes its bindings instead of refusing the push.
 - **Development tokens have two locks.** `dev-token-<user_id>` (admin + superuser, no password) needs
   `APP_ENV=development` **and** `AUTH_ALLOW_DEV_TOKENS=true`; `APP_ENV` defaults to `development`, so
   one flag would be one curl away from an unauthenticated admin login on any route that reaches the api
@@ -891,7 +898,7 @@ never blocked. Global settings use the `__global__` profile_id.
   (`app/core/metrics.py`: `http_requests_total`, `http_request_duration_seconds`,
   `http_requests_in_progress`, `guard_rejections_total`, and the client-side LLM counters
   `llm_requests_total{outcome}` / `llm_retries_total` plus `agent_events_total`). Tokens and cost are
-  the gateway's own `gw_*` series, scraped from `gw-core:9100` over `pacod-link`; pacod-id is scraped on
+  the gateway's own `gw_*` series, scraped from `pacod-gw:9100` on `pacod-net`; pacod-id is scraped on
   `:9170`. At the edge, **Caddy** exposes its built-in metrics on an internal `:9180` listener (all web
   requests, every vhost), and the **SvelteKit frontend** adds `pacod_frontend_http_requests_total{…,
   user_type}` (registered vs anonymous — the split only it can derive), crawler counters and a
@@ -906,41 +913,44 @@ All write paths are fire-and-forget — they swallow exceptions so telemetry nev
 
 ## 14. Deployment & networking
 
-- **Three stacks.** The app (compose project `pacod`, this directory's `docker-compose.yml`, with
-  pacod-id inside it), the gateway (project `pacod-ap-gw`, run from the gateway's checkout with the
-  platform's overrides in `deploy/pacod-gw/`, which point it at the platform's pacod-id), and the
-  optional monitoring stack. They meet on two external networks: `agent-net` (app + monitoring) and
-  `pacod-link` (the gateway's `gw-core` / `gw-console`, `pacod-id`, the app's gateway clients, Caddy,
-  Prometheus). The repo-root Makefile drives them: `make up-all` (local: app → gateway → gateway
-  bootstrap → Open-WebUI's service account), `make gw-up`, `make gw-bootstrap`, `make id-bootstrap`,
+- **Three stacks.** The app (compose project `pacod`: this directory's `docker-compose.yml`, the app
+  file, plus `docker-compose.standalone.yml` with the shared components, pacod-id among them), the
+  gateway (project `pacod-ap-gw`: pacod-gw's app file only, run from the gateway's checkout with the
+  platform's overrides in `deploy/pacod-gw/`, which point it at the platform's pacod-id, PostgreSQL
+  and Prometheus), and the monitoring stack. Every container joins one external network, `pacod-net`
+  (pacod-demo/docs/NETWORK.md), whose names are unique across the pacod repos, so the full stack
+  (pacod-demo) can load the app file next to the others'. The repo-root Makefile drives them: `make
+  up-all` (local: app → gateway → gateway bootstrap → monitoring), `make gw-up`, `make gw-bootstrap`,
   `make smoke-all`.
 - **Caddy is the only public edge.** It terminates TLS (externally-provisioned certs, `auto_https
-  off`; HTTP → 301 HTTPS) for the app (`www`), pacod-id's issuer (`id`), the gateway console
-  (`console`) and Open-WebUI (`ai`). `/api/*` goes to the SvelteKit `frontend`, which puts the session's
-  access token in `Authorization` and proxies admin paths to `admin-api` (the `ADMIN_PATH_PREFIXES`
-  list), everything else to `api`. pacod-id's internal listener and the gateway's management API are
+  off`; HTTP → 301 HTTPS) for the app (`www`), pacod-id's issuer (`id`) and the gateway console
+  (`console`). `/api/*` goes to the SvelteKit `ap-frontend`, which puts the session's
+  access token in `Authorization` and proxies admin paths to `ap-admin-api` (the `ADMIN_PATH_PREFIXES`
+  list), everything else to `ap-api`. pacod-id's internal listener and the gateway's management API are
   never routed. Caddy also serves its Prometheus metrics on an internal-only `:9180` listener and 404s
   `/internal/*` at the public edge (keeping the frontend's `/internal/metrics` scrape endpoint off the
   public net — see §13).
-- **docker-compose** wires the app's services; Postgres (18.6) is fronted by **PgBouncer** (session
-  mode) for the app and Open-WebUI, while pacod-id connects directly (it relies on `LISTEN/NOTIFY`). The
-  admin-upload `documents/` directory is a named volume. The **improvement-loop-worker** and
-  **newsletter-worker** run unconditionally (`restart: unless-stopped`).
+- **docker-compose** wires the app's services; Postgres (18.6, `pacod-postgres`) is fronted by
+  **PgBouncer** (`ap-pgbouncer`, session mode) for the app, while pacod-id connects
+  directly (it relies on `LISTEN/NOTIFY`). Roles and databases come from `pacod-db-init`, which runs
+  every `platform/postgres/*-db.sh` at each start (pacod-ap's `ap-db.sh`: the role `pacod`, the
+  database `pacod`, the `bulgarian_simple` text search configuration). The
+  admin-upload `documents/` directory is a named volume (`ap-documents-data`). The **ap-improvement-loop-worker** and
+  **ap-newsletter-worker** run unconditionally (`restart: unless-stopped`).
 - **Secrets.** `make secrets-init` generates pacod-id's and the gateway's secrets into
   `deploy/secrets/{id,gw}.env` (and an empty `providers.env` for the LLM provider keys, read only by the
   gateway bootstrap); `make gw-bootstrap` writes each service's gateway key and admin-api's report and
-  admin tokens into `pacod-api/.env.gateway`; `make id-bootstrap` adds Open-WebUI's service token. All
-  are 0600 and gitignored; `make secret-set` reads a value from stdin and never echoes it. The gateway
+  admin tokens into `pacod-api/.env.gateway`. All are 0600 and gitignored; `make secret-set` reads a value from stdin and never echoes it. The gateway
   keys reach each service by compose interpolation, never as an `env_file`.
 - **Make targets** drive the lifecycle: `make up-cpu/down-cpu/bootstrap/seed-example`, `make
   test-unit/test-integration/eval`, and the repo-root orchestration above.
 - **Backup / restore** — `scripts/backup.sh` (and `make backup`) captures the platform's durable state
-  into one timestamped, `chmod 600` `tar.gz`: `pg_dump`/`pg_dumpall` of `pacod`, `openwebui` and
-  `pacod_id` via `docker compose exec postgres` (never through PgBouncer), a Qdrant REST snapshot of
+  into one timestamped, `chmod 600` `tar.gz`: `pg_dump`/`pg_dumpall` of `pacod` and
+  `pacod_id` via `docker compose exec pacod-postgres` (never through PgBouncer), a Qdrant REST snapshot of
   every collection (`GET /collections` resolves any fine-tune alias to the real name), config + secrets
   (`.env`, `.env.gateway`, `deploy/secrets/`, the pacod-id config, `authz/`, `deploy/pacod-gw/`,
-  compose files, Caddyfiles, monitoring config, `data/`), and the `documents_data` + Open-WebUI data
-  volumes (tarred from inside the containers). It is **online** (uses the running stack, not raw volume
+  compose files, Caddyfiles, monitoring config, `data/`), and the `ap-documents-data`
+  volume (tarred from inside the container). It is **online** (uses the running stack, not raw volume
   copies). The secrets are bundled *with* the dumps on purpose: `APP_SECRETS_KEY` decrypts the
   `provider_secrets` rows and `PID_KEK` pacod-id's, so a dump without them is only partly restorable —
   the archive is a single secret. The gateway's own data is backed up by pacod-gw. `scripts/restore.sh`
@@ -1028,7 +1038,7 @@ tests/                    unit (no external deps; incl. profile isolation/scopin
                           recorded envelopes, the identity guard) + integration
 
 ../deploy/                pacod-gw/ (compose overrides + platform configs), secrets/ (0600, gitignored)
-../scripts/               gw_bootstrap.py, id_bootstrap.py, secrets-init.sh, secret-set.sh, env-init.sh,
+../scripts/               gw_bootstrap.py, secrets-init.sh, secret-set.sh, env-init.sh,
                           smoke_gateway_turn.sh, vendor-pacod-id.sh, backup.sh / restore.sh / lib_backup.sh
 ../monitoring/            Prometheus, Grafana (incl. the gateway's dashboards), Alertmanager
 ```

@@ -7,9 +7,12 @@
 #
 #   deploy/secrets/id.env         pacod-id: KEK, token pepper, database password, the client
 #                                 secrets, the bootstrap admin
-#   deploy/secrets/gw.env         pacod-gw (the --env-file of its compose): its database and
-#                                 ClickHouse passwords, KEK, pepper, internal token, console
-#                                 session secret, and the client secrets it shares with pacod-id
+#   deploy/secrets/gw.env         pacod-gw (the --env-file of its compose): its database role's
+#                                 password (GW_DB_PASSWORD, also read by pacod-ap's
+#                                 pacod-db-init, which makes the role in `make up-all`), its
+#                                 own PostgreSQL's and ClickHouse's passwords, KEK, pepper,
+#                                 internal token, console session secret, and the client
+#                                 secrets it shares with pacod-id
 #   deploy/secrets/providers.env  LLM provider API keys, read only by scripts/gw_bootstrap.py;
 #                                 created empty — fill it with `make secret-set FILE=… NAME=…`
 #
@@ -62,8 +65,9 @@ ensure() { # file name generator...
 # --- pacod-id -----------------------------------------------------------------------------
 ensure "$ID" PID_DB_PASSWORD hex 24
 # Derived, kept in step with the password: compose cannot build it from id.env (interpolation
-# reads only --env-file). The host is the platform's PostgreSQL, never PgBouncer.
-url="postgres://pacod_id:$(get "$ID" PID_DB_PASSWORD)@postgres:5432/pacod_id"
+# reads only --env-file). The host is the platform's PostgreSQL (pacod-postgres), never
+# PgBouncer; an older file's address (host "postgres") is rewritten here.
+url="postgres://pacod_id:$(get "$ID" PID_DB_PASSWORD)@pacod-postgres:5432/pacod_id"
 if [ "$(get "$ID" PID_DATABASE_URL)" != "$url" ]; then
 	put "$ID" PID_DATABASE_URL "$url"
 	added+=("id.env:PID_DATABASE_URL")
@@ -84,6 +88,10 @@ for name in "${SHARED[@]}"; do
 done
 
 # --- pacod-gw -----------------------------------------------------------------------------
+# The role pacod_gw on pacod-postgres (pacod-gw's platform/postgres/gw-db.sh, run by
+# pacod-ap's pacod-db-init) and pacod-gw's DATABASE_URL. Hex: it is part of a URL.
+ensure "$GW" GW_DB_PASSWORD hex 24
+# The superuser of pacod-gw's own PostgreSQL, for its standalone stack and its preflight.
 ensure "$GW" POSTGRES_PASSWORD hex 24
 ensure "$GW" CLICKHOUSE_PASSWORD hex 24
 ensure "$GW" PGW_KEK b64 32

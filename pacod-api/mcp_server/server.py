@@ -31,7 +31,7 @@ def _build_postgres_dsn() -> str:
         return dsn
     user = os.environ.get("POSTGRES_USER", "pacod")
     password = os.environ["POSTGRES_PASSWORD"]
-    host = os.environ.get("POSTGRES_HOST", "pgbouncer")
+    host = os.environ.get("POSTGRES_HOST", "ap-pgbouncer")
     port = os.environ.get("POSTGRES_PORT", "5432")
     db = os.environ.get("POSTGRES_DB", "pacod")
     return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}"
@@ -70,7 +70,7 @@ _SHARED_SECRET = (os.environ.get("MCP_SHARED_SECRET") or "").strip()
 async def require_mcp_token(x_mcp_token: str | None = Header(None)) -> None:
     """Authenticate the agent (X-MCP-Token). FAILS CLOSED.
 
-    Anything on agent-net — the SvelteKit process, Open-WebUI, adminer — could
+    Anything on pacod-net — the SvelteKit process, adminer, another product — could
     otherwise POST an arbitrary profile_id and read any profile's reference
     data. A blank secret denies rather than disables, like the crawler-ingest
     token; compared with hmac.compare_digest so timing leaks nothing. /health

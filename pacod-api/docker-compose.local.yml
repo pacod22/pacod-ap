@@ -1,60 +1,32 @@
-# docker-compose.local.yml — LOCAL TEST OVERLAY. Never deploy this.
+# docker-compose.local.yml — LOCAL TEST OVERLAY of the app file. Never deploy this.
 #
 #   make up-local     (== docker compose -f docker-compose.yml -f docker-compose.local.yml \
+#                          -f docker-compose.standalone.yml -f docker-compose.standalone.local.yml \
 #                          --profile cpu --profile tools --profile ui up -d --build)
 #
 # The committed docker-compose.yml targets the server: it bind-mounts host paths
-# under /data/** (logs, Caddy certs/state, Qdrant storage, Open-WebUI data) that
-# do not exist on a laptop — and on macOS Docker Desktop cannot be created,
-# because /data is outside the File Sharing list. Every such mount is redirected
-# here to a NAMED VOLUME, which is host-agnostic and needs no configuration.
-#
-# It also swaps the production Caddyfile for docker/caddy/Caddyfile.local (plain
-# HTTP on ports instead of TLS on real hostnames — see that file's header) and
-# publishes the edge on high ports so a local Postgres/nginx doesn't collide.
+# under /data/** (logs) that do not exist on a laptop — and on
+# macOS Docker Desktop cannot be created, because /data is outside the File
+# Sharing list. Every such mount is redirected here to a NAMED VOLUME, which is
+# host-agnostic and needs no configuration. The shared components (pacod-caddy,
+# pacod-postgres, pacod-qdrant, pacod-id, pacod-mailpit) get their laptop values
+# from docker-compose.standalone.local.yml: the Caddyfile swapped for
+# docker/caddy/Caddyfile.local, the edge on high ports, Postgres on 15432.
 #
 #   http://localhost:8080   main shell (chat + admin console)
-#   http://127.0.0.1:8070   pacod-id, the issuer        (sign-in, accounts)
-#   http://127.0.0.1:13000  the gateway console         (needs `make gw-up`)
-#   http://127.0.0.1:8025   mailpit: pacod-id's mail    (nothing leaves the laptop)
-#   http://localhost:3000   Open-WebUI                  (tools profile)
-#   http://localhost:3001   admin-api direct            (from the base compose)
+#   http://localhost:3001   ap-admin-api direct         (from the base compose)
 #   http://localhost:8081   Adminer                     (tools profile)
-#   http://localhost:6333   Qdrant dashboard            (from the base compose)
-#   localhost:15432         Postgres                    (remapped from 5432)
-#
-# `!override` replaces a list instead of appending to it. Without it Compose
-# would CONCATENATE ports (leaving 80/443 published) and keep the certs mount
-# pointing at a path that does not exist.
+#   127.0.0.1:8000          ap-api direct               (below)
 #
 # ---------------------------------------------------------------------------
 # NOTE ON docker-compose.override.yml
 # Compose auto-loads docker-compose.override.yml ONLY when no explicit -f is
 # passed. The local targets pass -f, so that file is NOT read during a local
-# run. Everything it did (redirecting the api / admin-api log mounts) is
+# run. Everything it did (redirecting the ap-api / ap-admin-api log mounts) is
 # reproduced below, for every affected service rather than just those two.
 # ---------------------------------------------------------------------------
 
 services:
-  caddy:
-    # Production publishes 80/443/3000. Locally the edge moves to high ports so
-    # it can run without privileges and next to whatever else owns :80.
-    ports: !override
-      - "8080:8080"
-      - "3000:3000"
-      # pacod-id's public listener and the gateway console, on the addresses their
-      # configuration names (pacod-id.local.toml): loopback only, as in pacod-gw's own dev
-      # stack. 127.0.0.1, not localhost, so their cookies never meet the app's (cookies
-      # ignore ports, not host names).
-      - "127.0.0.1:8070:8070"
-      - "127.0.0.1:13000:13000"
-    volumes: !override
-      - ./docker/caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-      - caddy_logs:/var/log
-      # NB: no /etc/caddy/certs mount — Caddyfile.local terminates no TLS.
-
   # NB: the frontend deliberately gets NO `env_file` here. In production they
   # receive only the handful of variables listed in their compose `environment:`
   # block — handing them the backend `.env` would put the database password,
@@ -62,11 +34,8 @@ services:
   # process that has no use for them. Local overrides for these go through ${LOCAL_*}
   # interpolation instead, which is why those live in .env.local *and* are read
   # via --env-file.
-  frontend:
+  ap-frontend:
     environment:
-      # The public origin as the BROWSER sees it. Production points this at
-      # ai.pacod.io, which is not running here.
-      OPENWEBUI_URL: ${LOCAL_OPENWEBUI_URL:-http://localhost:3000}
       # Canonical/OG URLs must name the origin the browser actually used, or
       # every link preview and canonical points at production from a laptop.
       SITE_URL: ${LOCAL_PACOD_SITE_URL:-http://localhost:8080}
@@ -108,7 +77,7 @@ services:
       # produces therefore lands as `unknown`, which is the honest answer.
       CRAWLER_VERIFY_ENABLED: ${LOCAL_CRAWLER_VERIFY_ENABLED:-false}
 
-  api:
+  ap-api:
     # Production publishes nothing here — the browser only ever reaches the API
     # through Caddy → SvelteKit. Locally the api is also reachable directly, for
     # curl and scripts that call it with a dev token.
@@ -128,65 +97,65 @@ services:
       - path: .env.local
         required: false
     volumes:
-      - api_logs:/srv/logs
+      - ap-api-logs:/srv/logs
 
-  admin-api:
+  ap-admin-api:
     env_file:
       - .env
       - path: .env.local
         required: false
     volumes:
-      - admin_api_logs:/srv/logs
+      - ap-admin-api-logs:/srv/logs
 
-  ingestion:
+  ap-ingestion:
     env_file:
       - .env
       - path: .env.local
         required: false
     volumes:
-      - ingestion_logs:/srv/logs
+      - ap-ingestion-logs:/srv/logs
 
-  ingestion-cpu:
+  ap-ingestion-cpu:
     env_file:
       - .env
       - path: .env.local
         required: false
     volumes:
-      - ingestion_cpu_logs:/srv/logs
+      - ap-ingestion-cpu-logs:/srv/logs
 
-  improvement-loop:
+  ap-improvement-loop:
     env_file:
       - .env
       - path: .env.local
         required: false
     volumes:
-      - improvement_loop_logs:/srv/logs
+      - ap-improvement-loop-logs:/srv/logs
 
-  improvement-loop-worker:
+  ap-improvement-loop-worker:
     env_file:
       - .env
       - path: .env.local
         required: false
     volumes:
-      - improvement_loop_worker_logs:/srv/logs
+      - ap-improvement-loop-worker-logs:/srv/logs
 
-  newsletter-worker:
+  ap-newsletter-worker:
     env_file:
       - .env
       - path: .env.local
         required: false
     volumes:
-      - newsletter_worker_logs:/srv/logs
+      - ap-newsletter-worker-logs:/srv/logs
 
   # The MCP server checks the shared secret the api presents (fails closed), so
   # it must read the same .env.local the api reads.
-  mcp-server:
+  ap-mcp:
     env_file:
       - .env
       - path: .env.local
         required: false
 
-  embeddings:
+  pacod-embeddings:
     # CPU PyTorch: the server image's ROCm wheel has no arm64 build (Apple
     # Silicon) and no laptop here has an AMD GPU anyway.
     build:
@@ -198,7 +167,7 @@ services:
       EMBEDDINGS_DEVICE: cpu
       # bge-m3 is the real embedder and the default here, so local retrieval
       # behaves like production — at the cost of a ~2 GB model download on the
-      # first `up` (cached in the hf_cache volume afterwards) and slow CPU
+      # first `up` (cached in the pacod-embeddings-hf-cache volume afterwards) and slow CPU
       # inference. Set LOCAL_EMBEDDINGS_BACKEND=hash in .env.local for a stack
       # that boots in seconds — but be aware that hash embeddings are random
       # projections: KB retrieval returns nonsense, so it is only useful for
@@ -206,67 +175,11 @@ services:
       # admin CRUD).
       EMBEDDINGS_BACKEND: ${LOCAL_EMBEDDINGS_BACKEND:-bge}
 
-  qdrant:
-    volumes:
-      - qdrant_data:/qdrant/storage
-
-  postgres:
-    # 5432 collides with a locally installed Postgres more often than not.
-    ports: !override
-      - "127.0.0.1:15432:5432"
-
-  pacod-id:
-    environment:
-      # The addresses the browser uses here; pacod-id.local.toml adds the development client
-      # gw-smoke for `make gw-smoke`.
-      PACOD_ID_ISSUER: http://127.0.0.1:8070
-      PACOD_PUBLIC_URL: http://localhost:8080
-      PGW_CONSOLE_URL: http://127.0.0.1:13000
-      # Local mail goes to mailpit (http://127.0.0.1:8025), never to a real server — whatever
-      # deploy/secrets/id.env says.
-      PID_SMTP_HOST: mailpit
-      PID_SMTP_PORT: "1025"
-      PID_SMTP_TLS: none
-      PID_SMTP_USERNAME: ""
-      PID_SMTP_PASSWORD: ""
-      PID_EMAIL_FROM_ADDRESS: id@pacod.local.invalid
-      PID_EMAIL_FROM_NAME: PACOD (local)
-      PID_LOG_FORMAT: text
-    volumes: !override
-      - ./docker/pacod-id/pacod-id.local.toml:/etc/pacod-id/pacod-id.toml:ro
-    # The internal listener on loopback only, for `make id-bootstrap` on this machine (it is
-    # never routed: the admin API and the client-authenticated calls live there).
-    ports:
-      - "127.0.0.1:8071:8071"
-    depends_on:
-      mailpit:
-        condition: service_started
-
-  # pacod-id's mail in development; its web page on http://127.0.0.1:8025.
-  mailpit:
-    image: axllent/mailpit:v1.27
-    container_name: pacod-mailpit
-    restart: unless-stopped
-    security_opt: ["no-new-privileges:true"]
-    ports:
-      - "127.0.0.1:8025:8025"
-    networks:
-      - agent-net
-
-  open-webui:
-    volumes:
-      - open_webui_data:/app/backend/data
-      - open_webui_logs:/var/log/openwebui
-
 volumes:
-  caddy_data:
-  caddy_config:
-  caddy_logs:
-  api_logs:
-  admin_api_logs:
-  ingestion_logs:
-  ingestion_cpu_logs:
-  improvement_loop_logs:
-  improvement_loop_worker_logs:
-  newsletter_worker_logs:
-  open_webui_logs:
+  ap-api-logs:
+  ap-admin-api-logs:
+  ap-ingestion-logs:
+  ap-ingestion-cpu-logs:
+  ap-improvement-loop-logs:
+  ap-improvement-loop-worker-logs:
+  ap-newsletter-worker-logs:

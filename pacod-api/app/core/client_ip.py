@@ -9,7 +9,7 @@ published, so a client cannot bypass the edge to forge them; the local overlay
 scripts on the same machine.
 
 Deliberately **no peer-address fallback**: without the headers the peer is a
-container (frontend, open-webui), and recording that as a user's IP would be
+container (the SvelteKit frontend), and recording that as a user's IP would be
 worse than recording nothing. A caller that wants the peer anyway adds it
 itself.
 """

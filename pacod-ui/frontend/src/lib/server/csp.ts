@@ -4,8 +4,6 @@
  *
  * The point of deriving this from env rather than hardcoding a permissive list:
  * a deployment with no pixel ids set keeps exactly today's locked-down policy.
- * `frame-src` + `OPENWEBUI_URL` in `handleSecurityHeaders` already established
- * the idiom — this generalises it.
  *
  * Which CSP actually reaches the browser: the header set by
  * `handleSecurityHeaders`. SvelteKit's build-time `kit.csp` only becomes a

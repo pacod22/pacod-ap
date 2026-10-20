@@ -2,7 +2,7 @@
  * Batched, best-effort delivery of usage-analytics rows to the admin API.
  *
  * Same shape as the crawler sink (`crawler-sink.ts`): the frontend has no
- * database, so rows travel over `agent-net` to admin-api, authenticated with the
+ * database, so rows travel over `pacod-net` to admin-api, authenticated with the
  * shared `CRAWLER_INGEST_TOKEN`. Buffered and flushed every 10 s / 100 rows /
  * on SIGTERM; capped (oldest dropped) so a backend outage can't grow the heap;
  * never retried and never thrown into the request path.

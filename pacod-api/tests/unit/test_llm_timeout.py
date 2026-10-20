@@ -25,7 +25,7 @@ def _client_with(handler) -> lc.LLMClient:
     client = lc.LLMClient()
     client._client = AsyncOpenAI(
         api_key="test",
-        base_url="http://gw-core.local/v1",
+        base_url="http://pacod-gw.local/v1",
         max_retries=0,  # production setting — the SDK's own retries stay off
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
@@ -103,7 +103,7 @@ async def test_stream_open_timeout_is_not_retried(no_backoff):
 
     async def create(**kw):
         calls.append(1)
-        raise APITimeoutError(request=httpx.Request("POST", "http://gw-core.local/v1/x"))
+        raise APITimeoutError(request=httpx.Request("POST", "http://pacod-gw.local/v1/x"))
 
     client = lc.LLMClient()
     client._client.chat.completions.create = create  # type: ignore[method-assign]

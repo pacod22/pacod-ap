@@ -5,7 +5,7 @@
  * registered-vs-anonymous request counter + the active-sessions gauge (see
  * lib/server/metrics.ts) plus default Node process metrics.
  *
- * Scraped by Prometheus at frontend:3000/internal/metrics DIRECTLY over agent-net
+ * Scraped by Prometheus at ap-frontend:3000/internal/metrics DIRECTLY over pacod-net
  * (job `frontend` in monitoring/prometheus/prometheus.yml.tpl). The `/internal/`
  * prefix keeps it a native SvelteKit route (hooks.server.ts does NOT proxy it to
  * the Python backend), and the public Caddy edge 404s /internal/* — so this stays

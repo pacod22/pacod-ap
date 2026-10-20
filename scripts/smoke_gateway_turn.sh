@@ -24,7 +24,7 @@ b64url() { printf '%s' "$1" | base64 | tr '+/' '-_' | tr -d '=\n'; }
 envval() { grep "^$1=" "$GATEWAY_ENV" | tail -1 | cut -d= -f2-; }
 
 [ -f "$GATEWAY_ENV" ] || fail "no pacod-api/.env.gateway: run make gw-bootstrap"
-docker inspect pacod-api >/dev/null 2>&1 || fail "the app is not running: make up-local"
+docker inspect ap-api >/dev/null 2>&1 || fail "the app is not running: make up-local"
 
 classifier='{"is_relevant": true, "confidence": 0.95, "detected_language": "en", "reason": "a pricing question", "needs_clarification": false, "follow_ups": []}'
 planner='{"is_complex": false, "tool_calls": [{"name": "get_fact", "args": {"fact_key": "price", "variant": "plus"}}]}'
@@ -33,7 +33,7 @@ curl -fsS -X POST "$MOCK_CONTROL/__mock/script" -H 'Content-Type: application/js
 	|| fail "gw-mock's control port ($MOCK_CONTROL) does not answer: make gw-up"
 
 stamp="$(date +%s)"
-sse="$(docker exec pacod-api curl -N -sS -X POST http://localhost:8000/api/v1/chat \
+sse="$(docker exec ap-api curl -N -sS -X POST http://localhost:8000/api/v1/chat \
 	-H 'Authorization: Bearer dev-token-gw_smoke_user' -H 'Content-Type: application/json' \
 	-d "{\"message\": \"How much does the Plus plan cost per month? (smoke $stamp)\", \"session_id\": \"gw-turn-smoke-$stamp\"}")"
 

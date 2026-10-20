@@ -1,0 +1,90 @@
+# docker-compose.standalone.local.yml — LOCAL TEST OVERLAY of the shared components. Never
+# deploy this. The laptop values of docker-compose.standalone.yml, as docker-compose.local.yml
+# holds those of the app file; `make up-local` loads all four files (see the header of
+# docker-compose.local.yml).
+#
+#   http://localhost:8080   main shell (chat + admin console)
+#   http://127.0.0.1:8070   pacod-id, the issuer        (sign-in, accounts)
+#   http://127.0.0.1:13000  the gateway console         (needs `make gw-up`)
+#   http://127.0.0.1:8025   mailpit: pacod-id's mail    (nothing leaves the laptop)
+#   http://localhost:6333   Qdrant dashboard            (from the standalone file)
+#   localhost:15432         Postgres                    (remapped from 5432)
+#
+# `!override` replaces a list instead of appending to it. Without it Compose would
+# CONCATENATE ports (leaving 80/443 published) and keep the certs mount pointing at a path
+# that does not exist.
+
+services:
+  pacod-caddy:
+    environment:
+      # Plain HTTP on ports (docker/caddy/Caddyfile.local): no certificates, logs on stdout.
+      AP_SITE: ":8080"
+      AP_SITE_OPTIONS: ""
+    # Production publishes 80/443. Locally the edge moves to high ports so it can run
+    # without privileges and next to whatever else owns :80.
+    ports: !override
+      - "8080:8080"
+      # pacod-id's public listener and the gateway console, on the addresses their
+      # configuration names (pacod-id.local.toml): loopback only, as in pacod-gw's own dev
+      # stack. 127.0.0.1, not localhost, so their cookies never meet the app's (cookies
+      # ignore ports, not host names).
+      - "127.0.0.1:8070:8070"
+      - "127.0.0.1:13000:13000"
+    volumes: !override
+      - ./docker/caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - ../platform/caddy:/etc/caddy/sites:ro
+      - pacod-caddy-data:/data
+      - pacod-caddy-config:/config
+      - pacod-caddy-logs:/var/log
+      # NB: no /etc/caddy/certs mount — Caddyfile.local terminates no TLS.
+
+  pacod-qdrant:
+    volumes: !override
+      - pacod-qdrant-data:/qdrant/storage
+
+  pacod-postgres:
+    # 5432 collides with a locally installed Postgres more often than not.
+    ports: !override
+      - "127.0.0.1:15432:5432"
+
+  pacod-id:
+    environment:
+      # The addresses the browser uses here; pacod-id.local.toml adds the development client
+      # gw-smoke for `make gw-smoke`.
+      PACOD_ID_ISSUER: http://127.0.0.1:8070
+      PACOD_PUBLIC_URL: http://localhost:8080
+      PGW_CONSOLE_URL: http://127.0.0.1:13000
+      # Local mail goes to mailpit (http://127.0.0.1:8025), never to a real server — whatever
+      # deploy/secrets/id.env says.
+      PID_SMTP_HOST: pacod-mailpit
+      PID_SMTP_PORT: "1025"
+      PID_SMTP_TLS: none
+      PID_SMTP_USERNAME: ""
+      PID_SMTP_PASSWORD: ""
+      PID_EMAIL_FROM_ADDRESS: id@pacod.local.invalid
+      PID_EMAIL_FROM_NAME: PACOD (local)
+      PID_LOG_FORMAT: text
+    volumes: !override
+      - ./docker/pacod-id/pacod-id.local.toml:/etc/pacod-id/pacod-id.toml:ro
+    depends_on:
+      pacod-mailpit:
+        condition: service_started
+
+  # pacod-id's mail in development; its web page on http://127.0.0.1:8025.
+  pacod-mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: pacod-mailpit
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    ports:
+      - "127.0.0.1:8025:8025"
+    networks:
+      - pacod-net
+
+volumes:
+  pacod-caddy-data:
+  pacod-caddy-config:
+  pacod-caddy-logs:
+  # The volume this service used before the pacod-net names, so local data is kept.
+  pacod-qdrant-data:
+    name: pacod_qdrant_data

@@ -57,7 +57,7 @@ def _client_with(handler) -> lc.LLMClient:
     client = lc.LLMClient()
     client._client = AsyncOpenAI(
         api_key="test",
-        base_url="http://gw-core.local/v1",
+        base_url="http://pacod-gw.local/v1",
         max_retries=0,
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
@@ -123,11 +123,11 @@ async def test_success_after_retry_is_one_ok(errors):
             },
         )
 
-    before_ok = _calls("m-ok", "p", "ok", site="openwebui")
-    with site_scope("openwebui"), lc.usage_scope() as acc:
+    before_ok = _calls("m-ok", "p", "ok", site="unknown")
+    with site_scope("unknown"), lc.usage_scope() as acc:
         await _client_with(handler).chat(model="m-ok", system="s", user="u", purpose="p")
     assert errors == []
-    assert _calls("m-ok", "p", "ok", site="openwebui") == before_ok + 1
+    assert _calls("m-ok", "p", "ok", site="unknown") == before_ok + 1
     assert acc.calls_by_purpose_model == {("p", "m-ok"): 1}
 
 

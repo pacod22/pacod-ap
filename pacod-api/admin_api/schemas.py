@@ -2149,8 +2149,8 @@ class CrawlerVisitStats(BaseModel):
 # Usage analytics (requests + LLM usage per site / profile / user)
 # ---------------------------------------------------------------------------
 
-# Sites a frontend may post rows for. "openwebui" never comes from a frontend
-# (it is api-side only), so it is not accepted on ingest.
+# Sites a frontend may post rows for. The other sites (internal, unknown) are api-side
+# only, so they are not accepted on ingest.
 AnalyticsIngestSite = Literal["pacod"]
 
 

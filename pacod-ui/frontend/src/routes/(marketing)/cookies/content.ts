@@ -55,12 +55,6 @@ export const cookies: LocalizedDoc = {
 								'10 minutes'
 							],
 							[
-								'<code>webui_sso</code>',
-								'Strictly necessary',
-								"Signals that single sign-on to our chat app (Open-WebUI, on its own address) has been completed, so you aren't redirected in a loop. HttpOnly, SameSite=Lax, Secure.",
-								'~8 hours'
-							],
-							[
 								'<code>PARAGLIDE_LOCALE</code>',
 								'Functional / preference',
 								'Remembers your chosen interface language (Bulgarian, English, German, or Russian).',
@@ -270,12 +264,6 @@ export const cookies: LocalizedDoc = {
 								'Строго необходима',
 								'Поставя се само докато влизате: запечатан запис на започнатия вход — къде да се върнете след това и еднократните стойности, които го защитават. Изтрива се, когато се върнете. Path=/auth, HttpOnly, SameSite=Lax, Secure.',
 								'10 минути'
-							],
-							[
-								'<code>webui_sso</code>',
-								'Строго необходима',
-								'Сигнализира, че единното вписване (SSO) в нашето чат приложение (Open-WebUI, на собствен адрес) е завършено, за да не бъдете пренасочвани в цикъл. HttpOnly, SameSite=Lax, Secure.',
-								'~8 часа'
 							],
 							[
 								'<code>PARAGLIDE_LOCALE</code>',
@@ -489,12 +477,6 @@ export const cookies: LocalizedDoc = {
 								'10 Minuten'
 							],
 							[
-								'<code>webui_sso</code>',
-								'Unbedingt erforderlich',
-								'Signalisiert, dass die Single-Sign-On-Anmeldung bei unserer Chat-App (Open-WebUI, unter eigener Adresse) abgeschlossen ist, damit Sie nicht in einer Schleife weitergeleitet werden. HttpOnly, SameSite=Lax, Secure.',
-								'~8 Stunden'
-							],
-							[
 								'<code>PARAGLIDE_LOCALE</code>',
 								'Funktional / Präferenz',
 								'Merkt sich die von Ihnen gewählte Oberflächensprache (Bulgarisch, Englisch, Deutsch oder Russisch).',
@@ -704,12 +686,6 @@ export const cookies: LocalizedDoc = {
 								'Строго необходимый',
 								'Устанавливается только на время входа: запечатанная запись текущего входа — куда вернуться после него и одноразовые значения, которые его защищают. Удаляется после Вашего возвращения. Path=/auth, HttpOnly, SameSite=Lax, Secure.',
 								'10 минут'
-							],
-							[
-								'<code>webui_sso</code>',
-								'Строго необходимый',
-								'Сигнализирует, что единый вход (SSO) в наше чат-приложение (Open-WebUI, на отдельном адресе) завершён, чтобы Вас не перенаправляло по кругу. HttpOnly, SameSite=Lax, Secure.',
-								'~8 часов'
 							],
 							[
 								'<code>PARAGLIDE_LOCALE</code>',

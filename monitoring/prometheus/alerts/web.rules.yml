@@ -22,7 +22,7 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: "Caddy edge metrics are down"
-          description: "Prometheus cannot scrape caddy:9180/metrics for >2m — the edge proxy may be down or metrics disabled."
+          description: "Prometheus cannot scrape pacod-caddy:9180/metrics for >2m — the edge proxy may be down or metrics disabled."
 
       # Status code is carried by the duration histogram's _count series — the
       # caddy_http_requests_total counter has only {server, handler} labels, no code.
@@ -37,7 +37,7 @@ groups:
           summary: "High 5xx rate at the edge"
           description: ">5% of edge (Caddy) requests returned 5xx over 10m."
 
-      # Exclude handler="metrics": Prometheus scraping caddy:9180 itself increments
+      # Exclude handler="metrics": Prometheus scraping pacod-caddy:9180 itself increments
       # the counter, so without this filter the alert could never fire.
       - alert: EdgeTrafficDropToZero
         expr: sum(rate(caddy_http_request_duration_seconds_count{handler!="metrics"}[10m])) == 0

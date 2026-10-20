@@ -22,11 +22,6 @@ import { env } from '$env/dynamic/private';
 
 import { identity } from '$lib/server/identity';
 import { SessionStoreUnavailableError } from '$lib/server/session';
-import {
-	WEBUI_SSO_COOKIE,
-	WEBUI_SSO_COOKIE_CLEAR_HEADER,
-	WEBUI_SSO_COOKIE_OPTIONS
-} from '$lib/server/webui-sso';
 import { createApiFetch, expectJson } from '$lib/server/api';
 import { logger, elapsed } from '$lib/server/logger';
 import { recordRequest } from '$lib/server/metrics';
@@ -151,7 +146,7 @@ const handleRequestLogger: Handle = async ({ event, resolve }) => {
 // 2. pacod-id — its routes, and the session of every other request
 // -----------------------------------------------------------------
 /**
- * Reached on frontend:3000 directly, never through the public edge (Caddy 404s
+ * Reached on ap-frontend:3000 directly, never through the public edge (Caddy 404s
  * /internal/* there): the container's health check, Prometheus and Caddy's
  * forward_auth. Their origin is not the public one, which pacod-id's handle
  * would answer with a redirect there; the probes need an answer and
@@ -169,9 +164,8 @@ const handleIdentity: Handle = async ({ event, resolve }) => {
 			? { ...event, url: new URL(path + event.url.search, id.origin) }
 			: event;
 
-	let response: Response;
 	try {
-		response = await id.handle({ event: input, resolve: () => resolve(event) });
+		return await id.handle({ event: input, resolve: () => resolve(event) });
 	} catch (err) {
 		if (err instanceof SessionStoreUnavailableError) {
 			// The session is not gone — the store is. Fail THIS request (cookies
@@ -184,14 +178,6 @@ const handleIdentity: Handle = async ({ event, resolve }) => {
 		}
 		throw err;
 	}
-
-	// A sign-in or a sign-out starts Open-WebUI's SSO over, so its marker never
-	// carries one account's Open-WebUI session into the next. The handle answers
-	// these two itself, where `event.cookies` does not reach: a raw header.
-	if (path === '/auth/callback' || path === '/auth/logout') {
-		response.headers.append('set-cookie', WEBUI_SSO_COOKIE_CLEAR_HEADER);
-	}
-	return response;
 };
 
 // -----------------------------------------------------------------
@@ -226,14 +212,7 @@ const handleAuth: Handle = async ({ event, resolve }) => {
 	event.locals.sessionEnded = false;
 	event.locals.apiFetch = createApiFetch(session?.accessToken ?? null, rid, client);
 
-	if (!session) {
-		// Never signed in, signed out, or ended at pacod-id: an Open-WebUI marker
-		// left in this browser belongs to a session that is gone.
-		if (event.cookies.get(WEBUI_SSO_COOKIE)) {
-			event.cookies.delete(WEBUI_SSO_COOKIE, WEBUI_SSO_COOKIE_OPTIONS);
-		}
-		return resolve(event);
-	}
+	if (!session) return resolve(event);
 
 	// Identity is cached for a short while: every navigation used to cost a
 	// `/auth/me` round-trip, and a backend blip (non-401) used to bounce a
@@ -258,7 +237,6 @@ const handleAuth: Handle = async ({ event, resolve }) => {
 			logger.warn('auth.me.unauthorized', { rid, sub: session.sub });
 			userCache.delete(session.sid);
 			await identity().forget(event.cookies, session);
-			event.cookies.delete(WEBUI_SSO_COOKIE, WEBUI_SSO_COOKIE_OPTIONS);
 			event.locals.session = null;
 			event.locals.sessionEnded = true;
 			event.locals.apiFetch = createApiFetch(null, rid, client);
@@ -494,7 +472,7 @@ const handleSecurityHeaders: Handle = async ({ event, resolve }) => {
 		"img-src 'self' data: blob: https:",
 		"font-src 'self' data: https://fonts.gstatic.com",
 		join("connect-src 'self'", extra.connect),
-		join(`frame-src 'self'${env.OPENWEBUI_URL ? ` ${env.OPENWEBUI_URL}` : ''}`, extra.frame),
+		join("frame-src 'self'", extra.frame),
 		"frame-ancestors 'self'",
 		"form-action 'self'",
 		"base-uri 'self'",

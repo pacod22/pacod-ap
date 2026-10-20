@@ -5,7 +5,7 @@ paths (`routes_openai_compat.py`, streaming + non-streaming) used to carry their
 own copy of the same prologue (directives → runtime config → prompts → history
 compaction) and the same epilogue (usage events → quota → audit → turn evidence).
 The copies drifted: the compat audit rows lost `turn_id`, `user_message`,
-`response`, `tools_used` and `citations`, which made every Open-WebUI turn
+`response`, `tools_used` and `citations`, which made every compat turn
 invisible to chat history, per-turn cost attribution and the review loop.
 
 What stays route-specific on purpose is the middle: the native route runs

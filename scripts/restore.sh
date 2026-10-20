@@ -5,14 +5,18 @@
 # Reverses every component of the archive against a RUNNING stack:
 #
 #   PostgreSQL  restore globals, then `pg_restore --clean --if-exists` each
-#               database (via `docker compose exec postgres`). The target
+#               database (via `docker compose exec pacod-postgres`). The target
 #               databases must already exist (they are created by the normal
-#               `make up` / postgres-init bootstrap).
+#               `make up` / pacod-db-init bootstrap).
 #   Qdrant      upload+recover each *.snapshot into its collection
 #               (POST /collections/{c}/snapshots/upload?priority=snapshot).
 #   Config      by default only *previews* where config files would go — pass
 #               --overwrite-config to actually overwrite live .env / secrets.
-#   Volumes     untar documents_data + openwebui_data back into the containers.
+#   Volumes     untar documents_data (volume ap-documents-data) back into the container.
+#
+# An archive made while Open-WebUI was part of the platform also holds its database
+# (postgres/openwebui.dump) and data dir (volumes/openwebui_data.tar.gz): both are left out,
+# with a note, since nothing here runs Open-WebUI any more.
 #   Redis       (if present) untar /data and restart redis.
 #
 # Manual equivalents for every step are documented inline below, so the archive
@@ -36,7 +40,7 @@ Options:
                         Caddyfiles, …). Default: extract them to a preview dir only.
   --skip-postgres       Don't restore PostgreSQL.
   --skip-qdrant         Don't restore Qdrant collections.
-  --skip-volumes        Don't restore document/Open-WebUI volumes.
+  --skip-volumes        Don't restore the document volume.
   --skip-redis          Don't restore Redis (Redis is restored only if present).
   --env-file <path>     Load configuration from this file (KEY=value).
   -h, --help            Show this help.
@@ -95,8 +99,8 @@ if [[ "$ASSUME_YES" != true ]]; then
 fi
 
 # --- 1. PostgreSQL -----------------------------------------------------------
-# Manual: cat globals.sql | docker compose exec -T postgres psql -U <user> -d postgres
-#         docker compose exec -T postgres pg_restore --clean --if-exists -U <user> -d <db> < <db>.dump
+# Manual: cat globals.sql | docker compose exec -T pacod-postgres psql -U <user> -d postgres
+#         docker compose exec -T pacod-postgres pg_restore --clean --if-exists -U <user> -d <db> < <db>.dump
 if [[ "$DO_POSTGRES" == true ]]; then
   pg() { compose_exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$SVC_POSTGRES" "$@"; }
   if [[ -f "$SRC/postgres/globals.sql" ]]; then
@@ -105,11 +109,11 @@ if [[ "$DO_POSTGRES" == true ]]; then
     pg psql -U "$POSTGRES_USER" -d postgres < "$SRC/postgres/globals.sql" >/dev/null 2>&1 \
       || warn "  some global statements failed (pre-existing roles are expected)"
   fi
-  for db in "$POSTGRES_DB" "$POSTGRES_OPENWEBUI_DB" "$POSTGRES_ID_DB"; do
+  for db in "$POSTGRES_DB" "$POSTGRES_ID_DB"; do
     dump="$SRC/postgres/$db.dump"
     [[ -f "$dump" ]] || { warn "  no dump for '$db' in archive — skipping"; continue; }
     # pacod-id's tables must stay owned by its own role (it is no superuser): restore as it.
-    # The database itself is made by the pacod-id-db service on the stack's first start.
+    # The database itself is made by the pacod-db-init service at every start of the stack.
     role=()
     [[ "$db" == "$POSTGRES_ID_DB" ]] && role=(--role=pacod_id)
     log "PostgreSQL: pg_restore --clean $db"
@@ -118,6 +122,12 @@ if [[ "$DO_POSTGRES" == true ]]; then
     else
       warn "  pg_restore of '$db' reported errors (often harmless --clean drop-if-not-exists noise)"
     fi
+  done
+  # Dumps of databases this platform no longer has (Open-WebUI's, in an older archive).
+  for dump in "$SRC"/postgres/*.dump; do
+    db="$(basename "$dump" .dump)"
+    [[ -f "$dump" && "$db" != "$POSTGRES_DB" && "$db" != "$POSTGRES_ID_DB" ]] || continue
+    log "  $db.dump: not a database of this platform (Open-WebUI was retired) — not restored"
   done
 else
   log "PostgreSQL: skipped (--skip-postgres)"
@@ -171,7 +181,7 @@ else
 fi
 
 # --- 4. Volumes --------------------------------------------------------------
-# Manual: cat documents_data.tar.gz | docker compose exec -T api tar xzf - -C /srv/documents
+# Manual: cat documents_data.tar.gz | docker compose exec -T ap-api tar xzf - -C /srv/documents
 if [[ "$DO_VOLUMES" == true ]]; then
   restore_volume() { # <service> <mount> <tar> <label>
     local svc="$1" mount="$2" tar="$3" label="$4"
@@ -181,9 +191,11 @@ if [[ "$DO_VOLUMES" == true ]]; then
     if compose_exec "$svc" tar xzf - -C "$mount" < "$tar"; then ok "  $label restored"
     else warn "  $label restore failed"; fi
   }
-  log "Volumes: restoring documents + Open-WebUI data"
+  log "Volumes: restoring documents"
   restore_volume "$SVC_DOCUMENTS" "$DOCUMENTS_MOUNT" "$SRC/volumes/documents_data.tar.gz" "documents_data"
-  restore_volume "$SVC_OPENWEBUI" "$OPENWEBUI_MOUNT" "$SRC/volumes/openwebui_data.tar.gz" "openwebui_data"
+  if [[ -f "$SRC/volumes/openwebui_data.tar.gz" ]]; then
+    log "  openwebui_data: Open-WebUI was retired — not restored (the file stays in the archive)"
+  fi
 else
   log "Volumes: skipped (--skip-volumes)"
 fi
@@ -205,6 +217,6 @@ fi
 
 ok "Restore complete."
 log "Reminder: after restoring .env.gateway or deploy/secrets, recreate the services that read them:"
-log "  make -C pacod-api recreate-gateway-clients recreate-webui   (the local stack: the -local variants)"
+log "  make -C pacod-api recreate-gateway-clients   (the local stack: recreate-gateway-clients-local)"
 log "  docker restart pacod-id   (it reads deploy/secrets/id.env and its configuration at start)"
 log "The gateway's own data (its PostgreSQL/ClickHouse) is restored by pacod-gw's restore, in GW_DIR."

@@ -17,7 +17,6 @@ command -v openssl >/dev/null || { echo "env-init: openssl is needed" >&2; exit 
 
 hex() { openssl rand -hex "$1"; }
 b64() { openssl rand -base64 "$1" | tr -d '\n'; }
-alnum() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; }
 # A Fernet key: URL-safe base64 of 32 bytes.
 fernet() { openssl rand -base64 32 | tr -d '\n' | tr '+/' '-_'; }
 
@@ -44,8 +43,6 @@ ensure() { # name generator...
 
 ensure POSTGRES_PASSWORD hex 24
 ensure APP_SECRETS_KEY fernet
-ensure WEBUI_SECRET_KEY b64 32
-ensure WEBUI_ADMIN_PASSWORD alnum 24
 ensure SESSION_SECRET b64 32
 ensure CRAWLER_INGEST_TOKEN b64 32
 ensure MCP_SHARED_SECRET b64 32

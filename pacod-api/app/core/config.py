@@ -36,16 +36,16 @@ class Settings(BaseSettings):
     # shows read-only env status. Generate with: Fernet.generate_key().decode()
     app_secrets_key: str = ""
 
-    # ---------- Service URLs (Docker DNS names) ----------
-    postgres_host: str = "pgbouncer"
+    # ---------- Service URLs (Docker DNS names on pacod-net) ----------
+    postgres_host: str = "ap-pgbouncer"
     postgres_port: int = 5432
     postgres_user: str = "pacod"
     postgres_password: str = ""
     postgres_db: str = "pacod"
 
-    redis_url: str = "redis://redis:6379/0"
-    qdrant_url: str = "http://qdrant:6333"
-    embeddings_url: str = "http://embeddings:8080"
+    redis_url: str = "redis://ap-redis:6379/0"
+    qdrant_url: str = "http://pacod-qdrant:6333"
+    embeddings_url: str = "http://pacod-embeddings:8080"
     # ---------- Identity: pacod-id ----------
     # The issuers whose access tokens the API takes (CSV, one per realm; blank = pacod-id
     # not configured, only dev tokens work), pacod-id's internal listener, and the API's
@@ -64,12 +64,12 @@ class Settings(BaseSettings):
     # Every LLM call goes through its OpenAI-compatible data plane. Each service
     # has a key of its own (pgw_…), which compose passes as GATEWAY_API_KEY from
     # pacod-api/.env.gateway (scripts/gw_bootstrap.py writes that file).
-    gateway_url: str = "http://gw-core:8080"
+    gateway_url: str = "http://pacod-gw:8080"
     gateway_api_key: str = ""
     # The management API (admin facades, usage reports; never routed publicly),
     # the console as the browser reaches it (deep links; blank hides them), and
     # the platform's organisation and workspace there (gw_bootstrap writes both).
-    gateway_admin_url: str = "http://gw-core:8081"
+    gateway_admin_url: str = "http://pacod-gw:8081"
     gateway_console_url: str = ""
     gateway_org_id: str = ""
     gateway_workspace_id: str = ""
@@ -84,13 +84,13 @@ class Settings(BaseSettings):
     # one; the gateway's provider timeouts (600 s, platform-config) sit above it.
     # The improvement loop uses `loop_llm_timeout_seconds` instead.
     llm_timeout_seconds: float = 180.0
-    mcp_server_url: str = "http://mcp-server:8000"
+    mcp_server_url: str = "http://ap-mcp:8000"
     # Shared secret the agent presents to the MCP server (X-MCP-Token). FAILS
     # CLOSED on the server: blank → every tool call 503s, because the server
-    # otherwise answers any container on agent-net with any profile's reference
-    # data. Same env var on api, mcp-server and improvement-loop-worker.
+    # otherwise answers any container on pacod-net with any profile's reference
+    # data. Same env var on ap-api, ap-mcp and ap-improvement-loop-worker.
     mcp_shared_secret: str = ""
-    ingestion_url: str = "http://ingestion:8000"
+    ingestion_url: str = "http://ap-ingestion:8000"
     documents_root: str = "/srv/documents"
 
     # ---------- Languages (app/core/i18n.py) ----------

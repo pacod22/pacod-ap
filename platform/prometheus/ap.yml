@@ -1,0 +1,49 @@
+# pacod-ap's scrape jobs for the shared Prometheus (scrape_config_files): its services and
+# its own exporters (monitoring/docker-compose.exporters.yml). Targets are service names on
+# pacod-net. The job names are what dashboards and alerts select on; keep them.
+#
+# pacod-ap's monitoring module loads this file too: monitoring/prometheus/entrypoint.sh copies
+# it under /tmp, replacing each target below with its *_TARGET variable when one is set (a
+# separate monitoring host). The platform's jobs (prometheus, caddy, qdrant, postgres, node,
+# cadvisor, pacod-gw-core, pacod-id) are the shared monitoring's: in pacod-ap's own
+# monitoring, monitoring/prometheus/prometheus.yml.tpl.
+scrape_configs:
+  # ---- Application services (FastAPI /metrics) ----
+  # The app emits its own `service` label on every series, so no static one is added here
+  # (that would only clutter series with `exported_service`).
+  - job_name: api
+    static_configs:
+      - targets: ["ap-api:8000"]
+
+  - job_name: admin-api
+    static_configs:
+      - targets: ["ap-admin-api:8000"]
+
+  - job_name: mcp-server
+    static_configs:
+      - targets: ["ap-mcp:8000"]
+
+  - job_name: embeddings
+    static_configs:
+      - targets: ["pacod-embeddings:8080"]
+
+  # ap-ingestion answers for whichever ingestion backend runs (gpu or cpu, a network alias).
+  - job_name: ingestion
+    static_configs:
+      - targets: ["ap-ingestion:8000"]
+
+  # SvelteKit frontend — the registered-vs-anonymous request split + active-sessions gauge
+  # (Caddy can't derive user type). Scraped at /internal/metrics.
+  - job_name: frontend
+    metrics_path: /internal/metrics
+    static_configs:
+      - targets: ["ap-frontend:3000"]
+
+  # ---- pacod-ap's own stores, through their exporters ----
+  - job_name: pgbouncer
+    static_configs:
+      - targets: ["ap-pgbouncer-exporter:9127"]
+
+  - job_name: redis
+    static_configs:
+      - targets: ["ap-redis-exporter:9121"]

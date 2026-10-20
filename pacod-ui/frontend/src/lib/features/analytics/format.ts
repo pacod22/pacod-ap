@@ -45,13 +45,15 @@ export const rangeById = (id: string | null | undefined): RangeOption =>
 export const bucketFor = (r: RangeOption): AnalyticsBucket => (r.hours <= 24 ? 'hour' : 'day');
 
 // ----- Sites -----------------------------------------------------------------
-/** Friendly name for a `site` value; the raw value is shown alongside it. */
+/**
+ * Friendly name for a `site` value; the raw value is shown alongside it. Sites
+ * the backend no longer emits (historical rows keep them) fall back to the raw
+ * value rather than a guess.
+ */
 export function siteLabel(site: string | null | undefined): string {
 	switch (site) {
 		case 'pacod':
 			return 'www.pacod.io';
-		case 'openwebui':
-			return 'ai.pacod.io';
 		case 'internal':
 			return m.analytics_site_internal();
 		case 'unknown':

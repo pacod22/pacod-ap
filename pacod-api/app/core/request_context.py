@@ -5,10 +5,13 @@ process, so the Host header alone can't tell them apart:
 
   ================  =====================================================
   ``pacod``         the platform's web app — SvelteKit ``frontend`` proxies /api/*
-  ``openwebui``     Open-WebUI → OpenAI-compat ``/v1/*``
   ``internal``      no request at all (workers)
-  ``unknown``       a direct call without the header (dev, curl)
+  ``unknown``       a direct call without the header (dev, curl, an OpenAI
+                    client on ``/v1/*``)
   ================  =====================================================
+
+Rows written before Open-WebUI was retired may still carry ``openwebui``; they
+are kept as they are and only no longer produced.
 
 The site travels in an explicit ``X-Pacod-Site`` header that every trusted hop
 *overwrites* (never appends): the SvelteKit proxy and SSR fetch. A spoofed value
@@ -48,11 +51,11 @@ INTERNAL_HEADER = "x-pacod-internal"
 
 SITE_INTERNAL = "internal"
 SITE_UNKNOWN = "unknown"
-SITE_OPENWEBUI = "openwebui"
-KNOWN_SITES = frozenset({"pacod", SITE_OPENWEBUI, SITE_INTERNAL, SITE_UNKNOWN})
+KNOWN_SITES = frozenset({"pacod", SITE_INTERNAL, SITE_UNKNOWN})
 
-# Never recorded as api requests: health/metrics probes and Open-WebUI's
-# model-list poll (it would dominate the openwebui counts).
+# Never recorded as api requests: health/metrics probes and the OpenAI model
+# list, which OpenAI clients poll on their own schedule (it would dominate the
+# counts without saying anything about use).
 _SKIP_PATHS = frozenset({"/health", "/metrics", "/v1/models"})
 
 
@@ -120,14 +123,11 @@ def _trusted_sites() -> frozenset[str]:
     return frozenset(s.strip() for s in raw.split(",") if s.strip())
 
 
-def resolve_site(headers: dict[str, str], path: str) -> str:
+def resolve_site(headers: dict[str, str]) -> str:
     """Map a request to its site. ``headers`` keys are lower-case."""
     claimed = (headers.get(SITE_HEADER) or "").strip().lower()
     if claimed and claimed in _trusted_sites():
         return claimed
-    # Open-WebUI calls the OpenAI-compatible router container-to-container.
-    if path == "/v1" or path.startswith("/v1/"):
-        return SITE_OPENWEBUI
     return SITE_UNKNOWN
 
 
@@ -141,14 +141,9 @@ def _should_record(path: str, headers: dict[str, str]) -> bool:
 
 def _should_count_ip(ctx: RequestContext, path: str, headers: dict[str, str]) -> bool:
     """Count only requests the user's own device made: authenticated, with an
-    edge-reported IP, not an SSR call (``X-Pacod-Internal``), not a skip-listed
-    path (probes, the model-list poll), and not Open-WebUI
-    (container-to-container — its address is never the user's)."""
-    return (
-        bool(ctx.user_id and ctx.ip)
-        and ctx.site != SITE_OPENWEBUI
-        and _should_record(path, headers)
-    )
+    edge-reported IP, not an SSR call (``X-Pacod-Internal``) and not a
+    skip-listed path (probes, the model-list poll)."""
+    return bool(ctx.user_id and ctx.ip) and _should_record(path, headers)
 
 
 def _count_ip(ctx: RequestContext) -> None:
@@ -178,7 +173,7 @@ class RequestContextMiddleware:
         headers = {
             k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers") or []
         }
-        ctx = RequestContext(site=resolve_site(headers, path), ip=client_ip_from_headers(headers))
+        ctx = RequestContext(site=resolve_site(headers), ip=client_ip_from_headers(headers))
         token = _request_ctx.set(ctx)
         start = time.perf_counter()
         status_holder = {"code": 500}

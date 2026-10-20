@@ -3,7 +3,9 @@
 #
 # Umbrella task runner for the whole platform (backend + frontend). It delegates
 # to the per-service Makefiles and drives the combined docker-compose stack
-# defined in pacod-api/docker-compose.yml (which builds both api and frontend).
+# defined in pacod-api/docker-compose.yml (the app file: ap-api, ap-frontend, …) and
+# pacod-api/docker-compose.standalone.yml (its copies of the shared components). Every
+# stack joins the one external network pacod-net (pacod-demo/docs/NETWORK.md).
 #
 #   pacod-api/Makefile   — backend tasks and the compose stack
 #   pacod-ui/Makefile    — frontend checks (unit tests, svelte-check, lint)
@@ -12,31 +14,38 @@
 API_DIR := $(CURDIR)/pacod-api
 UI_DIR  := $(CURDIR)/pacod-ui
 MON_DIR := $(CURDIR)/monitoring
-COMPOSE := docker compose -f $(API_DIR)/docker-compose.yml
 
 # --- The gateway (pacod-gw), run from its own checkout with the platform's overrides ---
-# GW_ENV=dev (default): pacod-gw's development file (its images built from the checkout, the
-# mock provider, fixed development secrets for its stores) plus the local addresses.
-# GW_ENV=live: pacod-gw's production file; every secret from deploy/secrets/gw.env.
-# Its own project name and volumes, so it never touches a standalone pacod-gw stack's data
-# (`pacod-gw`); its ports are the same as pacod-gw's development stack, so not both at once.
+# Only pacod-gw's app file (pacod-gw, gw-console, gw-analytics, gw-tester, gw-clickhouse,
+# gw-preflight), never its standalone file: the shared components it uses (pacod-postgres,
+# pacod-id, pacod-caddy, pacod-prometheus) are this platform's, on pacod-net.
+# GW_ENV=dev (default): plus pacod-gw's development file (its images built from the checkout,
+# the mock provider gw-mock, development values) and the local addresses.
+# GW_ENV=live: the app file alone; every secret from deploy/secrets/gw.env.
+# Its own compose project (its relative paths resolve in GW_DIR/deploy) and volumes, so it
+# never touches a standalone pacod-gw stack's data; its ports are the same as pacod-gw's
+# development stack, so not both at once.
 GW_DIR ?= $(abspath $(CURDIR)/../pacod-gw)
 GW_ENV ?= dev
 GW_PROJECT := pacod-ap-gw
 GW_PROFILES ?=
 GW_FILES_dev := -f $(GW_DIR)/deploy/docker-compose.yml -f $(GW_DIR)/deploy/docker-compose.dev.yml
 GW_FILES_live := -f $(GW_DIR)/deploy/docker-compose.yml
-GW_OVERRIDES := -f $(CURDIR)/deploy/pacod-gw/docker-compose.link.yml \
-                -f $(CURDIR)/deploy/pacod-gw/docker-compose.platform-id.yml \
+GW_OVERRIDES := -f $(CURDIR)/deploy/pacod-gw/docker-compose.platform-id.yml \
                 $(if $(filter dev,$(GW_ENV)),-f $(CURDIR)/deploy/pacod-gw/docker-compose.platform-id.dev.yml)
 # --env-file replaces the gateway's own deploy/.env, which is never read here.
+# pacod-gw's database fragment, run by this platform's pacod-db-init (`make up-all`).
+GW_DB_FRAGMENT := $(GW_DIR)/platform/postgres/gw-db.sh
+# The app's stack hands it to pacod-db-init whenever the checkout has it (server and laptop), so
+# the gateway's database exists before `make gw-up`.
+AP_GW_DB = GW_DIR=$(GW_DIR) $(if $(wildcard $(GW_DB_FRAGMENT)),AP_EXTRA_FILES="-f $(CURDIR)/deploy/pacod-gw/docker-compose.gw-db.yml")
 GW_COMPOSE = docker compose -p $(GW_PROJECT) --project-directory $(GW_DIR)/deploy \
              --env-file $(CURDIR)/deploy/secrets/gw.env $(GW_FILES_$(GW_ENV)) $(GW_OVERRIDES)
 
 .PHONY: help update up down up-api down-api up-ui down-ui logs ps bootstrap test rebuild upgrade upgrade-ui clean monitor-up monitor-down monitor-logs backup restore \
         up-local down-local bootstrap-local smoke-local clean-local secret-set secrets-init id-image \
-        ensure-pacod-link gw-up gw-down gw-ps gw-logs gw-config gw-bootstrap gw-smoke gw-turn-smoke \
-        id-bootstrap up-all down-all smoke-all
+        ensure-pacod-net gw-up gw-down gw-ps gw-logs gw-config gw-bootstrap gw-smoke gw-turn-smoke \
+        up-all down-all smoke-all
 
 help:
 	@echo "pacod — full platform (api + ui)"
@@ -69,10 +78,9 @@ help:
 	@echo "  --- The gateway (pacod-gw at GW_DIR=$(GW_DIR); GW_ENV=dev|live) ---"
 	@echo "  make gw-up           Start it, signed in through this platform's pacod-id"
 	@echo "  make gw-bootstrap    Import the platform configuration; write keys to pacod-api/.env.gateway"
-	@echo "  make id-bootstrap    Open-WebUI's service account at pacod-id; its token to pacod-api/.env.gateway"
 	@echo "  make gw-smoke        pacod-gw's smoke test against the mock provider (leaves smoke-* objects)"
 	@echo "  make gw-down / gw-ps / gw-logs"
-	@echo "  make up-all          Networks, app + pacod-id, gateway, then the URLs"
+	@echo "  make up-all          pacod-net, app + pacod-id (+ pacod-gw's database), gateway, then the URLs"
 	@echo "  make gw-turn-smoke   One app chat turn through the gateway's mock, checked on both sides"
 	@echo "  make smoke-all       smoke-local + gw-turn-smoke + gw-smoke"
 	@echo "  make down-all        Stop the app and the gateway (volumes kept)"
@@ -91,13 +99,13 @@ up: up-api up-ui
 
 down: down-ui down-api
 
-up-api:
-	$(MAKE) -C $(API_DIR) up-cpu
+up-api: ensure-pacod-net
+	$(AP_GW_DB) $(MAKE) -C $(API_DIR) up-cpu
 
 down-api:
 	$(MAKE) -C $(API_DIR) down-cpu
 
-up-ui:
+up-ui: ensure-pacod-net
 	$(MAKE) -C $(API_DIR) up-ui
 
 down-ui:
@@ -106,8 +114,8 @@ down-ui:
 # --- Local test stack (a laptop, not a deployment) ---
 # Plain HTTP on high ports, named volumes instead of the server's /data/**
 # bind mounts. See pacod-api/docker-compose.local.yml and CLAUDE.md.
-up-local:
-	$(MAKE) -C $(API_DIR) up-local
+up-local: ensure-pacod-net
+	$(AP_GW_DB) $(MAKE) -C $(API_DIR) up-local
 
 down-local:
 	$(MAKE) -C $(API_DIR) down-local
@@ -143,11 +151,12 @@ secrets-init:
 id-image:
 	$(MAKE) -C $(API_DIR) id-image $(if $(PACOD_ID_SRC),PACOD_ID_SRC=$(PACOD_ID_SRC))
 
-ensure-pacod-link:
-	@$(MAKE) --no-print-directory -C $(API_DIR) ensure-pacod-link
+# The shared network every pacod stack joins (pacod-demo/docs/NETWORK.md); idempotent.
+ensure-pacod-net:
+	@docker network inspect pacod-net >/dev/null 2>&1 || docker network create pacod-net >/dev/null
 
 # --- The gateway ---
-gw-up: ensure-pacod-link secrets-init
+gw-up: ensure-pacod-net secrets-init
 	@test -f "$(GW_DIR)/deploy/docker-compose.yml" || { echo "GW_DIR=$(GW_DIR) is not a pacod-gw checkout"; exit 1; }
 	$(GW_COMPOSE) $(GW_PROFILES) up -d --wait
 	@echo ""
@@ -176,25 +185,9 @@ gw-config:
 gw-bootstrap:
 	@before="$$(shasum $(API_DIR)/.env.gateway 2>/dev/null)"; \
 	python3 -I $(CURDIR)/scripts/gw_bootstrap.py --env $(GW_ENV) $(GW_BOOTSTRAP_ARGS) || exit 1; \
-	if [ "$$before" != "$$(shasum $(API_DIR)/.env.gateway 2>/dev/null)" ] && docker inspect pacod-api >/dev/null 2>&1; then \
+	if [ "$$before" != "$$(shasum $(API_DIR)/.env.gateway 2>/dev/null)" ] && docker inspect ap-api >/dev/null 2>&1; then \
 		echo "gw-bootstrap: the gateway credentials changed; recreating the services that use them"; \
 		$(MAKE) --no-print-directory -C $(API_DIR) $(if $(filter dev,$(GW_ENV)),recreate-gateway-clients-local,recreate-gateway-clients); \
-	fi
-
-# The platform's own accounts at pacod-id: today Open-WebUI's service account pacod-webui
-# (role pacod.webui_service) and its pidt_ token, written to pacod-api/.env.gateway as
-# PACOD_WEBUI_SERVICE_TOKEN. Acts as the bootstrap admin; idempotent; prints names only.
-# Local: the issuer on 127.0.0.1:8070, the internal listener on 127.0.0.1:8071 (published on
-# loopback by docker-compose.local.yml). Elsewhere pass ID_BOOTSTRAP_ARGS="--public-url …
-# --issuer … --internal-url … --app-url https://www.<domain>" from a host that reaches both
-# listeners.
-# Open-WebUI reads the token when its container is created: recreated when the file changed.
-id-bootstrap:
-	@before="$$(shasum $(API_DIR)/.env.gateway 2>/dev/null)"; \
-	python3 -I $(CURDIR)/scripts/id_bootstrap.py $(ID_BOOTSTRAP_ARGS) || exit 1; \
-	if [ "$$before" != "$$(shasum $(API_DIR)/.env.gateway 2>/dev/null)" ] && docker inspect pacod-openwebui >/dev/null 2>&1; then \
-		echo "id-bootstrap: the token changed; recreating open-webui"; \
-		$(MAKE) --no-print-directory -C $(API_DIR) recreate-webui$(if $(filter dev,$(GW_ENV)),-local); \
 	fi
 
 # pacod-gw's own smoke test, against the mock provider, signed in through pacod-id as the
@@ -206,18 +199,22 @@ gw-smoke:
 	PGW_ADMIN_EMAIL="$$PID_BOOTSTRAP_ADMIN_EMAIL" PGW_ADMIN_PASSWORD="$$PID_BOOTSTRAP_ADMIN_PASSWORD" \
 	$(MAKE) --no-print-directory -C $(GW_DIR) smoke-mock
 
-# Order: the app with pacod-id first (the gateway signs in through it), then the gateway, then
-# its bootstrap, which hands the app's services their keys (and recreates them).
-up-all: ensure-pacod-link secrets-init
+# Order: the app with pacod-id first (the gateway signs in through it, and its pacod-db-init
+# makes the gateway's database: docker-compose.gw-db.yml runs GW_DIR's gw-db.sh), then the
+# gateway's app file, then its bootstrap, which hands the app's services their keys (and
+# recreates them). The monitoring module (the console's Metrics page) starts too when
+# monitoring/.env exists.
+up-all: ensure-pacod-net secrets-init
+	@test -f "$(GW_DB_FRAGMENT)" || { echo "GW_DIR=$(GW_DIR) has no platform/postgres/gw-db.sh (a pacod-gw checkout on its pacod-net branch?)"; exit 1; }
 	$(MAKE) up-local
 	$(MAKE) gw-up
 	$(MAKE) gw-bootstrap
-	$(MAKE) id-bootstrap
 	@echo ""
 	@echo "App:              http://localhost:8080"
 	@echo "Sign-in (issuer): http://127.0.0.1:8070"
 	@echo "Gateway console:  http://127.0.0.1:13000"
 	@echo "Mail (mailpit):   http://127.0.0.1:8025"
+	@$(if $(wildcard $(MON_DIR)/.env),$(MAKE) --no-print-directory monitor-up && echo "Grafana:          http://127.0.0.1:3300",echo "Monitoring:       cp monitoring/.env.example monitoring/.env, then make monitor-up (the console's Metrics page)")
 	@echo "First run? make bootstrap-local"
 
 down-all:

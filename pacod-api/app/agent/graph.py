@@ -668,7 +668,7 @@ class AgentRunner:
         before producing the visible answer.
 
         When thinking_tags=True, LLM reasoning is wrapped in <think>...</think>
-        for OpenWebUI / Pipelines clients.
+        for OpenAI-compatible chat clients, which show it as a reasoning section.
 
         When agent_verification_enabled is True (and agent_verification_complex_only
         is False, or the request is complex), a second LLM pass checks every

@@ -14,7 +14,7 @@ Please include:
 - the version or commit, and which part is affected: the chat API, the admin API, the MCP
   server, ingestion, the workers (improvement loop, newsletter), the SvelteKit frontend, or the
   deployment files (compose, Caddy, monitoring);
-- what an attacker needs (a signed-in account, an admin role, network access to `agent-net`,
+- what an attacker needs (a signed-in account, an admin role, network access to `pacod-net`,
   nothing);
 - the steps to reproduce, and what happens compared with what should happen;
 - whether you have told anyone else.

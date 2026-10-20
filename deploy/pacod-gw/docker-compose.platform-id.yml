@@ -1,27 +1,25 @@
-# pacod-gw on the platform, part 2: the gateway signs people in through pacod-ap's pacod-id
-# (one sign-in for the app and the console), and pacod-ap's Caddy is the only public edge.
+# pacod-gw on the platform: the gateway signs people in through pacod-ap's pacod-id (one
+# sign-in for the app and the console), and pacod-ap's Caddy and monitoring serve it.
 #
-# Applied after pacod-gw's own files and docker-compose.link.yml by the root Makefile
-# (GW_COMPOSE). Its --env-file is deploy/secrets/gw.env (`make secrets-init`), never
-# pacod-gw/deploy/.env: the client secrets below are the ones pacod-id has in
-# deploy/secrets/id.env, and the generator writes both.
+# Applied after pacod-gw's app file (deploy/docker-compose.yml, + its docker-compose.dev.yml in
+# dev) by the root Makefile (GW_COMPOSE, project pacod-ap-gw), never edited into them. Only
+# the app file is loaded: the shared components it uses are pacod-ap's, on pacod-net, under
+# the same names (pacod-demo/docs/NETWORK.md):
 #
-# What it changes:
-#   - PGW_AUTH=oidc for the core, the console and the tester, with pacod-id's issuer and its
-#     internal listener as pacod-ap names it: http://pacod-id:8071 on pacod-link. The gateway's
-#     compose names its own service "id" (http://id:8071); that service, its database step
-#     and the mailpit of the development file are switched off (profile gw-own-id);
-#   - the gateway's Caddy is switched off (profile gw-own-edge): pacod-ap's Caddy serves the
-#     console, and nothing outside the platform calls the gateway's data plane. Its
-#     management API is never routed;
-#   - Alertmanager is switched off (profile gw-alertmanager): pacod-ap's monitoring is the
-#     only alert owner (plan, Phase 6);
-#   - the console asks the gateway's Prometheus by its pacod-link alias, so it can never reach
-#     pacod-ap's Prometheus by accident.
+#   pacod-postgres   pacod-ap's; the database pacod_gw and its role come from pacod-ap's
+#                    pacod-db-init, which runs pacod-gw's platform/postgres/gw-db.sh
+#                    (docker-compose.gw-db.yml, the repo root's up targets)
+#   pacod-id         pacod-ap's (http://pacod-id:8071, the issuer PACOD_ID_ISSUER)
+#   pacod-caddy      pacod-ap's: it serves the console (gw-console:3000); nothing outside the
+#                    platform calls the data plane, and the management API is never routed
+#   pacod-prometheus pacod-ap's monitoring module (make monitor-up): the console's Metrics
+#                    page and the only alert owner
 #
-# Every `${VAR:?}` below must come from gw.env; compose stops with the variable's name when one
-# is missing. A value set under `environment:` in pacod-gw's own files is replaced here, because
-# `environment:` keys of a later file win (env_file never would).
+# Its --env-file is deploy/secrets/gw.env (`make secrets-init`), never pacod-gw/deploy/.env:
+# the client secrets below are the ones pacod-id has in deploy/secrets/id.env, and the
+# generator writes both. Every `${VAR:?}` below must come from gw.env; compose stops with the
+# variable's name when one is missing. A value set under `environment:` in pacod-gw's own files
+# is replaced here, because `environment:` keys of a later file win (env_file never would).
 
 x-identity: &identity
   PGW_AUTH: oidc
@@ -32,7 +30,7 @@ services:
   # Preflight still checks pacod-id's secrets in OIDC mode, for the identity service it
   # expects next to it. That service is pacod-ap's here, with secrets of its own, so these
   # three are placeholders that nothing reads. The client secrets are the real ones.
-  preflight:
+  gw-preflight:
     environment:
       PGW_AUTH: oidc
       PGW_ID_HOST: ${PACOD_ID_HOST:-id.pacod.io}
@@ -47,39 +45,38 @@ services:
       TESTER_ID_CLIENT_SECRET: ${TESTER_ID_CLIENT_SECRET:?run make secrets-init}
       PGW_UI_SESSION_SECRET: ${PGW_UI_SESSION_SECRET:?run make secrets-init}
 
-  id:
-    profiles: [gw-own-id]
-  id-db:
-    profiles: [gw-own-id]
-  caddy:
-    profiles: [gw-own-edge]
-    depends_on: !override
-      core: { condition: service_healthy }
-  alertmanager:
-    profiles: [gw-alertmanager]
-
-  core:
+  pacod-gw:
     environment:
       <<: *identity
       PGW_ID_CLIENT_SECRET: ${PGW_ID_CLIENT_SECRET:?run make secrets-init}
       PGW_CONSOLE_URL: ${PGW_CONSOLE_URL:-https://console.pacod.io}
-    # Without the gateway's own "id". In OIDC mode the core waits for pacod-id itself
-    # (management calls answer 503 identity_unavailable until it does).
-    depends_on: !override
-      preflight: { condition: service_completed_successfully }
-      postgres: { condition: service_healthy }
-      otel-collector: { condition: service_started }
 
-  ui:
+  gw-console:
     environment:
       <<: *identity
       PGW_UI_CLIENT_SECRET: ${PGW_UI_CLIENT_SECRET:?run make secrets-init}
       PGW_UI_SESSION_SECRET: ${PGW_UI_SESSION_SECRET:?run make secrets-init}
       PGW_CONSOLE_URL: ${PGW_CONSOLE_URL:-https://console.pacod.io}
-      PROMETHEUS_URL: http://gw-prometheus:9090
+      # pacod-ap's Prometheus (monitoring/), which scrapes the core as job pacod-gw-core.
+      PROMETHEUS_URL: http://pacod-prometheus:9090
       GRAFANA_URL: ${PGW_GRAFANA_URL:-}
 
-  tester:
+  # The shared components pacod-gw's app file waits for (depends_on, required: false) are
+  # pacod-ap's, in pacod-ap's own compose project. Compose refuses a depends_on on a service
+  # the project does not define, even an optional one, so they are named here, in a profile
+  # nothing enables: never started by this project, only skipped. `make up-all` starts
+  # pacod-ap's stack (and its pacod-db-init) before this one.
+  pacod-postgres: {profiles: [pacod-ap-provides]}
+  pacod-db-init: {profiles: [pacod-ap-provides]}
+  pacod-id: {profiles: [pacod-ap-provides]}
+  pacod-caddy: {profiles: [pacod-ap-provides]}
+  pacod-otel: {profiles: [pacod-ap-provides]}
+  pacod-prometheus: {profiles: [pacod-ap-provides]}
+  pacod-alertmanager: {profiles: [pacod-ap-provides]}
+  pacod-grafana: {profiles: [pacod-ap-provides]}
+  pacod-mailpit: {profiles: [pacod-ap-provides]}
+
+  gw-tester:
     environment:
       PGW_AUTH: oidc
       PGW_ID_INTERNAL_URL: http://pacod-id:8071

@@ -38,7 +38,7 @@ def _client_capturing(captured: dict) -> LLMClient:
     client = LLMClient()
     client._client = AsyncOpenAI(
         api_key="test",
-        base_url="http://gw-core.local/v1",
+        base_url="http://pacod-gw.local/v1",
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
     return client

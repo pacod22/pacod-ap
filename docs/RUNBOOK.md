@@ -8,19 +8,23 @@ root unless it says otherwise.
 
 | Stack | Compose project | Where | What |
 |---|---|---|---|
-| App | `pacod` | `pacod-api/docker-compose.yml` (+ `docker-compose.local.yml` locally) | api, admin-api, frontend, workers, mcp-server, embeddings, ingestion, PostgreSQL 18.6 + PgBouncer, Redis, Qdrant, Caddy, Open-WebUI, **pacod-id** + `pacod-id-db` (creates its role and database), mailpit (local) |
-| Gateway | `pacod-ap-gw` | a pacod-gw checkout at `GW_DIR` (default `../pacod-gw`) + `deploy/pacod-gw/*.yml` | gw core (data plane, management API, metrics), console, tester, its PostgreSQL/ClickHouse, its Prometheus; `gw-mock` in development |
-| Monitoring | `pacod-monitoring` | `monitoring/` | Prometheus, Alertmanager, Grafana, exporters |
+| App | `pacod` | `pacod-api/docker-compose.yml` (the app file) + `docker-compose.standalone.yml` (+ their `.local.yml` / `.standalone.local.yml` overlays locally) | the app file: `ap-api`, `ap-admin-api`, `ap-frontend`, the workers, `ap-mcp`, `pacod-embeddings`, `ap-ingestion(-cpu)`, `ap-pgbouncer`, `ap-redis`, `ap-adminer`; the standalone file: `pacod-caddy`, `pacod-postgres` 18.6, `pacod-db-init` (every role and database), `pacod-qdrant`, **`pacod-id`**, `pacod-mailpit` (local) |
+| Gateway | `pacod-ap-gw` | pacod-gw's app file from a checkout at `GW_DIR` (default `../pacod-gw`; + its `docker-compose.dev.yml` in development) + `deploy/pacod-gw/docker-compose.platform-id*.yml` | `pacod-gw` (data plane, management API, metrics), `gw-console`, `gw-analytics`, `gw-tester`, `gw-clickhouse`, `gw-preflight`; `gw-mock` in development |
+| Monitoring | `pacod-monitoring` | `monitoring/` | `pacod-prometheus`, `pacod-alertmanager`, `pacod-grafana`, the exporters |
 
-Two external networks join them: `agent-net` (the app and monitoring) and `pacod-link` (the app's
-services, pacod-id, Caddy and Prometheus meet the gateway's `gw-core`, `gw-console`, `gw-tester`
-and `gw-prometheus` there). `make ensure-pacod-link` makes it. The platform overrides switch the
-gateway's own identity provider, Caddy and Alertmanager off and point it at the platform's
-pacod-id (`PGW_AUTH=oidc`, `PGW_ID_INTERNAL_URL=http://pacod-id:8071`).
+One external network joins them: **`pacod-net`**, which every container joins under its one name
+(service key = container name = DNS name; shared components `pacod-*`, pacod-ap's own `ap-*`, the
+gateway's `gw-*` — [pacod-demo/docs/NETWORK.md](../../pacod-demo/docs/NETWORK.md)). Every `make up*`
+target creates it (`make ensure-pacod-net`). The gateway runs from pacod-gw's app file only: the
+shared components it uses are the platform's — `pacod-postgres` (its database `pacod_gw`, made by
+the platform's `pacod-db-init` from pacod-gw's `platform/postgres/gw-db.sh`, password
+`GW_DB_PASSWORD` in `deploy/secrets/gw.env`), `pacod-id` (`PGW_AUTH=oidc`,
+`PGW_ID_INTERNAL_URL=http://pacod-id:8071`), `pacod-caddy` (the console) and `pacod-prometheus`
+(the console's Metrics page, `make monitor-up`).
 
 **Start order matters:** pacod-id first (the gateway signs in through it), then the gateway, then
-its bootstrap (which hands the app's services their gateway keys and recreates them), then
-Open-WebUI's service account. `make up-all` does exactly that; `make down-all` stops the gateway
+its bootstrap (which hands the app's services their gateway keys and recreates them).
+`make up-all` does exactly that; `make down-all` stops the gateway
 and the app, volumes kept.
 
 The gateway stack uses pacod-gw's development ports, so it cannot run at the same time as a
@@ -32,9 +36,7 @@ standalone pacod-gw development stack (project `pacod-gw`, whose volumes it neve
 |---|---|
 | 8080 | the app (Caddy) |
 | 8070 | pacod-id's public listener (Caddy → `pacod-id:8070`): sign-in, account, `/oidc/*` |
-| 127.0.0.1:8071 | pacod-id's internal listener — published on loopback for `make id-bootstrap` only; never routed |
 | 13000 | the gateway console (Caddy → `gw-console:3000`) |
-| 3000 | Open-WebUI |
 | 127.0.0.1:3001 | admin-api direct (accepts the development `dev-token-<id>` bearer) |
 | 8025 | mailpit |
 | 15432 | PostgreSQL |
@@ -45,8 +47,8 @@ standalone pacod-gw development stack (project `pacod-gw`, whose volumes it neve
 
 In production Caddy is the only public edge: `www.<domain>` (the app), `id.<domain>` (pacod-id's
 public listener, with a log filter that drops `code`, `state` and `token`), `console.<domain>`
-(the gateway console), `ai.<domain>` (Open-WebUI). The gateway's management API and pacod-id's
-internal listener are never routed.
+(the gateway console). The gateway's management API and pacod-id's internal listener are never
+routed.
 
 ## Secrets
 
@@ -56,9 +58,9 @@ All secret files are gitignored and mode 0600. The scripts print **names, never 
 
 | File | Holds | Written by |
 |---|---|---|
-| `pacod-api/.env` | the app's settings (the `env_file` of every backend container): database, Redis, Open-WebUI and session secrets, search keys | `make ensure-env` (from `.env.example`, generating blank secrets) |
+| `pacod-api/.env` | the app's settings (the `env_file` of every backend container): database, Redis and session secrets, search keys | `make ensure-env` (from `.env.example`, generating blank secrets) |
 | `pacod-api/.env.local` | local deltas (dev tokens, issuer `http://127.0.0.1:8070`, hash embeddings, …) | `make ensure-env-local` from `.env.local.example` |
-| `pacod-api/.env.gateway` | compose interpolation only (no service's `env_file`): one gateway key (`pgw_…`) per service, admin-api's report and admin tokens, the platform workspace's ids, Open-WebUI's service token, the pacod-id client secrets of the API and the frontend (copied from `id.env`) | `make gw-bootstrap`, `make id-bootstrap`, `make secrets-init` |
+| `pacod-api/.env.gateway` | compose interpolation only (no service's `env_file`): one gateway key (`pgw_…`) per service, admin-api's report and admin tokens, the platform workspace's ids, the pacod-id client secrets of the API and the frontend (copied from `id.env`) | `make gw-bootstrap`, `make secrets-init` |
 | `deploy/secrets/id.env` | pacod-id: database password, `PID_KEK` (seals its signing keys), token pepper, bootstrap admin, client secrets | `make secrets-init` |
 | `deploy/secrets/gw.env` | the gateway's stores, KEK, pepper, internal token, console session secret + the client secrets shared with `id.env` | `make secrets-init` |
 | `deploy/secrets/providers.env` | LLM provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `GLM_API_KEY`) — read only by `scripts/gw_bootstrap.py` | you, with `make secret-set` |
@@ -81,15 +83,15 @@ gets no `env_file` at all. **Compose by hand needs every env file:**
 
 ```bash
 make secrets-init
-make up-all          # ensure networks → up-local (app + pacod-id) → gw-up → gw-bootstrap → id-bootstrap
+make up-all          # pacod-net → up-local (app + pacod-id + pacod-gw's database) → gw-up → gw-bootstrap (→ monitor-up)
 make bootstrap-local # tables, the starter agent's reference facts and corpus (CPU pipeline)
 make smoke-all       # smoke-local + gw-turn-smoke + the gateway's own smoke-mock
 ```
 
 - `bootstrap-local` creates the schema (`init_db` + the `_MIGRATIONS` ledger), seeds the `starter`
   profile's facts from `pacod-api/data/profiles/starter/` and ingests its corpus. On a server,
-  `make bootstrap` / `make seed-example` use whichever ingestion container runs (`ingestion` after
-  `make up-gpu`, `ingestion-cpu` after `make up-cpu`). The ingestion API refuses a named agent that
+  `make bootstrap` / `make seed-example` use whichever ingestion container runs (`ap-ingestion` after
+  `make up-gpu`, `ap-ingestion-cpu` after `make up-cpu`). The ingestion API refuses a named agent that
   does not exist (404 `unknown_profile`) instead of filing its sources under the default one.
 - Optional example: `make -C pacod-api seed-example-local PROFILE=taxes`. Its CPU ingest of the
   Bulgarian law corpus is slow (tens of minutes) and memory-hungry on a laptop.
@@ -133,9 +135,6 @@ Status: the switch to real providers has been prepared but **not yet run** with 
 4. `make gw-bootstrap GW_ENV=live GW_BOOTSTRAP_ARGS="--admin-url http://<core>:8081 --data-url
    http://<core>:8080"` (live has no default addresses) imports `platform-config.live.json` and the
    provider credentials.
-5. Open-WebUI's service account: `make id-bootstrap ID_BOOTSTRAP_ARGS="--public-url … --issuer
-   https://id.<domain> --internal-url … --app-url https://www.<domain>"`, run from a host that
-   reaches pacod-id's public and internal listeners (the internal one is never routed).
 
 Every provider's timeout in the gateway must stay at least the app's `LLM_TIMEOUT_SECONDS` (180)
 and `LOOP_LLM_TIMEOUT_SECONDS` (600): the configs carry 600 s.
@@ -149,7 +148,15 @@ and `LOOP_LLM_TIMEOUT_SECONDS` (600): the configs carry 600 s.
   superuser, and the last admin cannot be removed. pacod-id's own admin pages are at
   `<issuer>/admin`.
 - **The catalogue.** The app's roles and permissions are `pacod-api/authz/pacod.yaml`. The api
-  pushes it to pacod-id at boot.
+  pushes it to pacod-id at boot. A role dropped from it is named in `RETIRED_ROLES`
+  (`pacod-api/app/services/identity.py`), sent with the push as `migrate`: pacod-id removes its
+  bindings rather than refusing the catalogue (409 `role_in_use`).
+- **The OpenAI-compatible API** (`/v1/models`, `/v1/chat/completions` on `ap-api`, reachable on
+  `pacod-net` and locally on 127.0.0.1:8000, not through the edge) takes the same tokens as the
+  rest of the API: a person's pacod-id access token, a development token, or a pacod-id service
+  account's `pidt_` token — the call is then the service account's own. A service account has no
+  local user row, so no agent assignments: with a `pacod.admin` binding it sees every active
+  agent, without one none.
 - **Mail** (confirmation, password reset, invitations) is pacod-id's: `PID_SMTP_*` and
   `PID_EMAIL_FROM_*` in `deploy/secrets/id.env`. Set `PID_EMAIL_FROM_NAME` in a deployment:
   pacod-id's default sender name is `pacod-id`. Locally it always goes to mailpit. The app's own
@@ -159,22 +166,22 @@ and `LOOP_LLM_TIMEOUT_SECONDS` (600): the configs carry 600 s.
   (`gateway`, `shop`, `bazaar`), or pacod-id refuses to start. The platform uses `gateway`: the
   base teal and gold, with the wordmark "pacod-gw · AI Gateway". pacod-id has no brand for the
   platform itself.
-- **Open-WebUI** calls the API as the service account `pacod-webui` (role
-  `pacod.webui_service`), with its `pidt_` token from `make id-bootstrap`, and forwards the person
-  in `X-OpenWebUI-User-*` headers. The API trusts those headers only from that account.
-  - `make id-bootstrap` is idempotent and recreates Open-WebUI when the token changed.
-  - Compose makes Open-WebUI's environment its configuration (`ENABLE_PERSISTENT_CONFIG=False`).
-    Settings changed in its admin panel last until the next restart.
 
 ## Monitoring
 
-`make monitor-up` (needs `monitoring/.env`, from `.env.example`). Prometheus scrapes the app,
-pacod-id (`pacod-id:9170`) and the gateway's core (`gw-core:9100` over `pacod-link`, `instance=core`).
+`make monitor-up` (needs `monitoring/.env`, from `.env.example`; `make up-all` runs it when the file
+exists). Prometheus scrapes the platform's jobs (`monitoring/prometheus/prometheus.yml.tpl`: the
+edge, Qdrant, PostgreSQL, node, cAdvisor, pacod-id at `pacod-id:9170` and the gateway at
+`pacod-gw:9100`, job `pacod-gw-core`, `instance=core`) and pacod-ap's own
+(`platform/prometheus/ap.yml`, loaded through `scrape_config_files` — the fragment the full stack
+loads too), all by name on `pacod-net`. The gateway console's Metrics page asks this Prometheus
+(`PROMETHEUS_URL=http://pacod-prometheus:9090`).
 Grafana (http://127.0.0.1:3300/monitoring, embedded in the admin console's Metrics page in
 production) has the app's dashboards in the folder **pacod** and the gateway's in **pacod-gw**.
 Alertmanager is the platform's only one; the gateway's rules are `monitoring/prometheus/alerts/gw.rules.yml`.
-Locally the app's Caddy does not route `/monitoring`, so the Metrics page's frames 404 — open
-Grafana directly.
+Caddy routes `/monitoring` to `pacod-grafana` behind the admin check, locally too; Grafana's
+`GF_SERVER_ROOT_URL` (monitoring/.env) must name the origin the browser uses
+(`http://localhost:8080/monitoring/` locally), or open Grafana directly.
 
 ## Backup and restore
 
@@ -183,14 +190,14 @@ make backup                                    # stack up; → ./backups/pacod-b
 make restore ARCHIVE=backups/pacod-backup-<UTC>.tar.gz [ARGS='--yes --overwrite-config']
 ```
 
-The archive holds PostgreSQL globals and dumps of `pacod`, `openwebui` and `pacod_id`; Qdrant
-snapshots; the config and secrets (`.env`, `.env.gateway`, `deploy/secrets/`, the pacod-id and
-gateway configuration, compose files, Caddyfiles, monitoring config, `data/`); the documents and
-Open-WebUI volumes; with `REMOTE_HOST` set in `scripts/backup.env` the archive is also copied
+The archive holds PostgreSQL globals and dumps of `pacod` and `pacod_id`; Qdrant snapshots; the
+config and secrets (`.env`, `.env.gateway`, `deploy/secrets/`, the pacod-id and gateway
+configuration, compose files, Caddyfiles, monitoring config, `data/`); the documents volume; with `REMOTE_HOST` set in `scripts/backup.env` the archive is also copied
 there with scp. **The secrets must travel with the dumps**: `APP_SECRETS_KEY` decrypts the
 admin-managed search keys and `PID_KEK` unseals pacod-id's signing keys. The archive is a secret.
 Restore only previews config unless `--overwrite-config`; afterwards recreate the services that
-read the restored env files (the script lists them). The gateway's own stores are backed up with
+read the restored env files (the script lists them). An older archive's Open-WebUI database dump
+and data directory are skipped with a note. The gateway's own stores are backed up with
 pacod-gw's tooling, not here.
 
 ## Troubleshooting
@@ -203,6 +210,69 @@ pacod-gw's tooling, not here.
 | A local chat answers "echo: …" or is off-topic | The mock echoes. Script the classifier/planner replies first (`POST 127.0.0.1:19000/__mock/script`, see `scripts/smoke_gateway_turn.sh`). A repeated question is served by the response cache. |
 | Admin LLM figures are 0 with a "gateway did not answer" note | admin-api could not read the gateway's reports (`GATEWAY_REPORT_TOKEN`, the workspace ids in `.env.gateway`, or the gateway is down). |
 | Docker builds fail, PostgreSQL crash-loops with "No space left" | The Docker VM's disk is full (the CPU ingestion image alone is ~10 GB; a rebuild needs much more transiently). `docker builder prune -f`, build one image at a time, check with `docker run --rm alpine df -h /`. PostgreSQL and pacod-id recover once space is free. |
-| Open-WebUI users see no model / "Model not found" | Open-WebUI's per-model grants; compose sets `BYPASS_MODEL_ACCESS_CONTROL=True` because the API authorizes each completion as the forwarded person. |
 | A person exists at pacod-id but not on the Users page | The page lists the app's shadow rows; a row appears with the person's first request to the API. |
 | `pacod` containers collide with another checkout | The original pacod uses the same compose project name and container names: do not run both on one Docker host. |
+| "container name `/pacod-postgres` is already in use" | Another pacod stack (pacod-id, pacod-gw, pacod-cms, pacod-kb standalone, or pacod-demo) runs its own copy of a shared component: only one of each `pacod-*` may run on a host. Stop the other stack. |
+
+## Upgrading to the pacod-net names
+
+The services, containers and volumes were renamed to the shared convention (api → `ap-api`,
+postgres → `pacod-postgres`, …); the networks `agent-net` and `pacod-link` are gone. Once:
+
+1. Stop everything with the **old** checkout (`make down-all`, `make monitor-down`), then check out
+   the new one. `docker network rm agent-net pacod-link` when nothing uses them.
+2. The database volume keeps its old name (`pacod_postgres_data`, pinned in
+   `docker-compose.standalone.yml`), and so does the local Qdrant volume (`pacod_qdrant_data`); the
+   server's Qdrant, Caddy and log data are bind mounts under `/data` and stay.
+3. The other named volumes have new names, and start empty unless copied. Copy the uploads (the
+   only irreplaceable one) before the first start:
+
+   ```bash
+   docker volume create pacod_ap-documents-data
+   docker run --rm -v pacod_documents_data:/from:ro -v pacod_ap-documents-data:/to alpine \
+     sh -c 'cp -a /from/. /to/'
+   ```
+
+   The same works for `pacod_redis_data` → `pacod_ap-redis-data` (sessions and caches; without it
+   everybody signs in again). `pacod_hf_cache` → `pacod_pacod-embeddings-hf-cache` only saves the model download. The
+   monitoring volumes (`pacod-monitoring_prometheus_data`, `…_grafana_data`) become
+   `pacod-monitoring_pacod-prometheus-data` / `…_pacod-grafana-data`.
+4. `make secrets-init` rewrites `PID_DATABASE_URL` in `deploy/secrets/id.env` to the host
+   `pacod-postgres` and adds `GW_DB_PASSWORD` to `deploy/secrets/gw.env`. The gateway's data moves
+   from its own PostgreSQL into the platform's (`pacod_gw`, a fresh database, made by
+   `pacod-db-init` whenever `GW_DIR` holds pacod-gw's `platform/postgres/gw-db.sh` — `make up-all`,
+   `make up-local`, `make up`/`up-api`). Its old PostgreSQL volume (`pacod-ap-gw_postgres-data`) is
+   left behind: `make gw-bootstrap` (with `GW_ENV=live` on a server) brings back everything
+   `platform-config` describes, the providers' keys and the app's keys; anything else made in the
+   console (users' tokens, extra workspaces) needs a `pg_dump` of the old database restored into
+   `pacod_gw` as the role `pacod_gw` before the gateway's first start.
+5. Remove the old volumes with `docker volume rm` once the new stack works.
+
+## Upgrading: Open-WebUI removed
+
+Open-WebUI (the alternative chat UI on `ai.<domain>`, locally :3000) is gone: the app's own chat
+is the chat UI. Its service, its sites and port 3000, its SSO bridge, the `pacod-webui` service
+account's role and `make id-bootstrap` were removed. Nothing is deleted automatically; once the
+new checkout runs:
+
+1. A still-running `ap-open-webui` container is now an orphan of the compose project:
+   `docker rm -f ap-open-webui` (or `docker compose … up -d --remove-orphans` in `pacod-api/`).
+2. Its database, which `pacod-db-init` no longer creates:
+   `docker exec pacod-postgres dropdb -U pacod --force openwebui`. `--force` ends the connections
+   a still-running old `ap-pgbouncer` may hold to it.
+3. Its data: on a server the bind mounts under `/data/openwebui` (`rm -rf /data/openwebui`);
+   locally the named volumes — `docker volume ls | grep open-webui`, then `docker volume rm` each
+   (e.g. `pacod_ap-open-webui-data`, `pacod_ap-open-webui-logs`; older checkouts named it
+   `pacod_open_webui_data`).
+4. The service account `pacod-webui` at pacod-id: the api's next catalogue push removes its
+   binding of the retired role `pacod.webui_service`, so it holds no role; its `pidt_` token would
+   still sign in as a service account without rights. Delete the account in pacod-id's admin
+   (`<issuer>/admin`), which revokes the token, and drop `PACOD_WEBUI_SERVICE_TOKEN` from
+   `pacod-api/.env.gateway`.
+5. The variables `OPENWEBUI_URL`, `WEBUI_SECRET_KEY`, `WEBUI_ADMIN_EMAIL`, `WEBUI_ADMIN_PASSWORD`
+   (`pacod-api/.env`) and `LOCAL_OPENWEBUI_URL` (`.env.local`) are read by nothing any more and
+   may be deleted.
+
+Analytics rows written before the removal keep the site `openwebui`; they stay in the database and
+are shown and filtered under that name. New `/v1/*` calls without a trusted site header count as
+`unknown`.

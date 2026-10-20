@@ -14,7 +14,7 @@ import pytest_asyncio
 
 MCP_BASE = os.environ.get("INTEGRATION_MCP_BASE", "http://localhost:8000")
 # When running tests from the host machine, use the published port if any;
-# otherwise tests are typically run inside `docker compose exec mcp-server`.
+# otherwise tests are typically run inside `docker compose exec ap-mcp`.
 
 pytestmark = pytest.mark.integration
 

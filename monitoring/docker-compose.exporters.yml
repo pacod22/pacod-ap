@@ -1,54 +1,58 @@
 # Exporters — ALWAYS run on the APP host. They connect *into* Postgres/Redis and
-# read host/container stats, so they must sit on `agent-net` next to the app.
+# read host/container stats, so they must sit on `pacod-net` next to the app.
 # Ports are published on 127.0.0.1 for local debugging; for a separate-instance
 # monitoring server, rebind them to a reachable interface (see README).
+#
+# Platform exporters (pacod-postgres-exporter, pacod-node-exporter, pacod-cadvisor) carry
+# shared names: only one of each may run on a host (pacod-demo/docs/NETWORK.md).
+# ap-pgbouncer-exporter and ap-redis-exporter watch pacod-ap's own stores.
 #
 # Usage (from monitoring/): see the Makefile / README — brought up together with
 # docker-compose.monitoring.yml on the same instance.
 name: pacod-monitoring
 
 networks:
-  agent-net:
+  pacod-net:
     external: true
 
 services:
-  postgres-exporter:
+  pacod-postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
-    container_name: postgres-exporter
+    container_name: pacod-postgres-exporter
     restart: unless-stopped
     environment:
       # Connects to Postgres DIRECTLY (not PgBouncer). Uses the app DB creds; a
       # dedicated read-only monitoring role is preferable in production.
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-pacod}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pacod}?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-pacod}:${POSTGRES_PASSWORD}@pacod-postgres:5432/${POSTGRES_DB:-pacod}?sslmode=disable"
     ports:
       - "127.0.0.1:9187:9187"
-    networks: [agent-net]
+    networks: [pacod-net]
 
-  pgbouncer-exporter:
+  ap-pgbouncer-exporter:
     # Requires a PgBouncer stats/admin user (see docker/postgres/pgbouncer.ini +
     # userlist.txt). Until that user exists this target may show DOWN — harmless.
     image: prometheuscommunity/pgbouncer-exporter:v0.10.2
-    container_name: pgbouncer-exporter
+    container_name: ap-pgbouncer-exporter
     restart: unless-stopped
     command:
-      - "--pgBouncer.connectionString=postgres://${POSTGRES_USER:-pacod}:${POSTGRES_PASSWORD}@pgbouncer:5432/pgbouncer?sslmode=disable"
+      - "--pgBouncer.connectionString=postgres://${POSTGRES_USER:-pacod}:${POSTGRES_PASSWORD}@ap-pgbouncer:5432/pgbouncer?sslmode=disable"
     ports:
       - "127.0.0.1:9127:9127"
-    networks: [agent-net]
+    networks: [pacod-net]
 
-  redis-exporter:
+  ap-redis-exporter:
     image: oliver006/redis_exporter:v1.66.0
-    container_name: redis-exporter
+    container_name: ap-redis-exporter
     restart: unless-stopped
     environment:
-      REDIS_ADDR: "redis://redis:6379"
+      REDIS_ADDR: "redis://ap-redis:6379"
     ports:
       - "127.0.0.1:9121:9121"
-    networks: [agent-net]
+    networks: [pacod-net]
 
-  node-exporter:
+  pacod-node-exporter:
     image: prom/node-exporter:v1.8.2
-    container_name: node-exporter
+    container_name: pacod-node-exporter
     restart: unless-stopped
     command:
       - "--path.procfs=/host/proc"
@@ -61,11 +65,11 @@ services:
       - /:/rootfs:ro
     ports:
       - "127.0.0.1:9100:9100"
-    networks: [agent-net]
+    networks: [pacod-net]
 
-  cadvisor:
+  pacod-cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
-    container_name: cadvisor
+    container_name: pacod-cadvisor
     restart: unless-stopped
     privileged: true
     volumes:
@@ -76,4 +80,4 @@ services:
       - /dev/disk/:/dev/disk:ro
     ports:
       - "127.0.0.1:8082:8080"
-    networks: [agent-net]
+    networks: [pacod-net]

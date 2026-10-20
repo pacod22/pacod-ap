@@ -2,8 +2,8 @@
 # Local test-stack overrides (see .env.local.example). Machine-specific and may
 # hold personal API keys — never commit. `make up-local` seeds it from the example.
 .env.local
-# The gateway's keys and tokens for the services (written by `make gw-bootstrap` /
-# `make id-bootstrap`). Never commit.
+# The gateway's keys and tokens for the services (written by `make gw-bootstrap`). Never
+# commit.
 .env.gateway
 # Local-only Compose override (e.g. macOS Docker Desktop can't bind-mount the
 # committed /data/... host paths). Machine-specific — never commit.

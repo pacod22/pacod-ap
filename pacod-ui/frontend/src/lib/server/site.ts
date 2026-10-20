@@ -3,7 +3,7 @@
  *
  * The backend receives it in the `X-Pacod-Site` header on every call this server
  * makes, so LLM usage and agent turns can be attributed to the surface that
- * caused them. Other backend sites (`openwebui`, `internal`) never originate here.
+ * caused them. The other backend site, `internal` (workers), never originates here.
  */
 export type FrontendSite = 'pacod';
 

@@ -5,10 +5,9 @@ Accepted, in this order:
   1. ``dev-token-<user_id>`` — development only (``APP_ENV=development`` and
      ``AUTH_ALLOW_DEV_TOKENS=true``, checked by the callers). Answered before anything talks
      to pacod-id, so local admin pages and the smoke tests work with pacod-id down.
-  2. ``pidt_…`` — a pacod-id service account's token, introspected (cached briefly). Only the
-     Open-WebUI service account (role ``pacod.webui_service``, permission
-     ``attribution.forward``) may name the person behind its call, through Open-WebUI's
-     forwarded ``X-OpenWebUI-User-Email`` header; the call is then that person's.
+  2. ``pidt_…`` — a pacod-id service account's token, introspected (cached briefly). The call
+     is the service account's own: its roles come from its bindings, and nothing in the
+     request can make it another principal's.
   3. A pacod-id access token (JWT, ``aud=pacod-api``): signature and issuer checked, then the
      copy of pacod-id's feed — an ended session or a disabled account is refused (401)
      within seconds. The person's local row is made on first sight (``ensure_user``) and
@@ -19,7 +18,6 @@ The guard contract is the same either way: return AuthenticatedUser or raise.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from app.core.exceptions import AuthenticationError, IdentityUnavailableError
@@ -27,10 +25,6 @@ from app.core.logging import get_logger
 from app.core.request_context import note_user
 
 log = get_logger(__name__)
-
-# Open-WebUI's forwarded user headers (ENABLE_FORWARD_USER_INFO_HEADERS=true).
-FORWARDED_EMAIL = "x-openwebui-user-email"
-FORWARDED_NAME = "x-openwebui-user-name"
 
 
 @dataclass(frozen=True)
@@ -62,9 +56,7 @@ class AuthGuard:
     def __init__(self, dev_mode: bool = True) -> None:
         self.dev_mode = dev_mode
 
-    async def authenticate(
-        self, authorization_header: str | None, headers: Mapping[str, str] | None = None
-    ) -> AuthenticatedUser:
+    async def authenticate(self, authorization_header: str | None) -> AuthenticatedUser:
         if not authorization_header or not authorization_header.lower().startswith("bearer "):
             raise AuthenticationError("Missing or malformed Authorization header")
 
@@ -89,14 +81,14 @@ class AuthGuard:
 
         identity = get_identity()
         if identity is not None and token.startswith("pidt_"):
-            return await self._service_token(identity, token, headers or {})
+            return await self._service_token(identity, token)
         if identity is not None and _looks_like_jwt(token):
             user = await self._pacod_id_token(identity, token)
             if user is not None:
                 return user
         raise AuthenticationError("The token is not valid here")
 
-    async def _service_token(self, identity, token: str, headers: Mapping[str, str]):
+    async def _service_token(self, identity, token: str) -> AuthenticatedUser:
         from pacod_id.client import ApiError
 
         try:
@@ -108,18 +100,6 @@ class AuthGuard:
         sub = str(answer["sub"])
         if identity.is_disabled(sub):
             raise AuthenticationError("The service account is disabled")
-        forwarded = {k.lower(): v for k, v in headers.items()}
-        email = (forwarded.get(FORWARDED_EMAIL) or "").strip()
-        if email and identity.allowed(sub, "pacod.attribution.forward", kind="service"):
-            # Open-WebUI acting for a person: the call is theirs (their quota, their history).
-            # Its own user id is Open-WebUI's, not pacod-id's — the person is found by address.
-            user_id = await identity.user_id_by_email(email)
-            if user_id is None:
-                raise AuthenticationError("No account with the forwarded address")
-            if identity.is_disabled(user_id):
-                raise AuthenticationError("The account is disabled")
-            note_user(user_id)
-            return AuthenticatedUser(user_id=user_id, email=email, roles=("user",))
         note_user(sub)
         return AuthenticatedUser(user_id=sub, roles=identity.roles_for(sub, kind="service"))
 

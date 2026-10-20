@@ -313,8 +313,8 @@ class UsageEvent(Base):
     cached_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     # Which product/entry point the call came from — see ``app/core/request_context``
-    # (pacod | openwebui | internal | unknown). NULL on rows
-    # written before usage analytics existed.
+    # (pacod | internal | unknown; ``openwebui`` on rows written before Open-WebUI was
+    # retired). NULL on rows written before usage analytics existed.
     site: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Number of LLM calls folded into this (purpose, model) row. NULL on legacy
     # rows and on web-search rows (not an LLM call); analytics counts NULL as 1.
@@ -1317,7 +1317,7 @@ class WebRequest(Base):
         ``user_id`` is only stored when the visitor gave analytics consent;
         otherwise the row still counts volume (``user_type='registered'``).
       * ``kind='api'`` — the api's ``RequestContextMiddleware`` for browser and
-        Open-WebUI calls (SSR-internal calls are excluded).
+        OpenAI-compatible (``/v1/*``) calls (SSR-internal calls are excluded).
 
     Deliberately minimal: no IP, no User-Agent, no query string, and ``route`` is
     always a route *template* (SvelteKit route id / FastAPI path), never a raw
@@ -1384,8 +1384,8 @@ class UserIpAddress(Base):
 
     ``use_count`` is bumped for each authenticated api request the browser makes
     from that address — aggregated in-process by ``user_ip_sink`` and upserted in
-    bulk. SvelteKit SSR calls (``X-Pacod-Internal``) and Open-WebUI calls are not
-    counted: they carry no client IP of their own. Admin-only.
+    bulk. SvelteKit SSR calls (``X-Pacod-Internal``) are not counted: they carry
+    no client IP of their own. Admin-only.
 
     Global (not profile-scoped); cascades with the user. Rows not used for
     ``activity_log_retention_months`` are pruned by the improvement-loop worker.

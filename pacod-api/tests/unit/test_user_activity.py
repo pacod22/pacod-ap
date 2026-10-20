@@ -135,11 +135,14 @@ class TestMiddlewareIpCounter:
         c.get("/api/v1/public", headers={"X-Forwarded-For": "203.0.113.7"})  # anonymous
         assert ip_sink.hits == []
 
-    def test_ssr_and_openwebui_not_counted(self, ip_sink):
+    def test_ssr_not_counted(self, ip_sink):
         c = TestClient(_app())
         c.get("/api/v1/me", headers={"X-Forwarded-For": "203.0.113.7", "X-Pacod-Internal": "1"})
-        c.get("/v1/chat/completions", headers={"X-Forwarded-For": "172.19.0.9"})
         assert ip_sink.hits == []
+
+    def test_openai_compat_call_is_counted_like_any_other(self, ip_sink):
+        TestClient(_app()).get("/v1/chat/completions", headers={"X-Forwarded-For": "203.0.113.8"})
+        assert ip_sink.hits == [("u1", "203.0.113.8")]
 
     def test_kill_switch(self, ip_sink, settings, monkeypatch):
         monkeypatch.setattr(settings, "user_activity_enabled", False)
@@ -222,7 +225,7 @@ class TestRecordActivity:
         async with maker() as s:
             s.add(User(id="u1", email="a@example.com", display_name="A"))
             await s.commit()
-        with rc.site_scope("openwebui") as ctx:
+        with rc.site_scope("pacod") as ctx:
             ctx.ip = "203.0.113.7"
             await ua.record_activity(
                 "u1", "chat_turn", session_id="chat-1", turn_id="t1", profile_id="taxes"
@@ -231,8 +234,8 @@ class TestRecordActivity:
         async with maker() as s:
             rows = (await s.execute(select(UserActivity).order_by(UserActivity.id))).scalars().all()
         assert [(r.action, r.ip, r.site, r.session_id) for r in rows] == [
-            ("chat_turn", "203.0.113.7", "openwebui", "chat-1"),
-            ("login", "203.0.113.7", "openwebui", None),
+            ("chat_turn", "203.0.113.7", "pacod", "chat-1"),
+            ("login", "203.0.113.7", "pacod", None),
         ]
         assert rows[1].detail == '{"method": "google"}'  # empty values dropped
 

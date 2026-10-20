@@ -6,7 +6,7 @@
  * deployment of the platform has its own domain, brand, social accounts and
  * pixels, so none of it can be a compile-time constant. Read at request time
  * from `$env/dynamic/private` — nothing here is baked at build time, and a
- * config change is `docker compose up -d frontend` with no rebuild.
+ * config change is `docker compose up -d ap-frontend` with no rebuild.
  *
  * **Blank means disabled.** Every accessor returns `''` for an unset key and
  * every consumer must treat that as "don't render this tag / don't load this
@@ -125,7 +125,7 @@ export interface PublicSiteConfig {
  * e.g. building absolute URLs for a sitemap). Fall back to the request origin,
  * which Caddy makes correct: it forwards `X-Forwarded-Host`/`-Proto` and the
  * container runs with `HOST_HEADER=x-forwarded-host`, so `url.origin` is the
- * public hostname rather than `frontend:3000`.
+ * public hostname rather than `ap-frontend:3000`.
  */
 export function siteUrl(url?: URL): string {
 	const configured = str(env.SITE_URL);

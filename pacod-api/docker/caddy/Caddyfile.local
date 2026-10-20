@@ -1,24 +1,25 @@
 # Caddyfile.local — LOCAL TEST EDGE. Never deploy this.
 #
 # The committed Caddyfile is production: vhosts bound to real hostnames
-# (www.pacod.io, ai.pacod.io, ctest.local), each terminating TLS with certs
+# (www.pacod.io, id.pacod.io, console.pacod.io), each terminating TLS with certs
 # bind-mounted from /data/caddy/certs. None of that exists on a laptop, and a
 # `tls` directive pointing at a missing file stops Caddy from booting — so a
-# local run needs a structurally different file, not the same one with
-# variables. This is that file, paired with docker-compose.local.yml.
+# local run needs its own global options and sites without certificates. This
+# is that file, paired with docker-compose.standalone.local.yml.
 #
 # What changes vs. production:
 #   * Plain HTTP on ports, no TLS, no HTTP→HTTPS redirects.
 #   * Hostnames become PORTS (:8080 for the main shell), because *.localhost
 #     is resolved by browsers but not reliably by curl on macOS.
-#   * No /monitoring block — pacod-grafana lives in the optional monitoring
-#     compose and would only 502 here.
+#   * The sites themselves are platform/caddy/ap.caddy, the same fragment as in
+#     production; only their addresses differ. Its /monitoring route answers 502
+#     until the optional monitoring module (pacod-grafana) runs.
 #
 # What deliberately does NOT change (do not "simplify" these):
 #   * `flush_interval -1` and the 10-minute transport timeouts on every /api/*
 #     block. That pair is what makes chat tokens arrive one at a time instead
 #     of buffering into a single burst at the end — the exact behaviour you
-#     came here to test.
+#     came here to test. They are in the shared fragment.
 #   * `handle /internal/*  { respond 404 }`, so the SvelteKit internal routes
 #     stay off the edge locally too and you test the real routing table.
 #   * The :9180 metrics listener, so a local Prometheus can scrape it.
@@ -32,106 +33,16 @@
 }
 
 # Internal-only metrics listener — same as production. Not published to the
-# host by docker-compose.local.yml; reachable as caddy:9180 on agent-net.
+# host by docker-compose.standalone.local.yml; reachable as pacod-caddy:9180 on pacod-net.
 :9180 {
     metrics /metrics
 }
 
-# --------------------------------------------------------------------------- #
-# :8080 — the main shell (production: www.pacod.io)
-# --------------------------------------------------------------------------- #
-:8080 {
-    handle /health {
-        reverse_proxy api:8000
-    }
-
-    # Open-WebUI's root-relative assets. Only reachable when the `tools` profile
-    # is up; 502s harmlessly otherwise.
-    handle /static/* {
-        reverse_proxy open-webui:8080 {
-            header_up Host {upstream_hostport}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
-
-    # SSE-aware API proxy — see the header note; do not trim.
-    handle /api/* {
-        reverse_proxy frontend:3000 {
-            flush_interval -1
-            transport http {
-                read_timeout 10m
-                write_timeout 10m
-                response_header_timeout 10m
-            }
-            header_up Host {host}
-            header_up X-Forwarded-Host {hostport}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
-
-    handle /internal/* {
-        respond 404
-    }
-
-    # SvelteKit shell. X-Forwarded-Host must be {hostport} ("localhost:8080";
-    # {host} drops the port) so adapter-node
-    # (HOST_HEADER=x-forwarded-host) reconstructs the right origin and SvelteKit's
-    # CSRF check accepts form POSTs.
-    handle {
-        reverse_proxy frontend:3000 {
-            header_up Host {host}
-            header_up X-Forwarded-Host {hostport}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
-}
-
-# --------------------------------------------------------------------------- #
-# :3000 — Open-WebUI (production: ctest.local:3000 / ai.pacod.io), `tools` profile
-#
-# The forward_auth SSO gate is kept: it is the access control, and testing the
-# stack without it would test a different stack. It works over plain HTTP.
-# --------------------------------------------------------------------------- #
-:3000 {
-    @needs_sso {
-        header Sec-Fetch-Mode navigate
-        not path /auth* /static/* /_app/* /api/* /ws/*
-    }
-
-    forward_auth @needs_sso frontend:3000 {
-        uri /internal/webui-auth
-        header_up Cookie {>Cookie}
-        header_up Host {host}
-    }
-
-    # Same edge block as production (see the (webui_no_password_login) snippet in
-    # the prod Caddyfile) — before `handle @ws`, which keeps source order.
-    @webui_password_login path /api/v1/auths/signin* /api/v1/auths/signup* /api/v1/auths/add* /api/v1/auths/ldap*
-    handle @webui_password_login {
-        respond 403
-    }
-
-    @ws header Upgrade websocket
-    handle @ws {
-        reverse_proxy open-webui:8080
-    }
-
-    handle {
-        reverse_proxy open-webui:8080 {
-            flush_interval -1
-            header_up Host {upstream_hostport}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
-}
+# pacod-ap's own site, the fragment the server and the full stack import too
+# (platform/caddy/ap.caddy, mounted at /etc/caddy/sites). docker-compose.standalone.local.yml
+# sets its address: AP_SITE=:8080 (the main shell; production www.pacod.io), with no
+# certificates.
+import /etc/caddy/sites/*.caddy
 
 # The logs of the two sites below keep one-time values out: sign-in codes, their state, the
 # hints at sign-out, and the tokens of account-email links (pacod-gw's Caddyfile does the same).
@@ -167,10 +78,10 @@
     }
 }
 
-# The gateway console (pacod-gw's ui, alias gw-console on pacod-link), as
-# http://127.0.0.1:13000. The console builds its origin from Host and X-Forwarded-Proto, which
-# reverse_proxy passes; 502 until `make gw-up`. The gateway's own Caddy is switched off on the
-# platform (deploy/pacod-gw/docker-compose.platform-id.yml).
+# The gateway console (pacod-gw's gw-console on pacod-net), as http://127.0.0.1:13000. The
+# console builds its origin from Host and X-Forwarded-Proto, which reverse_proxy passes; 502
+# until `make gw-up`. The gateway's own Caddy does not run on the platform (`make gw-up` loads
+# only pacod-gw's app file).
 :13000 {
     import redacted_log
     encode zstd gzip

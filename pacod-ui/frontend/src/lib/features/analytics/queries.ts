@@ -12,11 +12,12 @@ import { z } from 'zod';
 import { api } from '$lib/api/client';
 
 /**
- * Where a request came in. Mirrors the backend's site values:
- * `pacod` (the web app), `openwebui` (ai.pacod.io), `internal` (background
- * jobs), `unknown` (legacy rows from before analytics, or direct calls).
+ * Where a request came in. Mirrors the site values the backend emits today:
+ * `pacod` (the web app), `internal` (background jobs), `unknown` (legacy rows
+ * from before analytics, or direct calls). Rows are parsed as plain strings, so
+ * historical rows carrying a retired site still load and display raw.
  */
-export const ANALYTICS_SITES = ['pacod', 'openwebui', 'internal', 'unknown'] as const;
+export const ANALYTICS_SITES = ['pacod', 'internal', 'unknown'] as const;
 export type AnalyticsSite = (typeof ANALYTICS_SITES)[number];
 
 export type AnalyticsBucket = 'hour' | 'day';

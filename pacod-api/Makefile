@@ -1,7 +1,10 @@
 # ===========================================================================
 # pacod-api — backend task runner
 #
-# Drives the combined docker-compose stack (this directory's docker-compose.yml).
+# Drives the combined docker-compose stack: this directory's docker-compose.yml (the app file,
+# pacod-ap's own services) with docker-compose.standalone.yml (its copies of the shared
+# components: pacod-caddy, pacod-postgres, pacod-db-init, pacod-qdrant, pacod-id), all on the
+# external network pacod-net (pacod-demo/docs/NETWORK.md).
 # API / backend tasks only — frontend and full-stack orchestration live in the
 # repo-root Makefile.
 # ===========================================================================
@@ -11,31 +14,41 @@
         bootstrap seed-profile seed-example seed-example-local reset-prompt-overrides \
         indexnow-ping import-agents adopt-agents \
         ingest ingest-clean reingest ingest-cpu ingest-clean-cpu reingest-cpu \
-        webui-up webui-down dev-install lint format test-unit test-integration eval \
+        dev-install lint format test-unit test-integration eval \
         logs ps clean \
         up-local down-local rebuild-local restart-local bootstrap-local \
-        logs-local ps-local clean-local smoke-local ensure-env ensure-env-local ensure-agent-net \
-        ensure-pacod-link ensure-secrets ensure-id-image id-image secret-set
+        logs-local ps-local clean-local smoke-local ensure-env ensure-env-local ensure-pacod-net \
+        ensure-secrets ensure-id-image id-image secret-set
 
 # --- Local test stack ------------------------------------------------------
 # The committed compose targets the server (TLS on real hostnames, /data/**
-# bind mounts). docker-compose.local.yml overlays the laptop-safe equivalents;
-# see its header and docker/caddy/Caddyfile.local.
+# bind mounts). docker-compose.local.yml (the app file's services) and
+# docker-compose.standalone.local.yml (the shared components') overlay the
+# laptop-safe equivalents; see their headers and docker/caddy/Caddyfile.local.
 #
 # Two things this variable must get right:
 #   * Passing -f DISABLES the auto-loaded docker-compose.override.yml. That is
 #     intentional — the overlay supersedes it — but it means every local target
 #     must go through $(COMPOSE_LOCAL), never a bare `docker compose`.
+#   * AP_EXTRA_FILES adds compose files (here and to the server's $(COMPOSE)): the repo
+#     root's up targets pass ../deploy/pacod-gw/docker-compose.gw-db.yml when a pacod-gw
+#     checkout is there, which hands pacod-gw's database fragment to pacod-db-init.
 #   * --env-file feeds ${VAR} INTERPOLATION (the LOCAL_* knobs), which is a
 #     different channel from the services' own `env_file:`. Both are needed,
 #     and the later file wins in both.
-COMPOSE_LOCAL := docker compose -f docker-compose.yml -f docker-compose.local.yml \
+AP_EXTRA_FILES ?=
+COMPOSE_LOCAL = docker compose -f docker-compose.yml -f docker-compose.local.yml \
+                   -f docker-compose.standalone.yml -f docker-compose.standalone.local.yml \
+                   $(AP_EXTRA_FILES) \
                    --env-file .env --env-file .env.local --env-file .env.gateway
 # The server stack. The gateway keys (.env.gateway, written by `make gw-bootstrap` in the repo
 # root) reach each service through ${GATEWAY_KEY_*} INTERPOLATION in docker-compose.yml, one
 # key per service; the file is never an env_file of any service. With an explicit --env-file
-# Compose no longer reads .env by itself, hence both.
-COMPOSE := docker compose --env-file .env --env-file .env.gateway
+# Compose no longer reads .env by itself, hence both. With an explicit -f it no longer reads a
+# server's docker-compose.override.yml either, hence the third file when there is one.
+COMPOSE_FILES := -f docker-compose.yml -f docker-compose.standalone.yml \
+                 $(if $(wildcard docker-compose.override.yml),-f docker-compose.override.yml)
+COMPOSE = docker compose $(COMPOSE_FILES) $(AP_EXTRA_FILES) --env-file .env --env-file .env.gateway
 LOCAL_PROFILES := --profile cpu --profile tools --profile ui
 
 help:
@@ -46,8 +59,8 @@ help:
 	@echo "  make up-gpu             Start the stack with AMD GPU support"
 	@echo "  make down-ui            Stop the UI only (frontend, no backend)"
 	@echo "  make down-cpu           Stop the stack (preserves volumes)"
-	@echo "  make restart            Restart the api container only"
-	@echo "  make rebuild-cpu        Rebuild + restart the api container only"
+	@echo "  make restart            Restart the ap-api container only"
+	@echo "  make rebuild-cpu        Rebuild + restart the ap-api container only"
 	@echo "  make recreate-gateway-clients  Recreate the services that call the gateway (new keys)"
 	@echo "  make bootstrap          init_db + the starter agent's reference facts + corpus"
 	@echo "  make seed-profile PROFILE=<id>    Provision one agent from scripts/profiles/<id>.py"
@@ -62,12 +75,10 @@ help:
 	@echo "  make ingest-cpu [PROFILE=<id>]   Same, CPU pipeline"
 	@echo "  make ingest-clean-cpu [PROFILE=<id>]   Drop via the CPU container"
 	@echo "  make reingest-cpu [PROFILE=<id>]  Drop then re-ingest (CPU pipeline)"
-	@echo "  make webui-up           Start Open-WebUI (http://localhost:3000)"
-	@echo "  make webui-down         Stop Open-WebUI"
 	@echo "  make dev-install        Install test + lint deps into local .venv"
 	@echo "  make lint               ruff check + ruff format --check (via uvx)"
 	@echo "  make format             ruff format + safe autofixes"
-	@echo "  make test-unit          Run unit tests inside a temporary api container"
+	@echo "  make test-unit          Run unit tests inside a temporary ap-api container"
 	@echo "  make secret-set NAME=X [FILE=.env]  Set one secret from stdin (never echoed)"
 	@echo "  make test-integration   Run integration tests (stack must be up)"
 	@echo "  make eval               Run golden-set evaluation"
@@ -78,8 +89,8 @@ help:
 	@echo "  --- Local test stack (laptop; plain HTTP on ports, no TLS/certs) ---"
 	@echo "  make up-local           Start the whole stack locally (api + both UIs + tools)"
 	@echo "  make down-local         Stop the local stack (preserves volumes)"
-	@echo "  make restart-local      Restart the local api container only"
-	@echo "  make rebuild-local      Rebuild + restart the local api container only"
+	@echo "  make restart-local      Restart the local ap-api container only"
+	@echo "  make rebuild-local      Rebuild + restart the local ap-api container only"
 	@echo "  make bootstrap-local    init_db + starter facts + dev users + corpus (CPU pipeline)"
 	@echo "  make seed-example-local PROFILE=taxes  Install an example agent locally"
 	@echo "  make smoke-local        Check health + an SSE chat turn against localhost"
@@ -91,24 +102,24 @@ upgrade-cpu: down-cpu up-cpu
 
 upgrade-ui: down-ui up-ui
 
-up-ui:
+up-ui: ensure-pacod-net
 	# Naming the service explicitly rather than relying on the profile keeps this
 	# target's blast radius obvious.
-	$(COMPOSE) --profile ui up -d --build frontend
+	$(COMPOSE) --profile ui up -d --build ap-frontend
 	@echo ""
 	@echo "Waiting for services to be healthy..."
 	@sleep 5
 	$(COMPOSE) ps
 
-up-cpu: ensure-env ensure-agent-net ensure-pacod-link ensure-secrets ensure-id-image
+up-cpu: ensure-env ensure-pacod-net ensure-secrets ensure-id-image
 	$(COMPOSE) --profile tools --profile cpu up -d --build
 	@echo ""
 	@echo "Waiting for services to be healthy..."
 	@sleep 5
 	$(COMPOSE) ps
 
-up-gpu: ensure-env ensure-agent-net ensure-pacod-link ensure-secrets ensure-id-image
-	$(COMPOSE) -f docker-compose.yml -f docker-compose.gpu.yml --profile tools --profile gpu up -d --build
+up-gpu: ensure-env ensure-pacod-net ensure-secrets ensure-id-image
+	$(COMPOSE) -f docker-compose.gpu.yml --profile tools --profile gpu up -d --build
 	@echo ""
 	@echo "Waiting for services to be healthy..."
 	@sleep 5
@@ -121,42 +132,36 @@ down-cpu:
 	$(COMPOSE) --profile tools --profile cpu down
 
 restart:
-	$(COMPOSE) restart api
+	$(COMPOSE) restart ap-api
 
-rebuild-cpu:
-	$(COMPOSE) --profile tools --profile cpu up -d --build api
+rebuild-cpu: ensure-pacod-net
+	$(COMPOSE) --profile tools --profile cpu up -d --build ap-api
 
 # The services that call the gateway read their key when the container is CREATED: after
 # `make gw-bootstrap` issued new keys, recreate them (a plain restart keeps the old key).
-GATEWAY_CLIENTS := api admin-api improvement-loop-worker newsletter-worker
+GATEWAY_CLIENTS := ap-api ap-admin-api ap-improvement-loop-worker ap-newsletter-worker
 recreate-gateway-clients: ensure-env
 	$(COMPOSE) up -d --no-build --no-deps $(GATEWAY_CLIENTS)
 
 recreate-gateway-clients-local: ensure-env-local
 	$(COMPOSE_LOCAL) up -d --no-build --no-deps $(GATEWAY_CLIENTS)
 
-recreate-webui: ensure-env
-	$(COMPOSE) up -d --no-build --no-deps open-webui
-
-recreate-webui-local: ensure-env-local
-	$(COMPOSE_LOCAL) up -d --no-build --no-deps open-webui
-
 # Every model the gateway grants × thinking × prompt cache × native search, through the real
 # client: lists what the gateway refuses (scripts/gw_request_matrix.py). Free on the mock.
 gw-matrix-local: ensure-env-local
-	$(COMPOSE_LOCAL) exec -T api python -m scripts.gw_request_matrix
+	$(COMPOSE_LOCAL) exec -T ap-api python -m scripts.gw_request_matrix
 
 
 # First run: the schema, then the default (starter) agent's reference facts and
 # knowledge base. The api seeds the starter profile row itself at boot.
-# The ingestion container that runs: `ingestion` (GPU pipeline, make up-gpu) when it is up,
-# else `ingestion-cpu` (make up-cpu). Both answer as http://ingestion:8000; only `exec`
+# The ingestion container that runs: `ap-ingestion` (GPU pipeline, make up-gpu) when it is up,
+# else `ap-ingestion-cpu` (make up-cpu). Both answer as http://ap-ingestion:8000; only `exec`
 # needs the service's own name.
-INGESTION_SVC ?= $(shell docker inspect -f '{{.State.Running}}' pacod-ingestion 2>/dev/null | grep -q true && echo ingestion || echo ingestion-cpu)
+INGESTION_SVC ?= $(shell docker inspect -f '{{.State.Running}}' ap-ingestion 2>/dev/null | grep -q true && echo ap-ingestion || echo ap-ingestion-cpu)
 
 bootstrap:
-	$(COMPOSE) exec api python -m scripts.init_db
-	$(COMPOSE) exec api python -m scripts.seed_reference_facts --profile starter
+	$(COMPOSE) exec ap-api python -m scripts.init_db
+	$(COMPOSE) exec ap-api python -m scripts.seed_reference_facts --profile starter
 	$(COMPOSE) exec $(INGESTION_SVC) python -m scripts.ingest_corpus --profile starter
 	@echo ""
 	@echo "Bootstrap complete. Optional example agent: make seed-example PROFILE=taxes"
@@ -165,7 +170,7 @@ bootstrap:
 # collections, prompt + settings overrides, reference facts.
 seed-profile:
 	@test -n "$(PROFILE)" || { echo "usage: make seed-profile PROFILE=<id>   (e.g. taxes)"; exit 1; }
-	$(COMPOSE) exec api python -m scripts.seed_profile $(PROFILE)
+	$(COMPOSE) exec ap-api python -m scripts.seed_profile $(PROFILE)
 
 # An example agent end to end: its profile spec, then its knowledge base
 # (data/profiles/<id>/{corpus,links.md,documents}).
@@ -173,18 +178,18 @@ seed-example: seed-profile
 	$(COMPOSE) exec $(INGESTION_SVC) python -m scripts.ingest_corpus --profile $(PROFILE)
 
 # Stale per-profile prompt overrides hide a changed code default; previews unless
-# ARGS=--yes. Runs in `api` (the loop image ships no scripts/).
+# ARGS=--yes. Runs in `ap-api` (the loop image ships no scripts/).
 reset-prompt-overrides:
-	$(COMPOSE) exec api python -m scripts.reset_prompt_overrides $(ARGS)
+	$(COMPOSE) exec ap-api python -m scripts.reset_prompt_overrides $(ARGS)
 
 # Visual agent editor (app/agent_editor): import = draft + version 1 per profile
 # (insert-only, also done at every boot); adopt = publish the current config as
 # a release so the editor owns it (legacy config pages then lock owned keys).
 import-agents:
-	$(COMPOSE) exec api python -m scripts.agent_editor import $(ARGS)
+	$(COMPOSE) exec ap-api python -m scripts.agent_editor import $(ARGS)
 
 adopt-agents:
-	$(COMPOSE) exec api python -m scripts.agent_editor adopt
+	$(COMPOSE) exec ap-api python -m scripts.agent_editor adopt
 
 # Post-deploy: tell Bing/Yandex/Seznam/Naver the public pages changed. Runs on
 # the HOST (stdlib only) and reads SITE_URL + INDEXNOW_KEY from each running
@@ -198,28 +203,20 @@ indexnow-ping:
 PROFILE_ARG = $(if $(PROFILE),--profile $(PROFILE),)
 
 ingest:
-	$(COMPOSE) exec ingestion python -m scripts.ingest_corpus $(PROFILE_ARG)
+	$(COMPOSE) exec ap-ingestion python -m scripts.ingest_corpus $(PROFILE_ARG)
 
 ingest-clean:
-	$(COMPOSE) exec ingestion python -m scripts.drop_collection $(PROFILE_ARG)
+	$(COMPOSE) exec ap-ingestion python -m scripts.drop_collection $(PROFILE_ARG)
 
 reingest: ingest-clean ingest
 
 ingest-cpu:
-	$(COMPOSE) exec ingestion-cpu python -m scripts.ingest_corpus $(PROFILE_ARG)
+	$(COMPOSE) exec ap-ingestion-cpu python -m scripts.ingest_corpus $(PROFILE_ARG)
 
 ingest-clean-cpu:
-	$(COMPOSE) exec ingestion-cpu python -m scripts.drop_collection $(PROFILE_ARG)
+	$(COMPOSE) exec ap-ingestion-cpu python -m scripts.drop_collection $(PROFILE_ARG)
 
 reingest-cpu: ingest-clean-cpu ingest-cpu
-
-webui-up:
-	$(COMPOSE) --profile tools up -d open-webui
-	@echo "Open-WebUI available at http://localhost:3000"
-
-webui-down:
-	$(COMPOSE) --profile tools stop open-webui
-	docker rm pacod-openwebui || true
 
 # A local test venv: the runtime deps (requirements-base.txt), the test + lint deps, and the
 # vendored pacod_id wheel. The images run Python 3.13; use the same python3.
@@ -239,28 +236,28 @@ format:
 	uvx ruff@0.7.1 check --fix .
 
 # Unit tests need no services. `--no-deps` stops Compose from STARTING them, but
-# when the stack is already up the container still joins agent-net and reaches the
+# when the stack is already up the container still joins pacod-net and reaches the
 # live Postgres/Redis, so a test that assumes "no DB" picks up rows other tests
 # left. Point the service hosts at an unroutable port so every DB/Redis touch
 # fails fast and the suite is hermetic regardless of stack state.
-test-unit: ensure-env ensure-agent-net
+test-unit: ensure-env ensure-pacod-net
 	$(COMPOSE) run --rm --no-deps \
 	  -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=1 \
 	  -e REDIS_URL=redis://127.0.0.1:1/0 \
-	  api python -m pytest tests/unit -v
+	  ap-api python -m pytest tests/unit -v
 
 test-integration:
 	$(COMPOSE) exec \
 	  -e INTEGRATION_API_BASE=http://localhost:8000/api/v1 \
 	  -e INTEGRATION_HEALTH=http://localhost:8000/health \
-	  -e INTEGRATION_MCP_BASE=http://mcp-server:8000 \
-	  api python -m pytest tests/integration -v -m integration
+	  -e INTEGRATION_MCP_BASE=http://ap-mcp:8000 \
+	  ap-api python -m pytest tests/integration -v -m integration
 
 # Golden-set eval of one profile (PROFILE=<id>, blank = the default profile):
 # data/profiles/<id>/golden_qa.yaml, asked of that profile. ARGS for the rest,
 # e.g. ARGS="--source both".
 eval:
-	$(COMPOSE) exec api python -m scripts.run_eval $(PROFILE_ARG) $(ARGS)
+	$(COMPOSE) exec ap-api python -m scripts.run_eval $(PROFILE_ARG) $(ARGS)
 
 logs:
 	$(COMPOSE) logs -f --tail=100
@@ -274,13 +271,13 @@ clean:
 # ===========================================================================
 # Local test stack
 #
-# Everything below drives docker-compose.yml + docker-compose.local.yml. It is
+# Everything below drives docker-compose.yml + docker-compose.local.yml with the
+# standalone files (docker-compose.standalone.yml + .standalone.local.yml). It is
 # for running the platform on a development machine to try changes end to end;
 # it terminates no TLS and publishes on high ports, so it is not a deployment.
 #
-#   http://localhost:8080  main shell        http://localhost:3000  Open-WebUI
-#   http://localhost:3001  admin-api         http://localhost:8081  Adminer
-#   http://localhost:6333  Qdrant
+#   http://localhost:8080  main shell        http://localhost:3001  ap-admin-api
+#   http://localhost:8081  Adminer           http://localhost:6333  Qdrant
 # ===========================================================================
 
 # Every service reads `.env` through `env_file:`, and the local targets also pass
@@ -318,16 +315,11 @@ ensure-env-local: ensure-env
 		echo "Created .env.local from .env.local.example — review it before going further."; \
 	}
 
-# agent-net is declared `external: true` (the monitoring compose joins the same
-# network), so Compose will not create it. On a fresh checkout it does not exist.
-ensure-agent-net:
-	@docker network inspect agent-net >/dev/null 2>&1 || docker network create agent-net
-
-# pacod-link joins this stack to the gateway's (deploy/pacod-gw/docker-compose.link.yml):
-# pacod-id, Caddy and, from Phase 4 on, the services that call the gateway. External for the
-# same reason as agent-net.
-ensure-pacod-link:
-	@docker network inspect pacod-link >/dev/null 2>&1 || docker network create pacod-link
+# pacod-net, the one network every pacod stack joins (the gateway's, the monitoring module,
+# the full stack: pacod-demo/docs/NETWORK.md), is declared `external: true`, so Compose will
+# not create it. On a fresh machine it does not exist. Created once, kept by "down".
+ensure-pacod-net:
+	@docker network inspect pacod-net >/dev/null 2>&1 || docker network create pacod-net >/dev/null
 
 # pacod-id's and the gateway's secrets (deploy/secrets/*.env, gitignored, 0600). Idempotent:
 # fills only what is missing, prints names only.
@@ -337,7 +329,7 @@ ensure-secrets:
 # --- pacod-id image ----------------------------------------------------------
 # Built from a pinned pacod-id tree: by default the copy pacod-gw vendors, the same tree the
 # libraries in vendor/ came from (scripts/vendor-pacod-id.sh records its VERSION). The tag is
-# the commit, so compose (PACOD_ID_IMAGE, default in docker-compose.yml) and the vendored
+# the commit, so compose (PACOD_ID_IMAGE, default in docker-compose.standalone.yml) and the vendored
 # libraries cannot drift apart unnoticed (tests/unit/test_pacod_id_config.py).
 PACOD_ID_SRC ?= $(abspath ../../pacod-gw/vendor/pacod-id)
 PACOD_ID_COMMIT := $(shell awk '/^commit/ {print substr($$2, 1, 7)}' vendor/PACOD_ID_VERSION 2>/dev/null)
@@ -355,7 +347,7 @@ id-image:
 	docker build -f "$(PACOD_ID_SRC)/deploy/docker/pacod-id.Dockerfile" --target pacod-id \
 		-t $(PACOD_ID_IMAGE) "$(PACOD_ID_SRC)"
 
-up-local: ensure-env-local ensure-agent-net ensure-pacod-link ensure-secrets ensure-id-image
+up-local: ensure-env-local ensure-pacod-net ensure-secrets ensure-id-image
 	$(COMPOSE_LOCAL) $(LOCAL_PROFILES) up -d --build
 	@echo ""
 	@echo "Waiting for services to be healthy..."
@@ -372,36 +364,36 @@ down-local: ensure-env-local
 	$(COMPOSE_LOCAL) $(LOCAL_PROFILES) down
 
 restart-local: ensure-env-local
-	$(COMPOSE_LOCAL) restart api
+	$(COMPOSE_LOCAL) restart ap-api
 
-rebuild-local: ensure-env-local
-	$(COMPOSE_LOCAL) $(LOCAL_PROFILES) up -d --build api
+rebuild-local: ensure-env-local ensure-pacod-net
+	$(COMPOSE_LOCAL) $(LOCAL_PROFILES) up -d --build ap-api
 
-# Same steps as `bootstrap`, but ingestion runs in `ingestion-cpu`: the GPU
-# `ingestion` container is behind the gpu profile and is not started here.
+# Same steps as `bootstrap`, but ingestion runs in `ap-ingestion-cpu`: the GPU
+# `ap-ingestion` container is behind the gpu profile and is not started here.
 bootstrap-local: ensure-env-local
-	$(COMPOSE_LOCAL) exec api python -m scripts.init_db
-	$(COMPOSE_LOCAL) exec api python -m scripts.seed_reference_facts --profile starter
-	$(COMPOSE_LOCAL) exec api python -m scripts.seed_dev_users
-	$(COMPOSE_LOCAL) exec ingestion-cpu python -m scripts.ingest_corpus --profile starter
+	$(COMPOSE_LOCAL) exec ap-api python -m scripts.init_db
+	$(COMPOSE_LOCAL) exec ap-api python -m scripts.seed_reference_facts --profile starter
+	$(COMPOSE_LOCAL) exec ap-api python -m scripts.seed_dev_users
+	$(COMPOSE_LOCAL) exec ap-ingestion-cpu python -m scripts.ingest_corpus --profile starter
 	@echo ""
 	@echo "Bootstrap complete. Verify with: make smoke-local"
 	@echo "Optional example agent: make seed-example-local PROFILE=taxes"
 
 seed-example-local: ensure-env-local
 	@test -n "$(PROFILE)" || { echo "usage: make seed-example-local PROFILE=<id>   (e.g. taxes)"; exit 1; }
-	$(COMPOSE_LOCAL) exec api python -m scripts.seed_profile $(PROFILE)
-	$(COMPOSE_LOCAL) exec ingestion-cpu python -m scripts.ingest_corpus --profile $(PROFILE)
+	$(COMPOSE_LOCAL) exec ap-api python -m scripts.seed_profile $(PROFILE)
+	$(COMPOSE_LOCAL) exec ap-ingestion-cpu python -m scripts.ingest_corpus --profile $(PROFILE)
 
 # Health through the edge + one real streamed chat turn.
 #
-# The chat turn runs INSIDE the api container, not through localhost:8080, and
+# The chat turn runs INSIDE the ap-api container, not through localhost:8080, and
 # that is not a shortcut. Caddy sends /api/* to SvelteKit, whose handleApiProxy
 # (hooks.server.ts) 401s any /api/ request that arrives without an app session
 # cookie and otherwise OVERWRITES Authorization from the session — so a
 # `Bearer dev-token-…` header sent at the edge never reaches Python. Exercising
 # the dev token means talking to the API directly. The /health checks stay on
-# the edge because Caddy proxies /health to api:8000 without touching SvelteKit,
+# the edge because Caddy proxies /health to ap-api:8000 without touching SvelteKit,
 # which makes them a genuine end-to-end test of the local edge.
 # The edge's /health and one real chat turn of the starter agent (../scripts/smoke_local.sh:
 # scripts the gateway mock's replies when the mock is the provider; fails unless the stream
@@ -416,7 +408,7 @@ ps-local: ensure-env-local
 	$(COMPOSE_LOCAL) ps
 
 # DESTRUCTIVE: -v deletes every volume in the project, which includes
-# postgres_data, documents_data and qdrant_data — not just the log volumes
-# the local overlay adds. Same semantics as `clean`.
+# pacod_postgres_data, ap-documents-data and pacod_qdrant_data — not just the
+# log volumes the local overlay adds. Same semantics as `clean`.
 clean-local: ensure-env-local
 	$(COMPOSE_LOCAL) $(LOCAL_PROFILES) down -v

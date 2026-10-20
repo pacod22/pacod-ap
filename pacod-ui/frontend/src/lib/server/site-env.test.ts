@@ -63,17 +63,17 @@ describe('no drift between the key list and its consumers', () => {
 		}
 	});
 
-	it.skipIf(!hasApi)('maps every PACOD_ key into the frontend service', () => {
+	it.skipIf(!hasApi)('maps every PACOD_ key into the ap-frontend service', () => {
 		const compose = read(`${API_DIR}docker-compose.yml`);
-		const block = serviceBlock(compose, 'frontend');
+		const block = serviceBlock(compose, 'ap-frontend');
 		for (const key of SITE_ENV_KEYS) {
 			expect(block).toContain(`${key}: \${${SITE_ENV_PREFIX}${key}:-`);
 		}
 	});
 
-	it.skipIf(!hasApi)('blanks every tag id and token in the local frontend service', () => {
+	it.skipIf(!hasApi)('blanks every tag id and token in the local ap-frontend service', () => {
 		const local = read(`${API_DIR}docker-compose.local.yml`);
-		const block = serviceBlock(local, 'frontend');
+		const block = serviceBlock(local, 'ap-frontend');
 		for (const key of ID_KEYS) expect(block).toContain(`${key}: ""`);
 	});
 });

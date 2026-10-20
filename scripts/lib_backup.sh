@@ -62,6 +62,10 @@ load_config() {
   ENV_FILE="${ENV_FILE:-$REPO_ROOT/pacod-api/.env}"
 
   COMPOSE_FILE="${COMPOSE_FILE:-$REPO_ROOT/pacod-api/docker-compose.yml}"
+  # The shared components (pacod-postgres, pacod-qdrant, pacod-id, …) are in the standalone
+  # file next to the app file; a server's docker-compose.override.yml is loaded when present.
+  COMPOSE_STANDALONE_FILE="${COMPOSE_STANDALONE_FILE:-$(dirname "$COMPOSE_FILE")/docker-compose.standalone.yml}"
+  COMPOSE_OVERRIDE_FILE="${COMPOSE_OVERRIDE_FILE:-$(dirname "$COMPOSE_FILE")/docker-compose.override.yml}"
   COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-pacod}"
   export COMPOSE_PROJECT_NAME
 
@@ -71,11 +75,9 @@ load_config() {
   POSTGRES_USER="${POSTGRES_USER:-$(read_env_var POSTGRES_USER "$ENV_FILE")}"
   POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-$(read_env_var POSTGRES_PASSWORD "$ENV_FILE")}"
   POSTGRES_DB="${POSTGRES_DB:-$(read_env_var POSTGRES_DB "$ENV_FILE")}"
-  POSTGRES_OPENWEBUI_DB="${POSTGRES_OPENWEBUI_DB:-$(read_env_var POSTGRES_OPENWEBUI_DB "$ENV_FILE")}"
   POSTGRES_USER="${POSTGRES_USER:-pacod}"
   POSTGRES_DB="${POSTGRES_DB:-pacod}"
-  POSTGRES_OPENWEBUI_DB="${POSTGRES_OPENWEBUI_DB:-openwebui}"
-  # pacod-id's database: owned by its own role, created by the pacod-id-db service.
+  # pacod-id's database: owned by its own role, created by the pacod-db-init service.
   POSTGRES_ID_DB="${POSTGRES_ID_DB:-pacod_id}"
 
   QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
@@ -86,17 +88,20 @@ load_config() {
   BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-0}"
 
   # Compose service names (rarely need overriding).
-  SVC_POSTGRES="${SVC_POSTGRES:-postgres}"
-  SVC_REDIS="${SVC_REDIS:-redis}"
-  SVC_DOCUMENTS="${SVC_DOCUMENTS:-api}"          # container that mounts documents_data
-  SVC_OPENWEBUI="${SVC_OPENWEBUI:-open-webui}"
+  SVC_POSTGRES="${SVC_POSTGRES:-pacod-postgres}"
+  SVC_REDIS="${SVC_REDIS:-ap-redis}"
+  SVC_DOCUMENTS="${SVC_DOCUMENTS:-ap-api}"       # container that mounts ap-documents-data
   DOCUMENTS_MOUNT="${DOCUMENTS_MOUNT:-/srv/documents}"
-  OPENWEBUI_MOUNT="${OPENWEBUI_MOUNT:-/app/backend/data}"
   REDIS_MOUNT="${REDIS_MOUNT:-/data}"
 }
 
 # --- docker compose wrapper --------------------------------------------------
-compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
+compose() {
+  local files=(-f "$COMPOSE_FILE")
+  [[ -f "$COMPOSE_STANDALONE_FILE" ]] && files+=(-f "$COMPOSE_STANDALONE_FILE")
+  [[ -f "$COMPOSE_OVERRIDE_FILE" ]] && files+=(-f "$COMPOSE_OVERRIDE_FILE")
+  docker compose "${files[@]}" "$@"
+}
 
 # Run a command in a running service container (no TTY, so it is pipe-safe).
 compose_exec() { compose exec -T "$@"; }

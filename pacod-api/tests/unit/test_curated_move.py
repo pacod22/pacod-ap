@@ -109,7 +109,7 @@ class FakeIngestion:
     async def post(self, path, json):
         self.calls.append(("ingest", json["profile_id"]))
         self.payloads.append(json)
-        req = httpx.Request("POST", f"http://ingestion{path}")
+        req = httpx.Request("POST", f"http://ap-ingestion{path}")
         if self.status >= 400:
             return httpx.Response(self.status, json={"detail": "boom"}, request=req)
         row = {

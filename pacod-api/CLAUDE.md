@@ -29,7 +29,7 @@ none is named; ids follow the one-word `id == slug` convention), `GLOBAL_PROFILE
 |---|---|
 | Web framework | FastAPI + uvicorn (all async) |
 | Agent runtime | LangGraph (StateGraph) |
-| LLM gateway | **pacod-gw** — OpenAI-compatible data plane (`GATEWAY_URL`/v1); **all LLM calls go through it**. Its own compose project, reached over the external `pacod-link` network as `gw-core` |
+| LLM gateway | **pacod-gw** — OpenAI-compatible data plane (`GATEWAY_URL`/v1); **all LLM calls go through it**. Its own compose project, reached by name as `pacod-gw` on the shared external network `pacod-net` |
 | Identity | **pacod-id** — OIDC issuer for people, `pidt_` service tokens, a feed of bindings/sessions/deletions; the `pacod_id` client library is vendored as a wheel (`vendor/wheels/`) |
 | Vector store | Qdrant (per-profile collections `pacod_<slug>_kb` / `_kb_parents` / `_curated`, bge-m3 1024-dim, cosine) |
 | Relational DB | PostgreSQL 18.6 via PgBouncer (pacod-id has its own database, reached directly) |
@@ -80,7 +80,7 @@ out of `PROFILE_SCOPED_TABLES`.
 Written by the **SvelteKit frontend**, not by anything here: on the public vhost Caddy proxies only
 `/health` to Python, so a FastAPI middleware would see zero crawler traffic. The frontend classifies
 the User-Agent, verifies the major engines by reverse+forward DNS, and POSTs batches to
-`POST /api/v1/crawler-visits/ingest` over `agent-net`. That route is authenticated by the shared
+`POST /api/v1/crawler-visits/ingest` over `pacod-net`. That route is authenticated by the shared
 `CRAWLER_INGEST_TOKEN` rather than `require_admin` (the caller is a container, not a user) and
 **fails closed** — a blank token 503s the endpoint instead of skipping the check, which is one of
 the few places in this codebase where blank does not simply mean "feature off" (the MCP token is
@@ -94,13 +94,14 @@ address enters this table.
 
 **Usage analytics** (admin **Monitoring → Analytics**, `admin_api/routes/analytics.py` +
 `app/services/analytics_queries.py`). Answers "requests and LLM usage per **site**, per profile, per
-user". The `site` axis is `request_context.KNOWN_SITES` = `pacod` | `openwebui` | `internal` (no
-request: workers) | `unknown`. `pacod` comes from the `X-Pacod-Site` header, which every trusted hop
+user". The `site` axis is `request_context.KNOWN_SITES` = `pacod` | `internal` (no request:
+workers) | `unknown`. `pacod` comes from the `X-Pacod-Site` header, which every trusted hop
 **overwrites** (the SvelteKit proxy in `hooks.server.ts`, which also strips `X-Pacod-Internal`, and
 `createApiFetch` for SSR calls); only `ANALYTICS_TRUSTED_SITES` values (default `pacod`) are
-accepted, and it is never used for authz. `openwebui` is not a header value: it is the fallback for
-paths under `/v1/*`; anything else is `unknown` (a `site=unknown` filter also matches NULL rows).
-`app/core/request_context.py`: `RequestContextMiddleware` (pure ASGI, `api` only) opens a
+accepted, and it is never used for authz. Anything else is `unknown`, OpenAI-compatible `/v1/*` calls
+included (a `site=unknown` filter also matches NULL rows). Rows written before Open-WebUI was retired
+keep the site `openwebui`: nothing writes it any more, and the reports show and filter it as is.
+`app/core/request_context.py`: `RequestContextMiddleware` (pure ASGI, `ap-api` only) opens a
 `RequestContext` per request; `AuthGuard.authenticate` and `debug_scope` fill `user_id`/`profile_id`
 by **mutating** it (`note_user` / `note_profile` — a `ContextVar.set()` deeper in would be invisible
 to the middleware's `finally`); the middleware then buffers one `web_requests` row (`kind='api'`,
@@ -135,13 +136,12 @@ written today: **`login`** (`AuthGuard`, the first time a process sees a pacod-i
 = the client id; also stamps `users.last_login_at` — so a restart or another process records it
 again, and admin-console sign-ins through admin-api, which has no request-context middleware, carry
 no IP/site), **`chat_turn`** (`finalize_turn`, every streamed outcome incl. cache hits and
-clarifications, on both chat paths — Open-WebUI turns carry site `openwebui`; off-topic 400s aren't
-logged) and **`chat_deleted`**. The other values in the tuple have no writer (sign-out, sessions
+clarifications, on both chat paths; off-topic 400s aren't logged) and **`chat_deleted`**. The other values in the tuple have no writer (sign-out, sessions
 and passwords are pacod-id's). **The IP** is `app/core/client_ip.py` (first X-Forwarded-For hop,
 else X-Real-IP — **no peer fallback**, since without the headers the peer is a container);
 `RequestContext.ip` carries it. **The counter**: `RequestContextMiddleware` calls `user_ip_sink.hit()`
-for every authenticated request with an IP that isn't SSR (`X-Pacod-Internal`), skip-listed or
-`openwebui` — aggregated in-process, one `ON CONFLICT DO UPDATE use_count = use_count + excluded`
+for every authenticated request with an IP that isn't SSR (`X-Pacod-Internal`) or skip-listed —
+aggregated in-process, one `ON CONFLICT DO UPDATE use_count = use_count + excluded`
 per 10 s flush (or at 500 keys). Admin-api traffic isn't counted (no middleware there). The log
 writer is `app/services/user_activity.record_activity` (fire-and-forget). SvelteKit's SSR calls
 forward the client IP as `X-Forwarded-For` (`createApiFetch`). Env: `USER_ACTIVITY_ENABLED` (true;
@@ -354,7 +354,7 @@ improvement_loop/       Continuous-improvement loop ("Review process") — see i
   llm.py                JSON chat helper over the shared LLMClient (loop model ids + safe parse + backoff)
 
 newsletter_worker/      Per-profile news digest worker (`python -m newsletter_worker worker|collect|send`)
-ingestion_api/          HTTP service wrapping the ingestion pipeline (container `ingestion` / `ingestion-cpu`)
+ingestion_api/          HTTP service wrapping the ingestion pipeline (container `ap-ingestion` / `ap-ingestion-cpu`)
   main.py, routes.py    POST /ingest/{file,url,text,corpus}, POST /drop, GET /health
 mcp_server/server.py    FastAPI MCP server — get_fact / list_facts over reference_facts (X-MCP-Token)
 embeddings_service/server.py  POST /embed, /rerank, /reload (bge-m3 or hash backend)
@@ -387,74 +387,92 @@ sibling checkout, `GW_DIR=../pacod-gw` from the repo root.
 
 ## Docker services
 
-`docker-compose.yml` is compose project **`pacod`**. Networks: `agent-net` and `pacod-link`, both
-`external: true` (created by `ensure-agent-net` / `ensure-pacod-link`). `pacod-link` is shared with the
-gateway's stack: it carries `gw-core` (8080 data plane, 8081 management, 9100 metrics) and `gw-console`
-(3000) to the app, and `pacod-id` to the gateway. Server ports below; the local overlay's are in
-**Running the stack locally**.
+Compose project **`pacod`**, split as every pacod repository is (`../../pacod-demo/docs/NETWORK.md`):
+`docker-compose.yml` is the **app file** — pacod-ap's own services plus the shared `pacod-embeddings`;
+`docker-compose.standalone.yml` holds pacod-ap's copies of the **shared components** (`pacod-caddy`,
+`pacod-postgres`, `pacod-db-init`, `pacod-qdrant`, `pacod-id`); the laptop overlays are
+`docker-compose.local.yml` (app file) and `docker-compose.standalone.local.yml` (shared components,
+plus `pacod-mailpit`). Every Makefile target loads app + standalone (+ the local pair), and a server's
+`docker-compose.override.yml` when present. The full stack (pacod-demo) loads only the app file and
+runs each shared component once; that is why every `depends_on` on a shared component carries
+`required: false` (compose still needs the service *defined* somewhere in the project).
 
-| Container | Image / Dockerfile | Host port | Purpose |
-|---|---|---|---|
-| `caddy` | caddy:2.8-alpine | 80, 443, 3000 | The only edge: TLS, SSE buffering off; also serves pacod-id and the gw console (agent-net + pacod-link) |
-| `frontend` *(ui profile)* | `../pacod-ui/frontend/Dockerfile` (build arg `ID_ISSUER`) | — | SvelteKit BFF: chat UI, admin console, Open-WebUI SSO bridge; pacod-id client `pacod-web`. No `env_file` |
-| `api` | docker/api.Dockerfile | — | Chat API + OpenAI-compatible `/v1` (`app.main:app`); pushes the pacod-id catalogue |
-| `admin-api` | docker/admin_api.Dockerfile | 127.0.0.1:3001 | Admin CRUD + store mgmt + KB curation + the pacod-id and gateway facades |
-| `ingestion` *(gpu profile)* | docker/ingestion.Dockerfile | — | Ingestion service (embeddings over HTTP) |
-| `ingestion-cpu` *(cpu profile)* | docker/ingestion_cpu.Dockerfile | — | Ingestion service (`EMBEDDINGS_BACKEND=inline_cpu`), network alias `ingestion`, `mem_limit 7g` |
-| `mcp-server` | docker/mcp.Dockerfile | — | `get_fact` / `list_facts` over `reference_facts` (`MCP_POSTGRES_DSN` via pgbouncer) |
-| `embeddings` | docker/embeddings.Dockerfile | — | bge-m3 embedding/rerank server (`docker-compose.gpu.yml` adds the AMD GPU devices) |
-| `postgres` | postgres:18.6-alpine3.24 | 127.0.0.1:5432 | Databases `pacod` (the app), `openwebui`, `pacod_id` |
-| `postgres-init` | same image | — | One-shot: creates the `openwebui` database if missing |
-| `pgbouncer` | docker/pgbouncer.Dockerfile | — | Connection pooler (session mode) for `pacod` and `openwebui` |
-| `pacod-id-db` | postgres:18.6-alpine3.24 (as a psql client) | — | One-shot (`docker/postgres/create-id-role.sh`): creates the non-superuser role + database `pacod_id`, resets the role's password to `PID_DB_PASSWORD` on every start |
-| `pacod-id` | `${PACOD_ID_IMAGE:-pacod-id:c4eb04b}` (built by `make id-image` from the vendored pacod-id source) | — (via Caddy) | Identity provider: public listener 8070 (routed), internal 8071 and readyz/metrics 9170 (never routed); read-only FS, `cap_drop: ALL`. Connects to Postgres **directly, never through PgBouncer** (it relies on `LISTEN/NOTIFY`). `PID_BOOTSTRAP_ADMIN_ROLES=id.admin,pacod.superuser,pacod.admin,gw.platform_admin`; env from `../deploy/secrets/id.env` |
-| `redis` | redis:7-alpine | — | Request quota + throttle, config/topic/directive/answer caches, the frontend's sessions |
-| `qdrant` | qdrant/qdrant:latest | 127.0.0.1:6333 | Vector store |
-| `improvement-loop-worker` | docker/improvement_loop.Dockerfile | — | Always-on: drains the run-request queue ("Run now") + fires the daily schedules (loop runs, meta-eval, fix verification, the evidence/crawler/analytics/activity prunes). Fix verification runs a **real agent turn in-process**, so the worker needs the MCP server (`MCP_SERVER_URL`, default `http://mcp-server:8000`) and `MCP_SHARED_SECRET`; without them the re-check degrades to KB-only |
-| `improvement-loop` *(loop profile)* | same image | — | One-shot job form (`docker compose --env-file .env --env-file .env.gateway run --rm improvement-loop run` — without `.env.gateway` its gateway key is blank) |
-| `newsletter-worker` | docker/newsletter_worker.Dockerfile | — | Always-on newsletter collect/send queue drainer + calendar schedules |
-| `adminer` *(tools profile)* | adminer:4.8.1 | 127.0.0.1:8081 | DB browser |
-| `open-webui` | ghcr.io/open-webui/open-webui:main | — (via Caddy :3000) | Chat UI on `OPENAI_API_BASE_URL=http://api:8000/v1`, signed in as the `pacod-webui` service account; Postgres `openwebui` DB + Redis. Has **no** compose profile (always on) |
-| `mailpit` *(local overlay only)* | axllent/mailpit:v1.27 | 127.0.0.1:8025 | Catches pacod-id's mail locally |
+One network: **`pacod-net`**, `external: true`, created by `ensure-pacod-net` (both Makefiles; every
+`up*` target). Service key = container name = DNS name; shared components are `pacod-*`, pacod-ap's own
+`ap-*`, the gateway's `gw-*` (and `pacod-gw`: 8080 data plane, 8081 management, 9100 metrics;
+`gw-console` 3000), all on the same network. Server ports below; the local overlays' are in **Running
+the stack locally**.
 
-The gateway clients (`api`, `admin-api`, both loop services, `newsletter-worker`) join `pacod-link`;
-each gets `GATEWAY_URL=http://gw-core:8080` and its own key (see **LLM gateway**). `.env` is the
-`env_file:` of api, admin-api, ingestion(-cpu), both loop services, newsletter-worker and mcp-server;
-pacod-id and pacod-id-db read `../deploy/secrets/id.env`; the frontend gets only its compose
-`environment:` block.
+| Container | File | Image / Dockerfile | Host port | Purpose |
+|---|---|---|---|---|
+| `pacod-caddy` | standalone | caddy:2.11.6-alpine | 80, 443 | The only edge: TLS, SSE buffering off. pacod-ap's site is `../platform/caddy/ap.caddy` (mounted at `/etc/caddy/sites`); `docker/caddy/Caddyfile` adds the global options, pacod-id's and the gw console's sites |
+| `ap-frontend` *(ui profile)* | app | `../pacod-ui/frontend/Dockerfile` (build arg `ID_ISSUER`) | — | SvelteKit BFF: chat UI, admin console; pacod-id client `pacod-web`. No `env_file` |
+| `ap-api` | app | docker/api.Dockerfile | — | Chat API + OpenAI-compatible `/v1` (`app.main:app`); pushes the pacod-id catalogue |
+| `ap-admin-api` | app | docker/admin_api.Dockerfile | 127.0.0.1:3001 | Admin CRUD + store mgmt + KB curation + the pacod-id and gateway facades |
+| `ap-ingestion` *(gpu profile)* | app | docker/ingestion.Dockerfile | — | Ingestion service (embeddings over HTTP) |
+| `ap-ingestion-cpu` *(cpu profile)* | app | docker/ingestion_cpu.Dockerfile | — | Ingestion service (`EMBEDDINGS_BACKEND=inline_cpu`), network alias `ap-ingestion`, `mem_limit 7g` |
+| `ap-mcp` | app | docker/mcp.Dockerfile | — | `get_fact` / `list_facts` over `reference_facts` (`MCP_POSTGRES_DSN` via `ap-pgbouncer`) |
+| `pacod-embeddings` | app | docker/embeddings.Dockerfile | — | bge-m3 embedding/rerank server, shared (other products embed with it in the full stack); `docker-compose.gpu.yml` adds the AMD GPU devices |
+| `ap-pgbouncer` | app | docker/pgbouncer.Dockerfile | — | Connection pooler (session mode) for `pacod`, in front of `pacod-postgres` |
+| `ap-redis` | app | redis:7-alpine | — | Request quota + throttle, config/topic/directive/answer caches, the frontend's sessions |
+| `ap-improvement-loop-worker` | app | docker/improvement_loop.Dockerfile | — | Always-on: drains the run-request queue ("Run now") + fires the daily schedules (loop runs, meta-eval, fix verification, the evidence/crawler/analytics/activity prunes). Fix verification runs a **real agent turn in-process**, so the worker needs the MCP server (`MCP_SERVER_URL`, default `http://ap-mcp:8000`) and `MCP_SHARED_SECRET`; without them the re-check degrades to KB-only |
+| `ap-improvement-loop` *(loop profile)* | app | same image | — | One-shot job form (`docker compose -f docker-compose.yml -f docker-compose.standalone.yml --env-file .env --env-file .env.gateway run --rm ap-improvement-loop run` — without `.env.gateway` its gateway key is blank) |
+| `ap-newsletter-worker` | app | docker/newsletter_worker.Dockerfile | — | Always-on newsletter collect/send queue drainer + calendar schedules |
+| `ap-adminer` *(tools profile)* | app | adminer:4.8.1 | 127.0.0.1:8081 | DB browser |
+| `pacod-postgres` | standalone | postgres:18.6-alpine3.24 | 127.0.0.1:5432 | Databases `pacod` (the app), `pacod_id`; superuser `POSTGRES_USER` (`pacod`, as always). Volume key `pacod-postgres-data`, pinned to its old name `pacod_postgres_data` |
+| `pacod-db-init` | standalone | same image (as a psql client) | — | One-shot, at every start: runs each `/initdb.d/*.sh` — `../platform/postgres/ap-db.sh` (the role `pacod`, the database `pacod`, the `bulgarian_simple` text search configuration) and `id-db.sh` (the non-superuser role + database `pacod_id`, its password reset to `PID_DB_PASSWORD`); the repo-root up targets (`up`, `up-api`, `up-local`, `up-all`) add pacod-gw's `gw-db.sh` (`../deploy/pacod-gw/docker-compose.gw-db.yml`, `AP_EXTRA_FILES`) whenever `GW_DIR` has it |
+| `pacod-qdrant` | standalone | qdrant/qdrant:v1.19.2 | 127.0.0.1:6333 | Vector store |
+| `pacod-id` | standalone | `${PACOD_ID_IMAGE:-pacod-id:c4eb04b}` (built by `make id-image` from the vendored pacod-id source) | — (via Caddy) | Identity provider: public listener 8070 (routed), internal 8071 and readyz/metrics 9170 (never routed); read-only FS, `cap_drop: ALL`. Connects to `pacod-postgres` **directly, never through PgBouncer** (it relies on `LISTEN/NOTIFY`). `PID_BOOTSTRAP_ADMIN_ROLES=id.admin,pacod.superuser,pacod.admin,gw.platform_admin`; env from `../deploy/secrets/id.env` |
+| `pacod-mailpit` | standalone.local only | axllent/mailpit:v1.27 | 127.0.0.1:8025 | Catches pacod-id's mail locally |
+
+The gateway clients (`ap-api`, `ap-admin-api`, both loop services, `ap-newsletter-worker`) each get
+`GATEWAY_URL=http://pacod-gw:8080` and their own key (see **LLM gateway**). `.env` is the `env_file:`
+of ap-api, ap-admin-api, ap-ingestion(-cpu), both loop services, ap-newsletter-worker and ap-mcp;
+pacod-id and pacod-db-init read `../deploy/secrets/id.env` (pacod-db-init also `gw.env`, for
+`GW_DB_PASSWORD`); the frontend gets only its compose `environment:` block.
 
 **The gateway is its own compose project**, `pacod-ap-gw`, run from the gateway's checkout
-(`GW_DIR ?= ../pacod-gw` in the root Makefile) with `--project-directory $(GW_DIR)/deploy`, the env file
-`deploy/secrets/gw.env`, and the overrides in `../deploy/pacod-gw/`: `docker-compose.link.yml` (joins
-gw core, ui, tester and prometheus to `pacod-link` with their aliases), `docker-compose.platform-id.yml`
-(points the gateway at the platform's pacod-id instead of its own) and, in dev,
-`docker-compose.platform-id.dev.yml`. A standalone gw dev stack run from pacod-gw itself (project `pacod-gw`) is a
-different project with the same host ports — never run both at once.
+(`GW_DIR ?= ../pacod-gw` in the root Makefile) with `--project-directory $(GW_DIR)/deploy` (its
+relative paths resolve there), the env file `deploy/secrets/gw.env`, **pacod-gw's app file only**
+(+ its `docker-compose.dev.yml` in dev; never its standalone file) and the overrides in
+`../deploy/pacod-gw/`: `docker-compose.platform-id.yml` (OIDC through the platform's pacod-id, the
+console's Prometheus = `pacod-prometheus`, and placeholders — in a profile nothing enables — for the
+shared components pacod-gw's app file waits for, which are the platform's) and, in dev,
+`docker-compose.platform-id.dev.yml`. The gateway's database `pacod_gw` lives in the platform's
+`pacod-postgres` (made by pacod-db-init with pacod-gw's fragment). A standalone gw dev stack run from
+pacod-gw itself is a different project with the same host ports and the same `pacod-*` names — never
+run both at once.
 
 ### Repos & Caddy routing
 
-The repo-root holds `pacod-api/` (this directory) and `pacod-ui/` side by side; the `frontend` build
+The repo-root holds `pacod-api/` (this directory) and `pacod-ui/` side by side; the `ap-frontend` build
 context is `../pacod-ui/frontend`, relative to this directory. The gateway is a sibling checkout
 (`../pacod-gw` from the repo root).
 
 TLS is terminated at Caddy with externally-provisioned certs (`auto_https off`, `admin off`); plain HTTP
-→ 301 HTTPS (`pacod.io` → `www.pacod.io`). Server vhosts (`docker/caddy/Caddyfile`):
+→ 301 HTTPS (`pacod.io` → `www.pacod.io`). pacod-ap's own site (www) is the fragment
+`../platform/caddy/ap.caddy`: a site block only, its address from `{$AP_SITE}` (default
+`www.pacod.io:443`), and `{$AP_SITE_OPTIONS}` for what a Caddyfile adds to it (the server: `import ap_tls_pacod_io` — certificates and the log
+file; locally and in the full stack: nothing). `docker/caddy/Caddyfile` and `Caddyfile.local` hold the
+global options, the `:9180` metrics listener and the sites only pacod-ap's own stack serves (id,
+console, the redirects), and
+`import /etc/caddy/sites/*.caddy`. The full stack imports the same fragment with HTTP-only globals
+(`AP_SITE=http://app.localhost:8800`). Server vhosts:
 
 | Vhost | Routes |
 |---|---|
-| `www.pacod.io` | `/health` → `api:8000`; `/monitoring*` → Grafana behind `forward_auth`; `/static/*` → Open-WebUI; `/api/*` → `frontend:3000` (`flush_interval -1`, 10-minute timeouts — what makes SSE arrive incrementally); `/internal/*` → 404; everything else → `frontend:3000` |
+| `www.pacod.io` | `/health` → `ap-api:8000`; `/monitoring*` → Grafana behind `forward_auth`; `/api/*` → `ap-frontend:3000` (`flush_interval -1`, 10-minute timeouts — what makes SSE arrive incrementally); `/internal/*` → 404; everything else → `ap-frontend:3000` |
 | `id.pacod.io` | `pacod-id:8070` (HSTS, nosniff, no-referrer); 8071 and 9170 are never routed |
 | `console.pacod.io` | `gw-console:3000`; the gateway's management API is never routed |
-| `ai.pacod.io`, `ctest.local:3000` | Open-WebUI behind the SSO `forward_auth` gate |
 
 The id and console vhosts log through the `(redacted_logging)` snippet, which deletes the query
 parameters `token, code, state, id_token_hint, login_hint, flow, next`, the request `Referer` and the
-response `Location`. Caddy routes `/api/*` to the SvelteKit `frontend`, which (in `hooks.server.ts`)
+response `Location`. Caddy routes `/api/*` to the SvelteKit `ap-frontend`, which (in `hooks.server.ts`)
 puts the pacod-id access token of the session in `Authorization` and proxies admin paths
-(`ADMIN_PATH_PREFIXES`) to `admin-api`, everything else to `api`; it 401s an `/api/` request that has
+(`ADMIN_PATH_PREFIXES`) to `ap-admin-api`, everything else to `ap-api`; it 401s an `/api/` request that has
 no session (except the public newsletter subscribe/confirm/unsubscribe prefixes) and always replaces
-`Authorization`, so a bearer-only caller never reaches Python through the edge. Open-WebUI's vhost serves
-it with a `forward_auth` SSO gate (see **Identity**).
+`Authorization`, so a bearer-only caller never reaches Python through the edge (the OpenAI-compatible
+`/v1/*` is therefore reachable only on `pacod-net` and, locally, `127.0.0.1:8000`).
 
 The monitoring UI (Grafana, from the optional repo-root `monitoring/` module) is proxied at
 `www.pacod.io/monitoring` — the prefix is **not** stripped (Grafana runs with
@@ -464,21 +482,26 @@ anonymous Viewer (`GF_AUTH_ANONYMOUS_*` + `GF_SECURITY_ALLOW_EMBEDDING`), so the
 the sole access control: a Caddy `forward_auth` (in a `route {}` block to pin ordering) calls the
 SvelteKit `/internal/monitoring-auth` endpoint, which returns 200 only for an **admin** session (else
 403). Grafana's static assets (`/monitoring/public/*`) skip the gate. It works because `pacod-caddy`
-and `pacod-grafana` share `agent-net`; if the monitoring module isn't running, `/monitoring` returns
-502. The local Caddyfile has no `/monitoring` route.
+and `pacod-grafana` share `pacod-net`; if the monitoring module isn't running, `/monitoring` returns
+502. The route is in the site fragment, so the local edge has it too (Grafana's `GF_SERVER_ROOT_URL`
+must then name `http://localhost:8080/monitoring/`).
 
 **Caddy edge metrics + `/internal/*` block.** The Caddyfile enables Caddy's built-in Prometheus
 instrumentation (`servers { metrics }`) and exposes it on an internal-only `:9180` listener (not
 host-published) — the authoritative **all-web-requests** signal (every vhost, incl. anonymous
 marketing/static traffic the FastAPI `/metrics` never sees, since the frontend proxies `/api/*`).
-Prometheus scrapes `caddy:9180`. The www vhost has `handle /internal/* { respond 404 }` **before** the
-catch-all: `/internal/*` (monitoring-auth, webui-auth, and the frontend's `/internal/metrics`) would
+Prometheus scrapes `pacod-caddy:9180`. The www vhost has `handle /internal/* { respond 404 }` **before** the
+catch-all: `/internal/*` (monitoring-auth and the frontend's `/internal/metrics`) would
 otherwise be publicly reachable via the SvelteKit catch-all; Prometheus and `forward_auth` hit
-`frontend:3000` directly over `agent-net`, so the 404 doesn't affect them. The registered-vs-anonymous
+`ap-frontend:3000` directly over `pacod-net`, so the 404 doesn't affect them. The registered-vs-anonymous
 split lives in the frontend (`pacod_frontend_*`, see pacod-ui).
 
-**Monitoring and the gateway.** The monitoring stack's Prometheus also joins `pacod-link` and scrapes
-`gw-core:9100` (job `pacod-gw-core`, `honor_labels`, `instance: core`) and `pacod-id:9170`. The gateway's
+**Monitoring and the gateway.** The monitoring stack's Prometheus (`pacod-prometheus`) scrapes, by
+name on `pacod-net`, the platform's jobs from `monitoring/prometheus/prometheus.yml.tpl` — among them
+`pacod-gw:9100` (job `pacod-gw-core`, `honor_labels`, `instance: core`) and `pacod-id:9170` — and
+pacod-ap's own from the fragment `../platform/prometheus/ap.yml` (`scrape_config_files`; the full stack
+loads the same file; job names never change). The gateway console's Metrics page asks it
+(`PROMETHEUS_URL=http://pacod-prometheus:9090`, set by `deploy/pacod-gw/docker-compose.platform-id.yml`). The gateway's
 four dashboards are vendored under `monitoring/grafana/dashboards-gw/` (folder `pacod-gw`) and its alert
 rules into `monitoring/prometheus/alerts/gw.rules.yml`; this Alertmanager is the only alert owner, and
 `app.rules.yml` keeps the client-side LLM alerts on `llm_requests_total`. See `../monitoring/README.md`.
@@ -486,9 +509,11 @@ rules into `monitoring/prometheus/alerts/gw.rules.yml`; this Alertmanager is the
 ## Common commands
 
 Two Makefiles. **This one** (`pacod-api/Makefile`) drives the app's compose project; its server
-commands use `COMPOSE = docker compose --env-file .env --env-file .env.gateway` (with an explicit
-`--env-file` Compose no longer reads `.env` by itself, and the gateway keys reach the services only by
-interpolation from `.env.gateway`). The **repo-root Makefile** (`../Makefile`) orchestrates the three
+commands use `COMPOSE = docker compose -f docker-compose.yml -f docker-compose.standalone.yml
+[-f docker-compose.override.yml] --env-file .env --env-file .env.gateway` (with an explicit `-f`
+Compose no longer reads a server's override file by itself, nor `.env` with an explicit
+`--env-file`; the gateway keys reach the services only by interpolation from `.env.gateway`). Service
+names in targets are the new ones (`make -C pacod-api logs`, `exec ap-api …`). The **repo-root Makefile** (`../Makefile`) orchestrates the three
 stacks — app, gateway, monitoring — plus secrets, the gateway/identity bootstraps, backup and the
 combined tests.
 
@@ -496,7 +521,7 @@ combined tests.
 # pacod-api/Makefile — server
 make up-cpu / up-gpu / up-ui        # start the stack (cpu + tools profiles) / with the AMD GPU overlay (no profiles) / the frontend
 make down-cpu / down-ui             # stop (volumes preserved)
-make restart / rebuild-cpu          # restart / rebuild + restart the api container only
+make restart / rebuild-cpu          # restart / rebuild + restart the ap-api container only
 make bootstrap                      # init_db + seed_reference_facts --profile starter + ingest_corpus --profile starter
 make seed-example PROFILE=taxes     # install an example agent (seed_profile) + ingest its knowledge base
 make seed-profile PROFILE=<id>      # provision one agent from scripts/profiles/<id>.py (no ingest)
@@ -511,10 +536,10 @@ make secret-set NAME=… [FILE=…]     # store one secret from stdin (never ech
 make logs / ps / clean              # logs / status / stop + DELETE volumes
 ```
 
-`bootstrap`, `seed-example`, `ingest`, `ingest-clean` and `reingest` `exec` the **`ingestion`**
+`bootstrap`, `seed-example`, `ingest`, `ingest-clean` and `reingest` `exec` the **`ap-ingestion`**
 service, which runs only under the `gpu` profile — and no target starts that profile (`up-cpu` starts
-`ingestion-cpu`; `up-gpu` adds the GPU overlay but passes no `--profile gpu`). On a CPU server use the
-`*-cpu` ingest targets (the `ingestion` network alias does not help `exec`, which resolves service
+`ap-ingestion-cpu`; `up-gpu` adds the GPU overlay but passes no `--profile gpu`). On a CPU server use the
+`*-cpu` ingest targets (the `ap-ingestion` network alias does not help `exec`, which resolves service
 names).
 
 ```bash
@@ -522,11 +547,10 @@ names).
 make secrets-init                   # deploy/secrets/{id,gw}.env with generated values, providers.env empty (0600)
 make secret-set NAME=… [FILE=…]     # one secret from stdin into pacod-api/.env (default) or FILE
 make id-image                       # build pacod-id:<commit> from the vendored source (PACOD_ID_SRC)
-make up-all                         # local: up-local → gw-up → gw-bootstrap → id-bootstrap, then print the URLs
+make up-all                         # local: up-local (+ pacod-gw's database) → gw-up → gw-bootstrap (→ monitor-up), then the URLs
 make down-all                       # gw-down + down-local
 make gw-up / gw-down / gw-ps / gw-logs / gw-config   # the gateway stack (project pacod-ap-gw, GW_DIR=../pacod-gw)
 make gw-bootstrap [GW_ENV=dev|live] # config import, provider credentials, per-service keys, report/admin tokens
-make id-bootstrap                   # Open-WebUI's pacod-webui service account → PACOD_WEBUI_SERVICE_TOKEN
 make smoke-all                      # smoke-local + gw-turn-smoke (a turn traced through the gw mock) + gw-smoke
 make test                           # backend unit tests + pacod-ui tests
 make monitor-up / monitor-down      # the monitoring stack
@@ -541,42 +565,45 @@ make backup                                        # → ./backups/pacod-backup-
 make restore ARCHIVE=backups/pacod-backup-<UTC>.tar.gz [ARGS='--yes --overwrite-config']
 ```
 
-`backup.sh` bundles, into one archive: `pg_dumpall --globals-only` + `pg_dump -Fc` of `pacod`,
-`openwebui` and `pacod_id` (via `docker compose exec postgres`, never PgBouncer); a Qdrant REST snapshot
+`backup.sh` bundles, into one archive: `pg_dumpall --globals-only` + `pg_dump -Fc` of `pacod`
+and `pacod_id` (via `docker compose exec pacod-postgres`, never PgBouncer); a Qdrant REST snapshot
 of every collection (`GET /collections` → real names, alias resolved); config and secrets
 (`pacod-api/.env`, `pacod-api/.env.gateway`, `deploy/secrets/`, `docker/pacod-id`, `authz/`,
 `deploy/pacod-gw/`, compose files, Caddyfiles, monitoring config, `pacod-api/data/`); the
-`documents_data` + Open-WebUI data volumes (tarred from inside the containers); and optionally Redis
+`ap-documents-data` volume (tarred from inside the container); and optionally Redis
 (`BACKUP_INCLUDE_REDIS=true`, off by default). **The secrets must ride with the dumps** —
 `APP_SECRETS_KEY` (in `.env`) decrypts the `provider_secrets` rows and `PID_KEK` (in
 `deploy/secrets/id.env`) pacod-id's — so the archive is a secret (`chmod 600`). The gateway's own
 Postgres and ClickHouse are pacod-gw's `make backup`. `restore.sh` reverses each component
 (`pg_restore --clean`, `pacod_id` as `--role=pacod_id`; Qdrant snapshot upload + recover; volume
-untar) and only **previews** config unless `--overwrite-config` is passed; it ends by reminding you to
-recreate the gateway clients and restart pacod-id.
+untar; an older archive's Open-WebUI dump and data dir are skipped with a note) and only
+**previews** config unless `--overwrite-config` is passed; it ends by reminding you to recreate the
+gateway clients and restart pacod-id.
 
 Bootstrap check (a dev token works only against the api directly — see the trap below):
 ```bash
-make smoke-local    # /health through the edge + an SSE turn inside the api container
+make smoke-local    # /health through the edge + an SSE turn inside the ap-api container
 ```
 
 ## Running the stack locally (test only)
 
-The committed `docker-compose.yml` targets the **server**: Caddy terminates TLS for real hostnames
-(`www.pacod.io`, `id.pacod.io`, `console.pacod.io`, `ai.pacod.io`, `ctest.local`) with certificates
-bind-mounted from `/data/caddy/certs`, and `caddy`, `qdrant`, `open-webui` and every service's log
-dir bind-mount host paths under `/data/**` — which on macOS Docker Desktop are outside File Sharing and
-cannot even be created. Three files make it runnable, none of which touch application code:
+The committed `docker-compose.yml` and `docker-compose.standalone.yml` target the **server**: Caddy
+terminates TLS for real hostnames (`www.pacod.io`, `id.pacod.io`, `console.pacod.io`) with
+certificates bind-mounted from `/data/caddy/certs`, and `pacod-caddy`, `pacod-qdrant` and every
+service's log dir bind-mount host paths under `/data/**` —
+which on macOS Docker Desktop are outside File Sharing and cannot even be created. Four files make it
+runnable, none of which touch application code:
 
 | File | Role |
 |---|---|
-| `docker-compose.local.yml` | Overlay: every `/data/**` bind mount → a named volume; the Caddyfile swapped; edge published on high ports; Postgres remapped to `15432`; the api also on `127.0.0.1:8000`; pacod-id with its local TOML, issuer `http://127.0.0.1:8070` and mail to `mailpit`; CPU embeddings. Uses `!override` on `ports`/`volumes` because Compose otherwise **concatenates** ports and would keep the missing certs mount |
-| `docker/caddy/Caddyfile.local` | Plain-HTTP edge. Hostnames become ports (`*.localhost` is browser-only, not resolvable by `curl` on macOS): `:8080` app, `:3000` Open-WebUI, `:8070` pacod-id, `:13000` gw console. Keeps `flush_interval -1` + the 10-minute timeouts verbatim — that pair is what makes chat tokens stream incrementally — and the `/internal/*` 404; no `/monitoring` |
+| `docker-compose.local.yml` | Overlay of the app file: every `/data/**` log bind mount → a named volume; `ap-api` also on `127.0.0.1:8000`; `.env.local` as a second `env_file`; the frontend's local site values; CPU embeddings |
+| `docker-compose.standalone.local.yml` | Overlay of the shared components: the Caddyfile swapped (and `AP_SITE=:8080`, no certificates), edge published on high ports, Caddy/Qdrant on named volumes, Postgres remapped to `15432`, pacod-id with its local TOML, issuer `http://127.0.0.1:8070` and mail to `pacod-mailpit` (defined here). Uses `!override` on `ports`/`volumes` because Compose otherwise **concatenates** ports and would keep the missing certs mount |
+| `docker/caddy/Caddyfile.local` | Plain-HTTP edge: global options, the `:9180` metrics listener, `:8070` pacod-id, `:13000` gw console, and pacod-ap's site from the shared fragment (`../platform/caddy/ap.caddy`) on `:8080`. Hostnames become ports (`*.localhost` is browser-only, not resolvable by `curl` on macOS). The fragment keeps `flush_interval -1` + the 10-minute timeouts — that pair is what makes chat tokens stream incrementally — the `/internal/*` 404 and `/monitoring` |
 | `.env.local.example` → `.env.local` | Local-only env **deltas** (gitignored; it is where `APP_ENV=development` + `AUTH_ALLOW_DEV_TOKENS=true` belong). Not a copy of `.env.example`; a second full copy drifts and you end up testing a config nobody deployed |
 
 ```bash
-make up-all            # (repo root) the app, the gateway, its bootstrap and Open-WebUI's service account
-make bootstrap-local   # init_db + seed_reference_facts --profile starter + seed_dev_users + ingest (ingestion-cpu)
+make up-all            # (repo root) the app, the gateway and its bootstrap
+make bootstrap-local   # init_db + seed_reference_facts --profile starter + seed_dev_users + ingest (ap-ingestion-cpu)
 make seed-example-local PROFILE=taxes   # optional: the tax example agent
 make smoke-local       # /health through the edge + a real SSE chat turn (see the trap below)
 make smoke-all         # (repo root) smoke-local + a turn traced through the gw mock + gw-smoke
@@ -589,14 +616,14 @@ make up-local / logs-local / ps-local / down-local / clean-local   # the app sta
 | http://127.0.0.1:8070 | pacod-id, the issuer (sign-in, sign-up, accounts) — production `id.pacod.io` |
 | http://127.0.0.1:8025 | mailpit: pacod-id's mail (confirmation and reset links); nothing leaves the laptop |
 | http://127.0.0.1:13000 | the gateway console (502 until `make gw-up`) — production `console.pacod.io` |
-| http://localhost:3000 | Open-WebUI · **:8081** Adminer (tools profile) · **127.0.0.1:3001** admin-api · **:6333** Qdrant |
+| http://localhost:8081 | Adminer (tools profile) · **127.0.0.1:3001** ap-admin-api · **:6333** Qdrant |
 | 127.0.0.1:15432 | Postgres (remapped off 5432, which a locally installed Postgres usually owns) |
-| 127.0.0.1:8000 | **`api` direct**, for curl and scripts with a dev token. Loopback-bound on purpose: `.env.local` enables dev-token bearers, which must not be LAN-reachable |
-| 127.0.0.1:8071 | pacod-id's internal listener, for `make id-bootstrap` (never routed) |
+| 127.0.0.1:8000 | **`ap-api` direct**, for curl and scripts with a dev token. Loopback-bound on purpose: `.env.local` enables dev-token bearers, which must not be LAN-reachable |
 
-The gateway runs as compose project `pacod-ap-gw` with the gw dev stack's host ports (core
-18080/18081/19100, mock 19000, console 13000 via this Caddy, Prometheus 19090); a standalone gw dev
-stack (project `pacod-gw`) uses the same ports, so never run both at once. In dev the platform config
+The gateway runs as compose project `pacod-ap-gw` (pacod-gw's app file + its dev overlay) with the gw
+dev stack's host ports (`pacod-gw` 18080/18081/19100, `gw-mock` 19000, console 13000 via this
+Caddy); its metrics go to this platform's Prometheus (`make monitor-up`, http://127.0.0.1:9095). A
+standalone gw dev stack uses the same ports and `pacod-*` names, so never run both at once. In dev the platform config
 points every provider at the gw **mock**, which echoes text: a chat turn needs scripted planner and
 classifier JSON (`../scripts/smoke_gateway_turn.sh` posts it to `127.0.0.1:19000/__mock/script`).
 
@@ -607,23 +634,24 @@ Traps, in the order they bite:
   reproduces what the override did (log mounts) for every service that has one. Never drive the local
   stack with a bare `docker compose`.
 - **`.env.gateway` must be an `--env-file`.** `COMPOSE_LOCAL` passes `--env-file .env --env-file
-  .env.local --env-file .env.gateway`: the gateway keys, the Open-WebUI token and the two pacod-id
+  .env.local --env-file .env.gateway`: the gateway keys and the two pacod-id
   client secrets (`PACOD_API_CLIENT_SECRET`, `PACOD_WEB_CLIENT_SECRET`, copied there from
   `deploy/secrets/id.env` by `make secrets-init` — deliberately not into `.env`, the env_file of every
   backend container) are *interpolated* into the services' `environment:`, so a hand-run compose
   without `.env.gateway` starts every gateway client with a blank key and the API and frontend
-  without their pacod-id client. After `make gw-bootstrap` / `make id-bootstrap` change keys they recreate
+  without their pacod-id client. After `make gw-bootstrap` changes keys it recreates
   the affected containers themselves.
-- **`agent-net` and `pacod-link` are `external: true`**, so Compose will not create them —
-  `make up-local` does (`ensure-agent-net`, `ensure-pacod-link`), together with `ensure-secrets`
-  (`deploy/secrets/*.env`) and `ensure-id-image` (the pacod-id image).
+- **`pacod-net` is `external: true`**, so Compose will not create it — `make up-local` does
+  (`ensure-pacod-net`), together with `ensure-secrets` (`deploy/secrets/*.env`) and `ensure-id-image`
+  (the pacod-id image). Only one copy of each `pacod-*` component may run on a host: stop another pacod
+  stack (pacod-id, pacod-gw, pacod-cms, pacod-kb standalone, pacod-demo) first.
 - **`--env-file` and `env_file:` are different channels.** `${LOCAL_*}` interpolation reads
   `--env-file`; the app's `Settings` reads the services' `env_file:`. `.env.local` is wired into both,
   and `--env-file` requires the file to exist — hence `ensure-env-local` seeds it.
 - **The frontend deliberately gets no `env_file`** in the overlay. It receives only its compose
   `environment:` block in production; handing it the backend `.env` would put the DB password and the
   provider-facing secrets into a public-facing Node process.
-- **First `up-local` downloads ~2 GB** (bge-m3, cached in `hf_cache` afterwards).
+- **First `up-local` downloads ~2 GB** (bge-m3, cached in `pacod-embeddings-hf-cache` afterwards).
   `LOCAL_EMBEDDINGS_BACKEND=hash` in `.env.local` boots in seconds instead — but hash embeddings are
   random projections, so KB retrieval returns nonsense. Use it only for paths that don't depend on
   retrieval: sign-in, quotas, admin CRUD, the gateway wiring.
@@ -632,9 +660,9 @@ Traps, in the order they bite:
   public newsletter subscribe/confirm/unsubscribe prefixes) and
   otherwise sets `Authorization` from the session — so the header never reaches Python.
   `make smoke-local` (`../scripts/smoke_local.sh`) therefore runs its chat turn with
-  `docker exec pacod-api curl … :8000` and keeps only `/health` on the edge; it fails unless the
+  `docker exec ap-api curl … :8000` and keeps only `/health` on the edge; it fails unless the
   stream reaches `event: done`, asks a new question each run (the response cache would answer a
-  repeated one), and scripts the gateway mock's first two replies when the mock is the provider (Caddy proxies `/health` straight to `api:8000`). Same for any hand-rolled
+  repeated one), and scripts the gateway mock's first two replies when the mock is the provider (Caddy proxies `/health` straight to `ap-api:8000`). Same for any hand-rolled
   curl: sign in through the browser, or talk to `127.0.0.1:8000` / the container. The dev token needs
   both `APP_ENV=development` and `AUTH_ALLOW_DEV_TOKENS=true`.
 - **Sign-in is pacod-id's, and its URLs are loopback.** pacod-id's issuer is `http://127.0.0.1:8070` and
@@ -649,18 +677,18 @@ Traps, in the order they bite:
 All settings in `app/core/config.py` (`Settings`, Pydantic BaseSettings reading `.env`, `lru_cache`
 singleton — always use `get_settings()`). `make ensure-env` seeds `.env` from `.env.example` (0600) and
 `../scripts/env-init.sh` fills the blank generated secrets (`POSTGRES_PASSWORD`, `APP_SECRETS_KEY`,
-`WEBUI_SECRET_KEY`, `WEBUI_ADMIN_PASSWORD`, `SESSION_SECRET`, `CRAWLER_INGEST_TOKEN`,
-`MCP_SHARED_SECRET`). Defaults below are the code's.
+`SESSION_SECRET`, `CRAWLER_INGEST_TOKEN`, `MCP_SHARED_SECRET`). Defaults below are the code's.
 
 **Environment:** `APP_ENV` (`development`/`staging`/`production`; **defaults to `development`**),
 `AUTH_ALLOW_DEV_TOKENS` (false — the second lock on dev tokens, see Identity), `APP_LOG_LEVEL`
 (`INFO`), `APP_LOG_DIR` (blank = no file logging), `APP_SECRETS_KEY` (Fernet key for the search keys in
 `provider_secrets`; empty → key editing disabled).
 
-**Service URLs:** `POSTGRES_*` (host `pgbouncer`, user + db `pacod`), `REDIS_URL`, `QDRANT_URL`,
-`EMBEDDINGS_URL` (`http://embeddings:8080`), `MCP_SERVER_URL` + `MCP_SHARED_SECRET` (the
-`X-MCP-Token`; same value on api, mcp-server, improvement-loop-worker; blank → every tool call 503s),
-`INGESTION_URL` (`http://ingestion:8000`), `DOCUMENTS_ROOT` (`/srv/documents`), `EMBEDDINGS_BACKEND`
+**Service URLs** (the defaults are the names on `pacod-net`): `POSTGRES_*` (host `ap-pgbouncer`, user +
+db `pacod`), `REDIS_URL` (`redis://ap-redis:6379/0`), `QDRANT_URL` (`http://pacod-qdrant:6333`),
+`EMBEDDINGS_URL` (`http://pacod-embeddings:8080`), `MCP_SERVER_URL` (`http://ap-mcp:8000`) +
+`MCP_SHARED_SECRET` (the `X-MCP-Token`; same value on ap-api, ap-mcp, ap-improvement-loop-worker; blank
+→ every tool call 503s), `INGESTION_URL` (`http://ap-ingestion:8000`), `DOCUMENTS_ROOT` (`/srv/documents`), `EMBEDDINGS_BACKEND`
 (`http` default | `inline_cpu` — the app/ingestion side; the embeddings container reads its own
 `EMBEDDINGS_BACKEND`, `bge` | `hash`). The MCP server takes `MCP_POSTGRES_DSN` (else built from
 `POSTGRES_*`).
@@ -670,8 +698,8 @@ singleton — always use `get_settings()`). `make ensure-env` seeds `.env` from 
 `ID_CLIENT_SECRET` (compose: `${PACOD_API_CLIENT_SECRET}` from `.env.gateway`), `ID_MAX_STALENESS`
 (60 s; admin-api 503s past it).
 
-**LLM gateway (pacod-gw):** `GATEWAY_URL` (`http://gw-core:8080`), `GATEWAY_API_KEY` (each service's
-`pgw_` key, from `.env.gateway` by compose interpolation), `GATEWAY_ADMIN_URL` (`http://gw-core:8081`,
+**LLM gateway (pacod-gw):** `GATEWAY_URL` (`http://pacod-gw:8080`), `GATEWAY_API_KEY` (each service's
+`pgw_` key, from `.env.gateway` by compose interpolation), `GATEWAY_ADMIN_URL` (`http://pacod-gw:8081`,
 the management API: reports + limits), `GATEWAY_CONSOLE_URL` (deep links; blank hides them),
 `GATEWAY_ORG_ID` / `GATEWAY_WORKSPACE_ID`, admin-api only `GATEWAY_REPORT_TOKEN` (viewer) and
 `GATEWAY_ADMIN_TOKEN` (workspace_admin). `gw_bootstrap.py` writes the per-service keys
@@ -861,10 +889,9 @@ only by `../scripts/gw_bootstrap.py`. The send-temperature switch (`AGENT_TEMPER
 the LLM-config toggle) is for a model that rejects a non-default temperature value; the client itself
 drops the field only for the adaptive-thinking Claude models (`llm_capabilities`).
 
-**Frontend** (set in the `frontend` service's `environment:`, not `config.py`): `ID_ISSUER`,
+**Frontend** (set in the `ap-frontend` service's `environment:`, not `config.py`): `ID_ISSUER`,
 `ID_INTERNAL_URL`, `ID_CLIENT_SECRET` (client `pacod-web`), `SESSION_SECRET`, `REDIS_URL`, `SITE_URL`,
-`API_INTERNAL_URL` (`http://api:8000`), `ADMIN_API_INTERNAL_URL` (`http://admin-api:8000`),
-`OPENWEBUI_URL`/`_INTERNAL_URL`, `WEBUI_SECRET_KEY` (must match Open-WebUI), `WEBUI_ADMIN_EMAIL/PASSWORD`,
+`API_INTERNAL_URL` (`http://ap-api:8000`), `ADMIN_API_INTERNAL_URL` (`http://ap-admin-api:8000`),
 `ENABLED_LOCALES`, `BODY_SIZE_LIMIT`, `PROTOCOL_HEADER`, `HOST_HEADER`, plus the site/SEO/analytics
 ids (see pacod-ui).
 
@@ -891,7 +918,7 @@ tokens are accepted.
 | Token | Condition | Result |
 |---|---|---|
 | `dev-token-<user_id>` | `APP_ENV=development` **and** `AUTH_ALLOW_DEV_TOKENS=true` (both, checked when the guard is built in `app/api/dependencies.py` / `admin_api/dependencies.py`) | roles `admin`, `superuser`, `user`; answered before anything talks to pacod-id, so local admin pages and smoke tests work with pacod-id down |
-| `pidt_…` | introspected at pacod-id (cached 30 s, dropped on a `credential.revoked` event); must be `pid_kind=service` and not disabled | the service account itself, roles from its bindings — or, see below, the person it forwards |
+| `pidt_…` | introspected at pacod-id (cached 30 s, dropped on a `credential.revoked` event); must be `pid_kind=service` and not disabled | the service account itself, roles from its bindings; nothing in the request makes it another principal's |
 | pacod-id access token (JWT) | signature + issuer + `aud=pacod-api`; then the feed copy: a revoked `sid` or a disabled `sub` → 401 | the person; roles derived from their bindings |
 
 **Dev tokens need two locks, not one.** `dev-token-<user_id>` grants admin+superuser with no
@@ -903,14 +930,6 @@ password, and `APP_ENV` **defaults to `development`**. That alone was survivable
 rows the dev tokens act as come from `scripts/seed_dev_users.py` (`data/dev/users.json`, run by
 `make bootstrap-local`; any password/role fields in the file are ignored).
 
-**The person behind a service token.** Only an account allowed `pacod.attribution.forward` — the
-Open-WebUI service account, role `pacod.webui_service` — may name a person, through Open-WebUI's
-forwarded `X-OpenWebUI-User-Email` header (`ENABLE_FORWARD_USER_INFO_HEADERS`). The person is
-found by address (`user_id_by_email`: a pacod-id `usr_…` row wins, then the newest); no local row →
-401, a disabled account → 401, otherwise the call is theirs with roles `("user",)` — their quota,
-their history. Headers reach the guard only on the OpenAI-compatible routes (`/v1/*`), which is the
-path Open-WebUI uses; `routes_chat.py` authenticates the bearer alone.
-
 **The local shadow row.** `users.id` **is pacod-id's `sub`** (`usr_…`), so every foreign key and
 `user_id` column keeps working. On a JWT, `ensure_user(sub, email, name)` inserts the row
 `ON CONFLICT DO NOTHING` (checked at most every 300 s per process), follows an address change made
@@ -921,15 +940,19 @@ drops them. The first time a process sees a `sid`, it records the `login` activi
 
 **Roles are derived from permissions, not binding names** (`Identity.roles_for`): `user` always for
 a person; `admin` when `pacod.admin.read` is allowed at the platform; `superuser` when they hold
-`pacod.superuser`; `webui_service` for that service role. A superuser without a separate admin
+`pacod.superuser`. A superuser without a separate admin
 binding still reaches the console. `AuthenticatedUser` is a frozen dataclass (`user_id, email,
 roles, session_id` = the token's `sid`, `access_token` — kept for the admin token exchange, never
 logged or compared). The manifest `authz/pacod.yaml` defines roles `user` (implicit), `admin`
-(protected: nobody removes the last admin), `superuser`, `webui_service`, the permissions
-(`chat.use`, `admin.read|write`, `profiles.assign|manage`, `prompts.edit`, `webui.admin`,
-`superuser.grant`, `attribution.forward`), a declared-but-unused `profile` scope type, and the grant
+(protected: nobody removes the last admin), `superuser`, the permissions (`chat.use`,
+`admin.read|write`, `profiles.assign|manage`, `prompts.edit`, `superuser.grant`), a declared-but-unused `profile` scope type, and the grant
 rules (admins grant roles with `admin.write`; only `superuser.grant` makes or unmakes a superuser).
 `tests/unit/test_authz_manifest.py` runs `authz/vectors/pacod.yaml` through the vendored engine.
+A role dropped from the manifest goes into `identity.RETIRED_ROLES`, which the catalogue push sends
+as `migrate` (`{"pacod.webui_service": null}` today, the retired Open-WebUI service role): pacod-id
+refuses a push that drops a role still bound (409 `role_in_use`) unless `migrate` says what becomes
+of the bindings, and `null` removes them; a name nobody holds is ignored, so fresh installs are
+unaffected.
 
 **Dependencies.** `require_auth` / `require_admin` exist in both `app/api/dependencies.py` and
 `admin_api/dependencies.py`; admin-api adds `require_superuser` (prompt editing, profile CRUD, the
@@ -966,30 +989,17 @@ reports `deletion_done`. Idempotent: every snapshot load announces pending delet
 `pacod-api`) as the Bearer to api/admin-api. Account pages live at `<issuer>/account`. Of the old
 auth routes only `GET /api/v1/auth/me` remains (`MeResponse`: the local row + the derived roles).
 
-**Open-WebUI.** Open-WebUI calls the API's OpenAI-compatible `/v1/*` with one token, the
-`pacod-webui` service account's `pidt_` token (role `pacod.webui_service`), made by
-`make id-bootstrap` (`../scripts/id_bootstrap.py`, acting as the pacod-id bootstrap admin; written to
-`pacod-api/.env.gateway` as `PACOD_WEBUI_SERVICE_TOKEN`, which compose hands Open-WebUI as
-`OPENAI_API_KEY`; blank until then, and the API refuses its calls). With
-`ENABLE_FORWARD_USER_INFO_HEADERS=true` every call forwards the person, so usage, quota and history
-are theirs. Two compose settings matter, and the comments in `docker-compose.yml` say why:
-`ENABLE_PERSISTENT_CONFIG=False` (by default Open-WebUI keeps its first-boot values in its own DB and
-ignores later env changes — a rotated service token would never arrive and a stale key would keep
-being sent) and `BYPASS_MODEL_ACCESS_CONTROL=True` (which agents a person may use is the API's
-decision — every completion is authorized as the forwarded person against their assignments, 403
-otherwise; Open-WebUI's own per-model grants would only repeat it and refuse every agent to everyone
-but its admin until each model was registered by hand). The browser side is the SSO bridge in
-pacod-ui (`lib/server/webui-sso.ts`, `/internal/webui-auth`): it signs the shell user in to
-Open-WebUI with an SSO-derived password over `agent-net` (Open-WebUI ≥ 0.12 refuses self-made JWTs),
-so `ENABLE_PASSWORD_AUTH` must stay `True`; Caddy 403s Open-WebUI's own password login
-(`/api/v1/auths/{signin,signup,add,ldap}*`) at the public edge, and a `forward_auth` gate sends
-unauthenticated navigations to sign-in. `WEBUI_SECRET_KEY` / `WEBUI_ADMIN_PASSWORD` have no compose
-fallback (`${VAR:?}`).
+**The OpenAI-compatible API** (`/v1/models`, `/v1/chat/completions`, `routes_openai_compat.py`)
+is a general API for any OpenAI client, authenticated like the rest: a person (pacod-id JWT), a dev
+token, or a service account's `pidt_` token acting as itself (its own quota and history; it has no
+local user row and so no agent assignments: with a `pacod.admin` binding it sees every active agent,
+otherwise none). It is not routed by the edge (the SvelteKit proxy serves `/api/*` only), so it is reached
+on `pacod-net` or, locally, on `127.0.0.1:8000`.
 
 ## LLM gateway (pacod-gw)
 
 **Every LLM call goes through pacod-gw** — its OpenAI-compatible data plane, `GATEWAY_URL`/v1
-(`http://gw-core:8080` over `pacod-link`). The gateway holds the provider credentials, the model
+(`http://pacod-gw:8080` on `pacod-net`). The gateway holds the provider credentials, the model
 repository and grants, the prices, and the record of every call (tokens, cost, model served, errors);
 the app holds request parameters (per-role settings, LLM templates, the agent-editor overlay) and
 attribution. `app/services/llm_client.py` (`LLMClient`) is the single client: `chat`, `chat_json`,
@@ -1101,7 +1111,7 @@ timeouts, an unreachable gateway): `llm_requests_total{outcome}` / `llm_retries_
 ## Request lifecycle (chat turn)
 
 ```
-Browser → Caddy → frontend (BFF: session → Bearer pacod-id access token) → api:8000
+Browser → Caddy → frontend (BFF: session → Bearer pacod-id access token) → ap-api:8000
   Guards (before SSE opens, so HTTP error codes propagate):
     AuthGuard → resolve_profile_id(req.profile_id, user) → resolve_turn_agent(profile, variant)
       → LanguageGuard + assert_language_allowed → QuotaGuard → topic gate
@@ -1136,7 +1146,7 @@ agent = the profile, task/purpose, tags) — so the console's trace page is the 
 allowlisted, or the model's native search). The OpenAI-compat path (`routes_openai_compat.py`,
 streaming + non-streaming) runs the same guard chain, `turn_pipeline` hooks and runner — `req.model`
 maps to a profile slug (`<slug>@dev` = the dev variant for admins; legacy `pacod-agent` → default) —
-and authenticates with the forwarded headers, but never uses the response cache.
+and authenticates the bearer the same way, but never uses the response cache.
 
 ## Agent graph & prompts
 
@@ -1213,7 +1223,7 @@ legal_year?, limit?)` → `{legal_year, facts, truncated}` — the cap exists be
 into the synthesis prompt. **The tool routes require `X-MCP-Token` = `MCP_SHARED_SECRET`**
 (`hmac.compare_digest`; same `.env` on api, mcp-server, improvement-loop-worker; `MCPClient` sends it).
 It **fails closed** like the crawler-ingest token: a blank secret → every tool call 503
-`mcp_unconfigured`, a wrong/missing token → 401 — anything on `agent-net` could otherwise read any
+`mcp_unconfigured`, a wrong/missing token → 401 — anything on `pacod-net` could otherwise read any
 profile's facts. `/health` and `GET /tools` stay open. `tests/unit/test_mcp_token.py` pins it.
 
 **Agent wiring** (`app/tools/reference_facts.py`, `FACT_TOOLS = ("get_fact", "list_facts")`):
@@ -1339,7 +1349,7 @@ labelling run outside one and carry only the purpose and site `internal`. No loo
 
 **Execution model.** The admin **Run now** action (`POST /api/v1/loop-config/run` — body optional
 `profile_id`) and the daily scheduler both **enqueue a `loop_run_requests` row**; the dedicated
-**`improvement-loop-worker`** container drains the queue **one at a time** (serialised), calls
+**`ap-improvement-loop-worker`** container drains the queue **one at a time** (serialised), calls
 `run_loop(profile_id=…)`, and records a `loop_runs` row + per-turn `loop_findings`. The admin-api only
 enqueues/reads — heavy LLM work stays out of it. If no worker is running, requests sit in
 `status="requested"` forever (first thing to check when "a review produced nothing" —
@@ -1574,7 +1584,7 @@ behind `disposition='fixed'` findings / `ticketed` clusters through the **live a
 (`AgentRunner.answer_once`) and asserts `expected_facts`/`forbidden_facts` against the new answer;
 records `loop_fix_checks`, closes a cluster only when **every** re-asked question passes. In-process,
 not HTTP: `run_eval.py`'s `dev-token-…` bearer is rejected outside development, and the alternatives
-were a service token or coupling the worker to `api`. It uses the prod effective config. **Off by default** (`verification_enabled`) — one
+were a service token or coupling the worker to `ap-api`. It uses the prod effective config. **Off by default** (`verification_enabled`) — one
 full agent turn per case — and needs `MCP_SERVER_URL` on the worker (added to compose) or the re-check
 degrades to KB-only and judges the agent on tools it never had. Both reports are appended to the run's
 `report_md`.
@@ -1613,7 +1623,7 @@ with the `newsletter` purpose at the gateway (key `GATEWAY_KEY_NEWSLETTER`, dail
 
 **Execution model.** Admin **Collect now**/**Send now** (`POST /api/v1/newsletter-config/{collect,send}`)
 and the scheduler both **enqueue** a `newsletter_run_requests` row (with a `job` = `collect`|`send`
-discriminator); the dedicated **`newsletter-worker`** container drains the queue **one at a time**
+discriminator); the dedicated **`ap-newsletter-worker`** container drains the queue **one at a time**
 (`FOR UPDATE SKIP LOCKED`) and dispatches by job. The admin-api only enqueues/reads — crawl/LLM/SMTP work
 stays out of it. **Calendar-aligned schedule** (not the loop's daily-only guard): each job fires when
 enabled AND today's weekday ∈ its `*_days` set AND now ≥ HH:MM AND it hasn't fired today (per-profile
@@ -1637,7 +1647,7 @@ subscribers}` + enqueue). `app/api/routes_newsletter.py`: the signed-in toggle
 `POST /api/v1/newsletter/subscribe` (double opt-in to the public profile), `GET /confirm`,
 `GET /unsubscribe`. Tables (all profile-scoped):
 `newsletter_sources`, `newsletter_items`, `newsletter_issues`, `newsletter_subscriptions`,
-`newsletter_run_requests`. Container `newsletter-worker` (`docker/newsletter_worker.Dockerfile`,
+`newsletter_run_requests`. Container `ap-newsletter-worker` (`docker/newsletter_worker.Dockerfile`,
 `command: worker`). Frontend: nav **Agent → Newsletter** (`(app)/newsletter/`) + a subscribe toggle on
 `(app)/account/`.
 
@@ -1886,8 +1896,9 @@ drop the account columns pacod-id now holds. The default profile is seeded in th
 | `crawler_visits`, `web_requests`, `page_views` | Crawler traffic, per-request rows (`kind` page\|api) and consent-gated page views — global, `site` is the axis; see Multi-profile platform |
 | `user_ip_addresses`, `user_activity` | Per-user IPs and activity log, FK→users cascade — see Multi-profile platform |
 
-pacod-id's own data is in the separate database `pacod_id` (role `pacod_id`, created by `pacod-id-db`);
-Open-WebUI's in `openwebui`. The gateway keeps its own Postgres + ClickHouse in its stack.
+pacod-id's own data is in the separate database `pacod_id` (role `pacod_id`, created by `pacod-db-init`);
+with `make up-all` the gateway's in `pacod_gw` (role `pacod_gw`, pacod-gw's
+`platform/postgres/gw-db.sh`), while its ClickHouse (`gw-clickhouse`) stays in its stack.
 
 ### Qdrant (per-profile collections)
 
@@ -1935,7 +1946,7 @@ pacod-id's introspection answers (30 s) are cached **in-process**, not in Redis.
 
 ## API reference
 
-### Chat API (`api` container — routers mounted in `app/main.py`)
+### Chat API (`ap-api` container — routers mounted in `app/main.py`)
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
@@ -1951,13 +1962,13 @@ pacod-id's introspection answers (30 s) are cached **in-process**, not in Redis.
 | `GET`/`POST` | `/api/v1/newsletter/subscription` | user | The caller's subscription toggle for a profile (assignment-gated) |
 | `POST` | `/api/v1/newsletter/subscribe` | none | Public double opt-in to the public profile's newsletter; `GET /confirm?token=`, `GET /unsubscribe?token=` |
 | `GET` | `/api/v1/public/agents[/{slug}]` | none | Marketing copy of released `show_on_landing` agents (300 s cache) |
-| `GET`/`POST` | `/v1/models`, `/v1/chat/completions` | user / service | OpenAI-compat. `/v1/models` returns **one entry per assigned, released profile** (id = slug; `<slug>@dev` for admins with a dev deployment; the Open-WebUI service account sees every released agent); `completions.model` selects the profile (legacy `pacod-agent` → default). Unauthenticated `/v1/models` returns just the legacy id. Completions from the Open-WebUI service account are authorized as the forwarded person |
+| `GET`/`POST` | `/v1/models`, `/v1/chat/completions` | user / service | OpenAI-compat. `/v1/models` returns **one entry per assigned, released profile** (id = slug; `<slug>@dev` for admins with a dev deployment); `completions.model` selects the profile (legacy `pacod-agent` → default). Unauthenticated `/v1/models` returns just the legacy id. A service account's token is the service account's own call |
 | `GET` | `/health` | none | `{"status":"ok","service":"api"}` |
 
 Signing in, signing up, passwords, address confirmation, sessions and devices are pacod-id's (its
 hosted pages and `<issuer>/account`); the frontend's `/auth/*` routes are the BFF's.
 
-### Admin API (`admin-api`, 127.0.0.1:3001 — routers mounted in `admin_api/main.py`) — `admin` role unless noted
+### Admin API (`ap-admin-api`, 127.0.0.1:3001 — routers mounted in `admin_api/main.py`) — `admin` role unless noted
 
 **Profile scoping:** every list/config route takes an optional `?profile_id=` (omitted = global / all
 profiles). In the frontend the top-bar `selectedProfile` selector threads it; blank = global mode.
@@ -2049,7 +2060,7 @@ profiles). In the frontend the top-bar `selectedProfile` selector threads it; bl
   `/newsletter-issues[/{id}]`, `/newsletter-subscribers` (list, `PATCH`, `DELETE`).
 - **Ingested sources (KB):** `GET /ingested-sources[/{id}]` (filters incl. `tier`, `source_type`,
   `profile_id`); `POST /ingested-sources/{upload,url,text}` and `PATCH /{id}/status`, `DELETE /{id}` —
-  **upload/url/text delegate to the `ingestion` service over HTTP**; delete removes Qdrant vectors (502
+  **upload/url/text delegate to the `ap-ingestion` service over HTTP**; delete removes Qdrant vectors (502
   if Qdrant down, DB intact) → DB row → best-effort file (under `DOCUMENTS_ROOT`, which has no volume on
   admin-api). Curated editor: `GET /{id}/content` (stored body, else rebuilt from the chunks — flagged
   `reconstructed`), `PUT /{id}/content` (**deletes the old vectors first**, then re-ingests),
@@ -2078,7 +2089,7 @@ profiles). In the frontend the top-bar `selectedProfile` selector threads it; bl
   `DELETE` resets both, the token counter at the gateway; `GET/DELETE /redis/conversation-summaries`
   lists/flushes the `convsummary:*` rolling summaries).
 
-### Ingestion service (`ingestion` / `ingestion-cpu` container)
+### Ingestion service (`ap-ingestion` / `ap-ingestion-cpu` container)
 
 `POST /ingest/{file,url,text,corpus}`, `POST /drop`, `GET /health`. Dispatches on `EMBEDDINGS_BACKEND`:
 `inline_cpu` uses in-process bge-m3 (`CpuEmbedder`) + pypdf + flat `ingest_doc_cpu`; anything else
@@ -2109,8 +2120,8 @@ domain allowlist in ingestion — the list is the profile's). `scripts/ingest_co
 (`make ingest*`, `bootstrap`, `seed-example`) ingests them into that profile's collections; packaged
 documents get no `file_path`. Chunk → embed (http path: batches of 8, upserts of 64; CPU path: 2 / 32)
 → Qdrant upsert; existing `source_id` points are overwritten; one `ingested_sources` row upserted per
-doc. Admin uploads go to the flat `documents/` directory = the `documents_data` volume at
-`/srv/documents`, mounted on `api`, `ingestion` and `ingestion-cpu` (not on admin-api); the row records
+doc. Admin uploads go to the flat `documents/` directory = the `ap-documents-data` volume at
+`/srv/documents`, mounted on `ap-api`, `ap-ingestion` and `ap-ingestion-cpu` (not on admin-api); the row records
 the profile. `ParsedDoc` carries `source_id`, `file_path` (local docs only), `source_type`. KB
 `Citation` events include `chunk_id` (Qdrant point id) for `/feedback`; web/structured citations have
 none.
@@ -2133,9 +2144,9 @@ sparse/colbert heads re-initialised) — verify the round-trip on your hardware 
 
 ## Testing
 
-`make test-unit` (`pytest tests/unit` in a throwaway api container: `run --rm --no-deps` with
+`make test-unit` (`pytest tests/unit` in a throwaway ap-api container: `run --rm --no-deps` with
 `POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=1 REDIS_URL=redis://127.0.0.1:1/0`; fakeredis + respx, no
-external services) · `make test-integration` (stack must be up; `exec api pytest tests/integration -m
+external services) · `make test-integration` (stack must be up; `exec ap-api pytest tests/integration -m
 integration` with `INTEGRATION_API_BASE`, `INTEGRATION_HEALTH`, `INTEGRATION_MCP_BASE`) · repo-root
 `make test` (unit tests + the pacod-ui suite). `pytest.ini`: `asyncio_mode=auto`, `--strict-markers`,
 markers `integration` and `slow`.
@@ -2214,7 +2225,7 @@ add `requirements-base.txt` to it first. Directive injection + cache are covered
   `reference-facts-<year>.json`, not into prompts or the KB.
 - **Two-stage retrieval** — Stage 1 `RETRIEVAL_STAGE1_TOP_K` ANN, Stage 2 cross-encoder → `RETRIEVAL_RERANK_TOP_K`.
 - **`retrieval_collection_name` may be an alias** — read from settings, never hardcode collection names.
-- **Ingestion is delegated** — admin-api upload/url/text routes call the `ingestion` service over HTTP
+- **Ingestion is delegated** — admin-api upload/url/text routes call the `ap-ingestion` service over HTTP
   (`INGESTION_URL`); they do **not** run the pipeline in-process. `ingested_sources` rows are created by
   the pipeline — **except** the metadata-only `POST /ingested-sources/import` (CSV), which writes rows
   directly and creates no vectors; the admin routes otherwise only update them (status, retire, move)

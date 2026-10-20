@@ -1017,8 +1017,8 @@ class LLMClient:
         that provider's native reasoning control.
 
         When thinking_tags=True, the reasoning deltas are wrapped in
-        <think>...</think> and streamed before the visible text (OpenWebUI /
-        Pipelines reasoning format). When False, thinking content is dropped.
+        <think>...</think> and streamed before the visible text (the reasoning
+        format OpenAI-compatible chat clients render). When False, thinking content is dropped.
 
         When native_search_tools is given, the model runs web search server-side
         during generation (Anthropic's web_search tool). The model emits
@@ -1184,7 +1184,7 @@ class LLMClient:
                         ):
                             # No reasoning text reached us (a provider that reasons
                             # without showing it); emit a minimal block so the
-                            # reasoning section still appears in OpenWebUI.
+                            # reasoning section still appears in the client.
                             yield "<think>\n...</think>\n\n"
                             got_thinking_tokens = True
                         yield delta_content

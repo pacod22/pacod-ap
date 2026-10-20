@@ -7,7 +7,7 @@ import os
 import pytest
 
 # Unit tests must never reach a real Postgres/Redis — but `Settings` reads the
-# repo's `.env`, so a developer's laptop (POSTGRES_HOST=pgbouncer, a set
+# repo's `.env`, so a developer's laptop (POSTGRES_HOST=ap-pgbouncer, a set
 # APP_SECRETS_KEY) made every "no DB → env default" fallback wait out a real
 # connect timeout (the suite took ~3 minutes instead of ~10 seconds), and with
 # the compose stack up the container run reached the LIVE database. Pin the

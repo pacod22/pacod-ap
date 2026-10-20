@@ -188,7 +188,7 @@ async def ingest_crawler_visits(
 
     Not ``require_admin``: the caller is the frontend container, which has no
     admin identity. It authenticates with the shared token above and is only
-    reachable over ``agent-net`` — a browser request through the SvelteKit proxy
+    reachable over ``pacod-net`` — a browser request through the SvelteKit proxy
     is rejected for lack of a session before it ever arrives here.
     """
     if not body.visits:

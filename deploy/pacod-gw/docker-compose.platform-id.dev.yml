@@ -1,21 +1,17 @@
-# pacod-gw on the platform, part 3: the local addresses, for a laptop. Applied last, after
-# pacod-gw's docker-compose.dev.yml, by `make gw-up` (GW_ENV=dev, the default).
+# pacod-gw on the platform, the local addresses, for a laptop. Applied last, after pacod-gw's
+# docker-compose.dev.yml, by `make gw-up` (GW_ENV=dev, the default).
 #
 #   pacod-id (issuer)    http://127.0.0.1:8070    pacod-ap's Caddy
 #   console              http://127.0.0.1:13000   pacod-ap's Caddy
-#   core                 127.0.0.1:18080 / 18081 / 19100 (data plane / management / metrics),
+#   pacod-gw             127.0.0.1:18080 / 18081 / 19100 (data plane / management / metrics),
 #                        published by pacod-gw's development file
 #   gw-mock              127.0.0.1:19000, the scripted provider of platform-config.dev.json
-#   prometheus           127.0.0.1:19090
+#   Prometheus           http://127.0.0.1:9095, pacod-ap's monitoring module (make monitor-up)
 #
 # The ports are those of pacod-gw's own development stack, so the two cannot run at the same
 # time; this one is the project pacod-ap-gw, with volumes of its own.
-#
-# Grafana is switched off (profile gw-grafana) to keep the laptop's memory for the app: the
-# gateway's dashboards move into pacod-ap's monitoring (plan, Phase 6). `GW_PROFILES="--profile
-# gw-grafana" make gw-up` brings it back on 13001.
 services:
-  preflight:
+  gw-preflight:
     environment:
       # The preflight check accepts only https:// addresses; the development ones are fixed
       # here instead (as pacod-gw's development file does for its own).
@@ -24,18 +20,13 @@ services:
       PGW_CONSOLE_HOST: 127.0.0.1:13000
       PGW_CONSOLE_URL: ""
 
-  core:
+  pacod-gw:
     environment:
       PGW_ID_ISSUER: http://127.0.0.1:8070
       PGW_CONSOLE_URL: http://127.0.0.1:13000
 
-  ui:
+  gw-console:
     environment:
       PGW_ID_ISSUER: http://127.0.0.1:8070
       PGW_CONSOLE_URL: http://127.0.0.1:13000
       GRAFANA_URL: ""
-
-  mailpit:
-    profiles: [gw-own-id]
-  grafana:
-    profiles: [gw-grafana]

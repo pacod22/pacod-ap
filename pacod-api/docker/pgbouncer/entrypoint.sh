@@ -6,8 +6,7 @@ mkdir -p /etc/pgbouncer
 # Generate pgbouncer.ini from environment variables.
 cat > /etc/pgbouncer/pgbouncer.ini << EOF
 [databases]
-${PGBOUNCER_DATABASE:-pacod} = host=${POSTGRESQL_HOST:-postgres} port=${POSTGRESQL_PORT:-5432} dbname=${POSTGRESQL_DATABASE:-pacod}
-${PGBOUNCER_DATABASE2:+${PGBOUNCER_DATABASE2} = host=${POSTGRESQL_HOST:-postgres} port=${POSTGRESQL_PORT:-5432} dbname=${PGBOUNCER_DATABASE2}}
+${PGBOUNCER_DATABASE:-pacod} = host=${POSTGRESQL_HOST:-pacod-postgres} port=${POSTGRESQL_PORT:-5432} dbname=${POSTGRESQL_DATABASE:-pacod}
 
 [pgbouncer]
 listen_addr = 0.0.0.0
@@ -18,6 +17,10 @@ pool_mode = ${PGBOUNCER_POOL_MODE:-transaction}
 max_client_conn = ${PGBOUNCER_MAX_CLIENT_CONN:-200}
 default_pool_size = ${PGBOUNCER_DEFAULT_POOL_SIZE:-25}
 server_reset_query = DISCARD ALL
+; The metrics exporter (ap-pgbouncer-exporter) reads SHOW STATS on the admin console as the app's
+; user, and its driver sends extra_float_digits at connect, which pgbouncer refuses otherwise.
+stats_users = ${POSTGRESQL_USERNAME:-pacod}
+ignore_startup_parameters = extra_float_digits
 log_connections = 0
 log_disconnections = 0
 EOF

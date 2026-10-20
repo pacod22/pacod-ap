@@ -1,8 +1,7 @@
 """GET /v1/models: one model per agent the caller may use.
 
-Open-WebUI lists the models with its own service token (no person forwarded): it sees every
-released agent, never a dev deployment or an unreleased agent; a completion is then
-authorized as the forwarded person.
+A person sees the released agents assigned to them; an admin (a person or a service account
+with an admin binding) sees every active agent and its dev deployment.
 """
 
 from __future__ import annotations
@@ -44,7 +43,7 @@ class _Guard:
     def __init__(self, user: AuthenticatedUser) -> None:
         self.user = user
 
-    async def authenticate(self, authorization, headers=None):
+    async def authenticate(self, authorization):
         return self.user
 
 
@@ -62,16 +61,9 @@ async def _ids(user: AuthenticatedUser, monkeypatch, assigned=()) -> list[str]:
     monkeypatch.setattr(compat, "get_user_profile_ids", get_user_profile_ids)
     monkeypatch.setattr(compat, "get_profiles", get_profiles)
     monkeypatch.setattr(compat, "get_redis", lambda: None)
-    request = SimpleNamespace(headers={})
     creds = SimpleNamespace(credentials="t")
-    answer = await compat.list_models(request, creds, _Guard(user))
+    answer = await compat.list_models(creds, _Guard(user))
     return [m["id"] for m in answer["data"]]
-
-
-@pytest.mark.asyncio
-async def test_open_webui_sees_every_released_agent(monkeypatch):
-    webui = AuthenticatedUser(user_id="svc_webui", roles=("webui_service",))
-    assert await _ids(webui, monkeypatch) == ["starter", "taxes"]
 
 
 @pytest.mark.asyncio

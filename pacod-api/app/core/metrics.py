@@ -8,7 +8,7 @@ via a single `setup_metrics(app, service_name)` call near app creation.
 Two things are exposed per service:
 
   * a `/metrics` endpoint (mounted as an ASGI sub-app) that Prometheus scrapes
-    over the internal `agent-net` network — it is never routed to the public
+    over the internal `pacod-net` network — it is never routed to the public
     edge by Caddy, so it stays reachable only from inside the compose network;
   * request metrics (count, in-flight, latency histogram) recorded by a
     **pure-ASGI** middleware.
@@ -73,7 +73,7 @@ guard_rejections_total = Counter(
 
 # --- LLM + agent usage (per site / profile / model; never per user) ----------
 # Cardinality is bounded: ~6 sites x a handful of profiles x the model catalogue.
-# Tokens and cost are the gateway's series (gw_*, scraped from gw-core:9100); these
+# Tokens and cost are the gateway's series (gw_*, scraped from pacod-gw:9100); these
 # count the calls as the app saw them — including timeouts and an unreachable gateway.
 llm_requests_total = Counter(
     "llm_requests_total",

@@ -12,7 +12,7 @@ A SvelteKit app (SSR, adapter-node) that is both the **chat shell** and the **ad
 pacod-ap, the agent platform. It holds no business logic:
 
 - **Data, AI reasoning and profile isolation** belong to the backend, [`pacod-api`](../pacod-api):
-  `api` (chat) and `admin-api` (the console's CRUD).
+  `ap-api` (chat) and `ap-admin-api` (the console's CRUD).
 - **Accounts and sign-in** belong to **pacod-id**, the platform's identity provider, on its own
   host (`id.<domain>`; locally `http://127.0.0.1:8070`).
 - **LLM usage and cost figures** come from the LLM gateway (pacod-gw), through admin-api.
@@ -22,16 +22,15 @@ security-sensitive job of its own: it is a **back-end-for-frontend (BFF)**, so s
 reach the browser.
 
 ```
-Browser ──► Caddy ──► frontend:3000 (SvelteKit) ──► api:8000 / admin-api:8000
+Browser ──► Caddy ──► ap-frontend:3000 (SvelteKit) ──► ap-api:8000 / ap-admin-api:8000
                │            │
                │            └─ server to server ──► pacod-id (internal listener :8071)
-               ├─ id.<domain> ──► pacod-id (sign-in pages, :8070)
-               └─ Open-WebUI site ──► forward_auth → frontend:3000/internal/webui-auth ──► open-webui
+               └─ id.<domain> ──► pacod-id (sign-in pages, :8070)
 ```
 
-On the main site Caddy sends `/health` to the api, `/static/*` to Open-WebUI, answers 404 for
-`/internal/*`, and sends everything else, all of `/api/*` included, to SvelteKit. Production also
-routes `/monitoring*` to Grafana, behind forward_auth.
+On the main site Caddy sends `/health` to the api, answers 404 for `/internal/*`, and sends
+everything else, all of `/api/*` included, to SvelteKit. Production also routes `/monitoring*` to
+Grafana, behind forward_auth.
 
 ---
 
@@ -61,7 +60,7 @@ The order carries the design:
 
 `identity()` is also called once at module load, so a missing sign-in setting stops the server at
 start rather than on the first request. Server-to-server callers (`/health`, `/internal/*` on
-`frontend:3000`) are handed to the identity handle on the public origin, so they get an answer
+`ap-frontend:3000`) are handed to the identity handle on the public origin, so they get an answer
 instead of a redirect.
 
 ---
@@ -97,8 +96,8 @@ Browser code calls same-origin `/api/*`; `handleApiProxy` forwards it:
 
 - It **deletes any caller `Authorization`** and sets `Bearer <session access token>` (audience
   `pacod-api`). Without a session it answers 401 itself, except on the public newsletter paths.
-- It **routes by prefix**: a path on `ADMIN_PATH_PREFIXES` goes to `admin-api`, everything else to
-  `api`. The list lives in one file, `lib/server/admin-paths.ts`, imported by both the proxy and the
+- It **routes by prefix**: a path on `ADMIN_PATH_PREFIXES` goes to `ap-admin-api`, everything else to
+  `ap-api`. The list lives in one file, `lib/server/admin-paths.ts`, imported by both the proxy and the
   server-side client (`lib/server/api.ts`). Caddy has no admin matcher, so this list is the only
   routing table. Matching is a plain prefix test, so near-miss names (`loop-run-requests` vs
   `loop-runs`) each need their own entry; `admin-paths.test.ts` pins them.
@@ -144,31 +143,9 @@ the chat language (bg/en), not the UI locale.
 
 ---
 
-## 7. Open-WebUI SSO
+## 7. Metrics, telemetry and consent
 
-Open-WebUI runs on its own site. A signed-in user who navigates there is signed in server-side, in
-two layers:
-
-1. **The gate.** Caddy `forward_auth` calls `/internal/webui-auth` for page navigations on the
-   Open-WebUI site. It answers 302 to `${SITE_URL}/auth/login?next=/auth/webui-launch` when there is
-   no session, 302 to `${SITE_URL}/auth/webui-launch` when there is no `webui_sso` marker, and a bare
-   200 otherwise.
-2. **The launch.** `/auth/webui-launch` (`lib/server/webui-sso.ts`) gets a real Open-WebUI session
-   token by signing in over the internal network, with a per-user password derived as
-   `HMAC(WEBUI_SECRET_KEY, "sso-user:<email>")`. On a first visit it first creates the account
-   through Open-WebUI's admin, and it takes over an account made elsewhere. It then redirects to
-   Open-WebUI's `/auth?token=…`.
-
-No token is minted here: Open-WebUI refuses self-made JWTs. The `webui_sso` marker (8 hours) is
-always set, even on failure, to break redirect loops. It is deleted whenever the session ends or a
-sign-in or sign-out happens, so one account's Open-WebUI session never carries over to the next. The
-public edge closes Open-WebUI's own password sign-in. The bridge still uses it, internally.
-
----
-
-## 8. Metrics, telemetry and consent
-
-- **Prometheus** (`lib/server/metrics.ts`, scraped at `frontend:3000/internal/metrics`):
+- **Prometheus** (`lib/server/metrics.ts`, scraped at `ap-frontend:3000/internal/metrics`):
   - `pacod_frontend_http_requests_total{user_type=registered|anonymous|bot}`. Only this tier can
     tell these apart; Caddy sees only an opaque cookie.
   - `pacod_frontend_active_sessions`: live signed-in sessions (up to 30 days each), not people
@@ -188,7 +165,7 @@ public edge closes Open-WebUI's own password sign-in. The bridge still uses it, 
 
 ---
 
-## 9. Key decisions
+## 8. Key decisions
 
 | Decision                                            | Why                                                         | Cost                                                          |
 | --------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------- |
@@ -197,7 +174,6 @@ public edge closes Open-WebUI's own password sign-in. The bridge still uses it, 
 | SSR first, TanStack Query in the browser            | Fast first paint, no double fetch                           | Query options must be plain values (getters never re-run)     |
 | Scoping by `?profile_id=`, isolation in the backend | A forged id cannot reach another agent's data               | The UI must thread the selected profile consistently          |
 | Compile-time i18n, four key-complete catalogs       | A missing translation fails the build, not production       | Every new string touches four files                           |
-| Open-WebUI SSO by derived password                  | Real Open-WebUI sessions, no forged tokens                  | `WEBUI_SECRET_KEY` must match on both containers              |
 | One tag loader behind consent                       | One auditable path for every tracker                        | Never load a tag any other way                                |
 
 Under `vite dev` the Vite `/api` proxy runs before SvelteKit's hooks, so browser API calls carry no

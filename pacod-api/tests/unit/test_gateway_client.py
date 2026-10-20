@@ -54,7 +54,7 @@ def replay(case: str) -> httpx.Response:
 def gateway(monkeypatch):
     """An LLMClient built as in production, whose HTTP transport answers from fixtures."""
     settings = get_settings()
-    monkeypatch.setattr(settings, "gateway_url", "http://gw-core:8080")
+    monkeypatch.setattr(settings, "gateway_url", "http://pacod-gw:8080")
     monkeypatch.setattr(settings, "gateway_api_key", "pgw_test_service_key")
     monkeypatch.setattr(lc.LLMClient._chat_once.retry, "wait", wait_none())
     monkeypatch.setattr(lc, "_STREAM_OPEN_BACKOFF_SECONDS", 0.0)
@@ -260,7 +260,7 @@ async def test_the_service_key_and_one_gateway_attempt_per_request(gateway):
     client = gateway.answer("ok_chat_cost_cached")
     await _chat(client)
     req = gateway.requests[0]
-    assert str(req.url) == "http://gw-core:8080/v1/chat/completions"
+    assert str(req.url) == "http://pacod-gw:8080/v1/chat/completions"
     assert req.headers["authorization"] == "Bearer pgw_test_service_key"
     assert req.headers["x-gw-retries"] == "1"
 

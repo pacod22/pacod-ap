@@ -10,28 +10,33 @@ Built with FastAPI, LangGraph, Qdrant, Postgres, Redis and MCP, on two sibling s
 
 ## Architecture
 
-- **api**: FastAPI service with the LangGraph agent, ingress guards (incl. per-profile authorization),
+- **ap-api**: FastAPI service with the LangGraph agent, ingress guards (incl. per-profile authorization),
   SSE streaming, and an OpenAI-compatible `/v1`
-- **admin-api**: separate FastAPI service for admin CRUD, store/Redis management, KB curation,
+- **ap-admin-api**: separate FastAPI service for admin CRUD, store/Redis management, KB curation,
   per-profile runtime LLM/web-search config, **profile CRUD + user↔profile assignment**, and the
   facades over pacod-id (accounts, roles) and the gateway (usage reports, the users' token budget)
-- **ingestion**: FastAPI service that chunks, embeds, and upserts documents/URLs/text into the target
-  profile's Qdrant collections (CPU variant `ingestion-cpu` runs bge-m3 in-process)
-- **mcp-server**: MCP server exposing each profile's **reference facts** (`get_fact`, `list_facts`)
-- **embeddings**: bge-m3 embedding + reranking service (multilingual; CPU `onnx_int8` reranker optional), shared across profiles
+- **ap-ingestion**: FastAPI service that chunks, embeds, and upserts documents/URLs/text into the target
+  profile's Qdrant collections (CPU variant `ap-ingestion-cpu` runs bge-m3 in-process)
+- **ap-mcp**: MCP server exposing each profile's **reference facts** (`get_fact`, `list_facts`)
+- **pacod-embeddings**: bge-m3 embedding + reranking service (multilingual; CPU `onnx_int8` reranker optional), shared across profiles
 - **pacod-gw** (its own compose project): the LLM gateway — every LLM call, providers and their keys,
   the model list, prices, limits, and the record of usage and cost
-- **pacod-id** (+ **pacod-id-db**): the identity provider — accounts, hosted sign-in, sessions, roles,
+- **pacod-id** (+ **pacod-db-init**): the identity provider — accounts, hosted sign-in, sessions, roles,
   service tokens
-- **improvement-loop-worker**: always-on container running the per-profile continuous-improvement loop
-- **newsletter-worker**: always-on per-profile news digest
-- **postgres** (18.6, via **pgbouncer**): source of truth (profiles, user shadows, facts, audit,
-  directives, per-profile runtime config); also pacod-id's and Open-WebUI's databases
-- **redis**: caches, the request quota and throttle, the frontend's sessions
-- **qdrant**: vector store for RAG (one base + `_parents` + curated collection **per profile**)
-- **caddy**: the edge — TLS and SSE support for the app, pacod-id, the gateway console and Open-WebUI
-- **frontend**: SvelteKit chat + admin shell and sign-in BFF (sister directory `pacod-ui`)
-- **open-webui**: an alternative chat UI, calling the API as a service account on behalf of each person
+- **ap-improvement-loop-worker**: always-on container running the per-profile continuous-improvement loop
+- **ap-newsletter-worker**: always-on per-profile news digest
+- **pacod-postgres** (18.6, via **ap-pgbouncer**): source of truth (profiles, user shadows, facts, audit,
+  directives, per-profile runtime config); also pacod-id's database
+- **ap-redis**: caches, the request quota and throttle, the frontend's sessions
+- **pacod-qdrant**: vector store for RAG (one base + `_parents` + curated collection **per profile**)
+- **pacod-caddy**: the edge — TLS and SSE support for the app, pacod-id and the gateway console
+- **ap-frontend**: SvelteKit chat + admin shell and sign-in BFF (sister directory `pacod-ui`)
+
+Every container joins the one external network `pacod-net` under a name unique across the pacod
+repositories (`pacod-*` for the shared components, `ap-*` for this platform's own):
+`docker-compose.yml` is the app file (the `ap-*` services and `pacod-embeddings`),
+`docker-compose.standalone.yml` this platform's copies of the shared components, which the full
+stack (pacod-demo) provides once instead. See `../pacod-demo/docs/NETWORK.md`.
 
 ## Multi-profile model
 
@@ -180,7 +185,7 @@ eligibility). The **Review process** admin page configures and runs it; the **Re
 approves candidates.
 
 **How a run works.** Clicking **Run now** (or the daily scheduler) enqueues a request; a dedicated
-**`improvement-loop-worker`** container drains the queue one run at a time. Each run:
+**`ap-improvement-loop-worker`** container drains the queue one run at a time. Each run:
 `collect` recent turns (redacted) → `triage` (which turns are worth deep analysis) → **assemble the
 evidence** (what the assistant actually read) → `analyze` → `judge` → `route` → **remediate** (write
 the fix) → **cluster** (group recurring problems). If no worker is running, requests just sit in
@@ -244,7 +249,7 @@ analysis change is the evidence the change helped.**
 **Review this turn**: it runs the full pipeline on that turn alone, ignoring the time window and
 **skipping triage** (you already decided this turn is worth analysing), and replaces any earlier
 verdict. The request is queued like any other run, so it takes as long as the worker's poll interval —
-if it stays "queued", the `improvement-loop-worker` isn't running.
+if it stays "queued", the `ap-improvement-loop-worker` isn't running.
 
 ```bash
 # Review a single turn (triage skipped, force implied), then follow it to completion:
@@ -408,8 +413,8 @@ the Redis admin page (`GET/DELETE /api/v1/redis/conversation-summaries`).
 The repo root (`..`) orchestrates three stacks: this app (with pacod-id), the gateway (from a sibling
 checkout of pacod-gw, `GW_DIR=../pacod-gw`), and the optional monitoring stack.
 
-1. From the repo root, start everything — networks, secrets, the app, the gateway, its bootstrap
-   (in dev its providers are the gateway's **mock**) and Open-WebUI's service account:
+1. From the repo root, start everything — networks, secrets, the app, the gateway and its bootstrap
+   (in dev its providers are the gateway's **mock**):
    ```bash
    make up-all
    ```
@@ -428,7 +433,7 @@ checkout of pacod-gw, `GW_DIR=../pacod-gw`), and the optional monitoring stack.
    gateway's record of its turn.
 4. Open http://localhost:8080 and sign up on pacod-id's page (http://127.0.0.1:8070); the
    confirmation mail lands in mailpit (http://127.0.0.1:8025). The gateway console is
-   http://127.0.0.1:13000, Open-WebUI http://localhost:3000.
+   http://127.0.0.1:13000.
 
 With the mock, every LLM reply is an echo that no guard or planner can parse (which is why
 `make gw-turn-smoke` scripts the classifier's and planner's replies); for real answers the gateway
@@ -469,10 +474,10 @@ What a backup contains:
 
 | Component | Mechanism |
 |---|---|
-| **PostgreSQL** | `pg_dumpall --globals-only` + `pg_dump -Fc` of `pacod`, `openwebui` and `pacod_id`, via `docker compose exec postgres` (never PgBouncer, never the host `pg_dump`) |
+| **PostgreSQL** | `pg_dumpall --globals-only` + `pg_dump -Fc` of `pacod` and `pacod_id`, via `docker compose exec pacod-postgres` (never PgBouncer, never the host `pg_dump`) |
 | **Qdrant** | A REST snapshot of every collection (real names from `GET /collections`, so a fine-tune alias is resolved), pulled over the REST download endpoint |
 | **Config & secrets** | `pacod-api/.env`, `pacod-api/.env.gateway`, `deploy/secrets/`, the pacod-id config, `authz/`, `deploy/pacod-gw/`, compose files, Caddyfiles, monitoring config, and `data/` |
-| **Volumes** | `documents_data` + the Open-WebUI data dir, tarred from inside the containers |
+| **Volumes** | `ap-documents-data`, tarred from inside the container |
 | **Redis** | Optional (`BACKUP_INCLUDE_REDIS=true`), off by default — semi-ephemeral |
 
 The gateway's own data is backed up by pacod-gw.

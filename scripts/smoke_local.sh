@@ -3,7 +3,7 @@
 #
 #   scripts/smoke_local.sh        (make smoke-local; part of make smoke-all)
 #
-# The turn runs inside the api container (a dev-token bearer is refused at the edge, which
+# The turn runs inside the ap-api container (a dev-token bearer is refused at the edge, which
 # expects a browser session) as the development user test_user — dev tokens need both
 # APP_ENV=development and AUTH_ALLOW_DEV_TOKENS=true, which .env.local sets.
 # When the gateway's mock provider answers on its control port, the turn's first two calls are
@@ -21,7 +21,7 @@ b64url() { printf '%s' "$1" | base64 | tr '+/' '-_' | tr -d '=\n'; }
 echo "smoke-local: the edge's /health"
 curl -fsS http://localhost:8080/health >/dev/null || fail "http://localhost:8080/health does not answer"
 
-docker inspect pacod-api >/dev/null 2>&1 || fail "the app is not running: make up-local"
+docker inspect ap-api >/dev/null 2>&1 || fail "the app is not running: make up-local"
 
 if curl -fsS -o /dev/null -m 2 -X DELETE "$MOCK_CONTROL/__mock/script" 2>/dev/null; then
 	classifier='{"is_relevant": true, "confidence": 0.95, "detected_language": "en", "reason": "a pricing question", "needs_clarification": false, "follow_ups": []}'
@@ -33,7 +33,7 @@ fi
 
 stamp="$(date +%s)"
 echo "smoke-local: one SSE chat turn (starter, as test_user)"
-sse="$(docker exec pacod-api curl -N -sS --fail-with-body -X POST http://localhost:8000/api/v1/chat \
+sse="$(docker exec ap-api curl -N -sS --fail-with-body -X POST http://localhost:8000/api/v1/chat \
 	-H 'Authorization: Bearer dev-token-test_user' -H 'Content-Type: application/json' \
 	-d "{\"message\": \"What does the Plus plan cost each month? (local smoke $stamp-$$)\", \"session_id\": \"local-smoke-$stamp\"}")" \
 	|| fail "the chat request failed: $(head -c 300 <<<"${sse:-}")"

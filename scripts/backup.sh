@@ -5,9 +5,9 @@
 # Captures every irreplaceable piece of state into ONE timestamped, mode-0600
 # tar.gz archive:
 #
-#   postgres/   pg_dumpall globals + custom-format dumps of the app (pacod),
-#               openwebui and pacod_id (identity) databases (via `docker compose
-#               exec postgres`, NOT pgbouncer, NOT the host pg_dump).
+#   postgres/   pg_dumpall globals + custom-format dumps of the app (pacod) and
+#               pacod_id (identity) databases (via `docker compose exec
+#               pacod-postgres`, NOT pgbouncer, NOT the host pg_dump).
 #   qdrant/     A REST snapshot of every Qdrant collection (real names from
 #               GET /collections, so any fine-tune alias is resolved), pulled
 #               over the REST download endpoint.
@@ -21,9 +21,9 @@
 #
 # Not here: the gateway's own stores (its PostgreSQL and ClickHouse) — pacod-gw's
 # `make backup` (in GW_DIR) backs those up.
-#   volumes/    documents_data + the Open-WebUI data dir (tarred from inside the
-#               containers, so the compose volume prefix / declared-vs-bind
-#               discrepancies never matter).
+#   volumes/    documents_data (volume ap-documents-data), tarred from inside the
+#               container, so the compose volume prefix / declared-vs-bind
+#               discrepancies never matter.
 #   redis/      (optional, off by default) BGSAVE + /data.
 #
 # ONLINE backup: the stack must be running. Restore with restore.sh.
@@ -53,7 +53,7 @@ Key environment variables (see scripts/backup.env.example for the full list):
   COMPOSE_PROJECT_NAME       Compose project name    (default: pacod)
   ENV_FILE                   App env mined for creds (default: pacod-api/.env)
   POSTGRES_USER/_PASSWORD    DB credentials          (default: from ENV_FILE)
-  POSTGRES_DB/_OPENWEBUI_DB/_ID_DB  DB names       (default: pacod/openwebui/pacod_id)
+  POSTGRES_DB/_ID_DB         DB names                (default: pacod/pacod_id)
   QDRANT_URL                 Qdrant REST endpoint    (default: http://localhost:6333)
   BACKUP_INCLUDE_DOCUMENTS   Back up doc volumes     (default: true)
   BACKUP_INCLUDE_REDIS       Back up Redis           (default: false)
@@ -91,16 +91,16 @@ trap cleanup EXIT
 log "Backing up pacod → $ARCHIVE"
 
 # --- 1. PostgreSQL -----------------------------------------------------------
-log "PostgreSQL: dumping globals + databases ($POSTGRES_DB, $POSTGRES_OPENWEBUI_DB, $POSTGRES_ID_DB)"
+log "PostgreSQL: dumping globals + databases ($POSTGRES_DB, $POSTGRES_ID_DB)"
 pg() { compose_exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$SVC_POSTGRES" "$@"; }
 
 pg pg_dumpall -U "$POSTGRES_USER" --globals-only > "$STAGE/postgres/globals.sql" \
   || die "pg_dumpall --globals-only failed"
 
-for db in "$POSTGRES_DB" "$POSTGRES_OPENWEBUI_DB" "$POSTGRES_ID_DB"; do
+for db in "$POSTGRES_DB" "$POSTGRES_ID_DB"; do
   log "  pg_dump -Fc $db"
   if ! pg pg_dump -U "$POSTGRES_USER" -Fc -d "$db" > "$STAGE/postgres/$db.dump"; then
-    # openwebui / pacod_id may legitimately be absent (backend-only deployment).
+    # pacod_id may legitimately be absent (backend-only deployment).
     if [[ "$db" != "$POSTGRES_DB" ]]; then
       warn "  pg_dump of '$db' failed — skipping (not provisioned here?)"
       rm -f "$STAGE/postgres/$db.dump"
@@ -161,9 +161,10 @@ CONFIG_PATHS=(
   "pacod-api/docker/pacod-id"
   "pacod-api/authz"
   "deploy/pacod-gw"
-  "pacod-api/docker/postgres"
+  "platform"
   "pacod-api/docker/caddy/Caddyfile"
   "pacod-api/docker-compose.yml"
+  "pacod-api/docker-compose.standalone.yml"
   "pacod-api/docker-compose.gpu.yml"
   "monitoring/docker-compose.monitoring.yml"
   "monitoring/docker-compose.exporters.yml"
@@ -208,9 +209,8 @@ if is_true "$BACKUP_INCLUDE_DOCUMENTS"; then
       rm -f "$out"
     fi
   }
-  log "Volumes: documents + Open-WebUI data"
+  log "Volumes: documents"
   tar_volume "$SVC_DOCUMENTS" "$DOCUMENTS_MOUNT" "$STAGE/volumes/documents_data.tar.gz" "documents_data"
-  tar_volume "$SVC_OPENWEBUI" "$OPENWEBUI_MOUNT" "$STAGE/volumes/openwebui_data.tar.gz" "openwebui_data"
 else
   log "Volumes: skipped (BACKUP_INCLUDE_DOCUMENTS=$BACKUP_INCLUDE_DOCUMENTS)"
 fi
@@ -246,7 +246,7 @@ fi
   echo "host:             $(hostname 2>/dev/null || echo unknown)"
   echo "git_sha:          $(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo n/a)"
   echo "compose_project:  $COMPOSE_PROJECT_NAME"
-  echo "postgres_dbs:     $POSTGRES_DB $POSTGRES_OPENWEBUI_DB $POSTGRES_ID_DB"
+  echo "postgres_dbs:     $POSTGRES_DB $POSTGRES_ID_DB"
   echo "qdrant_url:       $QDRANT_URL"
   echo "include_documents:$BACKUP_INCLUDE_DOCUMENTS"
   echo "include_redis:    $BACKUP_INCLUDE_REDIS"

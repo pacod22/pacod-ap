@@ -66,16 +66,16 @@ def _app() -> FastAPI:
 
 class TestResolveSite:
     def test_trusted_header(self):
-        assert rc.resolve_site({"x-pacod-site": "pacod"}, "/api/v1/x") == "pacod"
-        assert rc.resolve_site({"x-pacod-site": "PACOD"}, "/api/v1/x") == "pacod"
+        assert rc.resolve_site({"x-pacod-site": "pacod"}) == "pacod"
+        assert rc.resolve_site({"x-pacod-site": "PACOD"}) == "pacod"
 
     def test_untrusted_header_ignored(self):
-        assert rc.resolve_site({"x-pacod-site": "evil"}, "/api/v1/x") == "unknown"
-        # openwebui is path-derived, never accepted from the header
-        assert rc.resolve_site({"x-pacod-site": "openwebui"}, "/api/v1/x") == "unknown"
+        assert rc.resolve_site({"x-pacod-site": "evil"}) == "unknown"
+        # A retired site is no longer accepted from the header either.
+        assert rc.resolve_site({"x-pacod-site": "openwebui"}) == "unknown"
 
-    def test_openai_compat_path(self):
-        assert rc.resolve_site({}, "/v1/chat/completions") == "openwebui"
+    def test_no_header_is_unknown(self):
+        assert rc.resolve_site({}) == "unknown"
 
     def test_no_context_is_internal(self):
         assert rc.current_site() == "internal"
@@ -124,10 +124,12 @@ class TestMiddleware:
         c.get("/v1/models")
         assert sink.rows == []
 
-    def test_openwebui_site(self, sink):
+    def test_openai_compat_call_is_a_direct_call(self, sink):
+        # /v1/* is recorded like any other API call; without a trusted site header it is
+        # a direct call (an OpenAI client), not a site of its own.
         r = TestClient(_app()).get("/v1/chat/completions")
-        assert r.json() == {"site": "openwebui"}
-        assert sink.rows[0]["site"] == "openwebui"
+        assert r.json() == {"site": "unknown"}
+        assert sink.rows[0]["site"] == "unknown"
         assert sink.rows[0]["user_type"] == "anonymous"
 
     def test_kill_switch(self, monkeypatch, sink):

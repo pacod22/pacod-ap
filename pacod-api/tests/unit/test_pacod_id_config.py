@@ -16,7 +16,7 @@ pytestmark = pytest.mark.skipif(
     not DIR.is_dir(), reason="docker/pacod-id is not in this tree (api image)"
 )
 
-# What docker-compose.yml / docker-compose.local.yml pass to the pacod-id service.
+# What docker-compose.standalone.yml / docker-compose.standalone.local.yml pass to pacod-id.
 ENV = {
     "PACOD_ID_ISSUER": "http://127.0.0.1:8070",
     "PACOD_ID_SELF_SIGNUP": "true",
@@ -87,9 +87,9 @@ def test_clients_the_gateway_expects(prod):
 
 
 def test_compose_pins_the_vendored_commit():
-    """docker-compose.yml's default pacod-id image is tagged with the commit the vendored
+    """docker-compose.standalone.yml's default pacod-id image is tagged with the commit the vendored
     libraries came from (vendor/PACOD_ID_VERSION), as `make id-image` tags it."""
     root = DIR.parents[1]
     commit = (root / "vendor" / "PACOD_ID_VERSION").read_text().split()[1]
-    compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
+    compose = (root / "docker-compose.standalone.yml").read_text(encoding="utf-8")
     assert f"${{PACOD_ID_IMAGE:-pacod-id:{commit[:7]}}}" in compose

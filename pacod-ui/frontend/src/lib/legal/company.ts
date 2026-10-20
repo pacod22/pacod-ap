@@ -72,6 +72,13 @@ const OCTOBER_16: Record<Locale, string> = {
 	ru: '16 октября 2026 г.'
 };
 
+const OCTOBER_20: Record<Locale, string> = {
+	en: '20 October 2026',
+	bg: '20 октомври 2026 г.',
+	de: '20. Oktober 2026',
+	ru: '20 октября 2026 г.'
+};
+
 /**
  * "Last updated / Effective" date per document, localized. Bump ONLY the
  * document that changed — a Terms page claiming a revision that never happened
@@ -84,7 +91,8 @@ export const lastUpdated: Record<'terms' | 'privacy' | 'cookies', Record<Locale,
 	// 2026-10-16: "Your account and sign-in" (pacod-id) replaces the Google sign-in section.
 	privacy: OCTOBER_16,
 	// 2026-10-16: the sign-in cookies (app_session, pid_login, the sign-in service's own).
-	cookies: OCTOBER_16
+	// 2026-10-20: the separate chat app's single sign-on cookie is gone with that app.
+	cookies: OCTOBER_20
 };
 
 /** What the PACOD documents cover. */

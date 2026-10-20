@@ -7,8 +7,7 @@ COMPOSE := docker compose -f docker-compose.exporters.yml -f docker-compose.moni
 
 ## Bring up exporters + Prometheus + Alertmanager + Grafana (same instance).
 up: check-env
-	docker network inspect agent-net >/dev/null 2>&1 || docker network create agent-net
-	docker network inspect pacod-link >/dev/null 2>&1 || docker network create pacod-link
+	@docker network inspect pacod-net >/dev/null 2>&1 || docker network create pacod-net >/dev/null
 	$(COMPOSE) up -d
 
 ## Stop the monitoring stack (volumes preserved).

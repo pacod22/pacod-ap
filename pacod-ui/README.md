@@ -14,45 +14,41 @@ them to the backend as a Bearer.
 
 ## Stack
 
-| Layer         | Technology                                                                              |
-| ------------- | --------------------------------------------------------------------------------------- |
-| Framework     | SvelteKit 2 + Svelte 5 (Runes)                                                          |
-| Language      | TypeScript                                                                              |
-| Styling       | Tailwind CSS v4 + CSS custom-property design tokens                                     |
-| Data fetching | TanStack Query v5 (browser-only)                                                        |
-| Validation    | Zod                                                                                     |
-| i18n          | Paraglide JS 2 (inlang) — cookie-based, locales **en / bg / de / ru**                   |
-| Runtime       | Node.js 22 via `@sveltejs/adapter-node`                                                 |
-| Edge proxy    | Caddy (`pacod-api/docker/caddy/`)                                                       |
-| Auth          | pacod-id (OIDC) via the vendored `@pacod/id-sveltekit` + `@pacod/id-client`; Open-WebUI SSO |
-| Sessions      | Redis (`ioredis`), server-side                                                          |
+| Layer         | Technology                                                                  |
+| ------------- | --------------------------------------------------------------------------- |
+| Framework     | SvelteKit 2 + Svelte 5 (Runes)                                              |
+| Language      | TypeScript                                                                  |
+| Styling       | Tailwind CSS v4 + CSS custom-property design tokens                         |
+| Data fetching | TanStack Query v5 (browser-only)                                            |
+| Validation    | Zod                                                                         |
+| i18n          | Paraglide JS 2 (inlang) — cookie-based, locales **en / bg / de / ru**       |
+| Runtime       | Node.js 22 via `@sveltejs/adapter-node`                                     |
+| Edge proxy    | Caddy (`pacod-api/docker/caddy/`)                                           |
+| Auth          | pacod-id (OIDC) via the vendored `@pacod/id-sveltekit` + `@pacod/id-client` |
+| Sessions      | Redis (`ioredis`), server-side                                              |
 
 ## Architecture
 
 The browser talks only to Caddy → SvelteKit. **All `/api/*` traffic flows through SvelteKit** so the
 `handleApiProxy` hook can swap the session cookie for a Bearer token and route each request to the
-right backend (`admin-api` for admin paths, `api` for everything else).
+right backend (`ap-admin-api` for admin paths, `ap-api` for everything else).
 
 ```
 Browser
   │  HTTPS (prod) / HTTP (local :8080)
   ▼
-Caddy  (www.pacod.io; + the Open-WebUI, pacod-id and gateway-console sites)
-  ├── /health       → api:8000
-  ├── /static/*     → open-webui:8080   (Open-WebUI's root-relative assets)
+Caddy  (www.pacod.io; + the pacod-id and gateway-console sites)
+  ├── /health       → ap-api:8000
   ├── /monitoring*  → pacod-grafana:3000 (production only; forward_auth → /internal/monitoring-auth)
-  ├── /internal/*   → 404               (forward_auth + Prometheus reach frontend:3000 directly)
-  ├── /api/*        → frontend:3000     (SvelteKit; flush_interval -1 for SSE)
-  └── /*            → frontend:3000     (SvelteKit)
+  ├── /internal/*   → 404               (forward_auth + Prometheus reach ap-frontend:3000 directly)
+  ├── /api/*        → ap-frontend:3000     (SvelteKit; flush_interval -1 for SSE)
+  └── /*            → ap-frontend:3000     (SvelteKit)
 
 Inside SvelteKit (handleApiProxy):
-  admin paths (ADMIN_PATH_PREFIXES, lib/server/admin-paths.ts)  →  admin-api:8000
-  everything else                                              →  api:8000
+  admin paths (ADMIN_PATH_PREFIXES, lib/server/admin-paths.ts)  →  ap-admin-api:8000
+  everything else                                              →  ap-api:8000
   (Bearer = the session's pacod-id access token, added server-side)
 ```
-
-Open-WebUI runs on its own host behind a Caddy `forward_auth` SSO gate — see **Open-WebUI SSO** in
-[`CLAUDE.md`](CLAUDE.md).
 
 ### Auth flow
 
@@ -144,12 +140,12 @@ password and devices), the public landing page and per-agent landing pages (`/ag
 
 ### Run it (Docker)
 
-The frontend is the `frontend` service of `pacod-api/docker-compose.yml` (compose profile `ui`). From
+The frontend is the `ap-frontend` service of `pacod-api/docker-compose.yml` (compose profile `ui`). From
 the **repo root**:
 
 ```bash
 make secrets-init      # pacod-id's and the gateway's secrets (prints names only)
-make up-all            # app + pacod-id, the gateway, its bootstrap, Open-WebUI's service account
+make up-all            # app + pacod-id, the gateway and its bootstrap
 make bootstrap-local   # first run: schema, the starter agent's facts + corpus, dev users
 ```
 
@@ -167,7 +163,7 @@ Bearer. Use the Docker stack for anything signed in; see _Running it_ in [`CLAUD
 
 ### Environment variables
 
-Read at run time via `$env/dynamic/private`. In Docker they are set on the `frontend` service's
+Read at run time via `$env/dynamic/private`. In Docker they are set on the `ap-frontend` service's
 `environment` block (it has no `env_file`); `frontend/.env` is for `npm run dev` only.
 
 | Variable                                     | Default                        | Purpose                                                                                                   |
@@ -178,11 +174,8 @@ Read at run time via `$env/dynamic/private`. In Docker they are set on the `fron
 | `SITE_URL`                                   | _(required)_                   | The public origin; the callback and post-logout addresses derive from it; also the canonical URL           |
 | `SESSION_SECRET`                             | _(required, ≥ 32 characters)_  | Seals the pending sign-in cookie                                                                          |
 | `REDIS_URL`                                  | _(required outside `vite dev`)_ | Where the sessions live (`app_session:*`, `app_session_sid:*`, a refresh lock)                            |
-| `API_INTERNAL_URL`                           | `http://localhost:8000`        | Server → `api` (chat, `auth/me`, quota, my-profiles)                                                      |
-| `ADMIN_API_INTERNAL_URL`                     | `http://localhost:3001`        | Server → `admin-api` (all admin resources)                                                                |
-| `OPENWEBUI_URL` / `OPENWEBUI_INTERNAL_URL`   | `''`                           | Public / internal Open-WebUI URLs (blank internal → SSO skipped)                                          |
-| `WEBUI_SECRET_KEY`                           | `''`                           | Must match Open-WebUI — the per-user SSO passwords derive from it                                         |
-| `WEBUI_ADMIN_EMAIL` / `WEBUI_ADMIN_PASSWORD` | `''`                           | Open-WebUI's admin, used server-side to provision SSO users                                               |
+| `API_INTERNAL_URL`                           | `http://localhost:8000`        | Server → `ap-api` (chat, `auth/me`, quota, my-profiles)                                                      |
+| `ADMIN_API_INTERNAL_URL`                     | `http://localhost:3001`        | Server → `ap-admin-api` (all admin resources)                                                                |
 | `ENABLED_LOCALES`                            | all four                       | CSV of the UI languages the switchers offer                                                               |
 | `BODY_SIZE_LIMIT`                            | adapter default (512 KB)       | adapter-node max body — compose sets 50 MB to cover the largest upload                                    |
 | `LOG_LEVEL`                                  | `debug` (dev) / `info` (prod)  | `debug \| info \| warn \| error`                                                                          |
@@ -238,7 +231,7 @@ npm run build      # production build → build/
    `lib/server/admin-load.ts` for an admin list).
 3. `src/routes/(app)/<name>/+page.svelte` — table + filter bar + create/edit dialog.
 4. Add a nav entry (with `requires: 'admin'`) to the right group in `AppShell.svelte`.
-5. If the endpoint is on `admin-api`, add its prefix to `ADMIN_PATH_PREFIXES` in
+5. If the endpoint is on `ap-admin-api`, add its prefix to `ADMIN_PATH_PREFIXES` in
    `lib/server/admin-paths.ts` — the one list both the proxy and `lib/server/api.ts` use.
 6. New user-facing strings → `m.<key>()` + a key in **all four** message JSONs (`npm run compile` flags
    gaps). File uploads must use raw `fetch()` + `FormData`, never `api.post()`.

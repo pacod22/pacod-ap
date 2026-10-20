@@ -47,9 +47,9 @@ ROW = {
 
 
 def test_filters_use_the_gateways_tag_spelling():
-    assert rep.filters(profile_id="starter", site="openwebui", purpose="planner", user_id="u") == [
+    assert rep.filters(profile_id="starter", site="pacod", purpose="planner", user_id="u") == [
         ("tag.profile", "starter"),
-        ("tag.site", "openwebui"),
+        ("tag.site", "pacod"),
         ("tag.purpose", "planner"),
         ("end_user", "u"),
     ]

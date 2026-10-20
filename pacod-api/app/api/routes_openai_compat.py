@@ -1,15 +1,17 @@
-"""OpenAI-compatible shim for Open-WebUI and similar clients.
+"""OpenAI-compatible API for any OpenAI client.
 
 Exposes:
   GET  /v1/models              — model discovery
   POST /v1/chat/completions    — streaming and non-streaming completions
 
 The full guard chain (auth → language → quota → topic) runs identically to the
-native /api/v1/chat endpoint. Errors surface as OpenAI-format error objects so
+native /api/v1/chat endpoint, and the caller is who its token says: a person
+(pacod-id access token), a development token, or a pacod-id service account
+(``pidt_…``) acting as itself. Errors surface as OpenAI-format error objects so
 any OpenAI-compatible client handles them gracefully.
 
 Citations are appended as a markdown "Sources" block after the answer text,
-which Open-WebUI renders inline in the chat bubble.
+which chat clients render inline with the answer.
 """
 
 from __future__ import annotations
@@ -18,10 +20,10 @@ import hashlib
 import json
 import time
 import uuid
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
@@ -221,10 +223,10 @@ def _citations_md(citations: list[Citation]) -> str:
 
 
 def _suggestions_md(suggestions: list[str], language: Language) -> str:
-    """Format suggestion chips for Open-WebUI's markdown renderer.
+    """Format suggestion chips for the client's markdown renderer.
 
-    Each suggestion is wrapped in backticks so Open-WebUI renders it as an
-    inline-code chip — visually distinct and easy to click-to-select/copy.
+    Each suggestion is wrapped in backticks so a markdown client renders it as
+    an inline-code chip — visually distinct and easy to click-to-select/copy.
     """
     if not suggestions:
         return ""
@@ -269,7 +271,6 @@ async def _run_guards(
     req: _CompletionRequest,
     authorization: str | None,
     auth: AuthGuard,
-    headers: Mapping[str, str] | None,
     lang_guard: LanguageGuard,
     topic_guard: TopicGuard,
     quota_guard: QuotaGuard,
@@ -284,8 +285,7 @@ async def _run_guards(
     Returns (user, profile, language, classification, classifier_usage_total,
     agent) — ``agent`` is the turn's EffectiveAgent (agent-editor overlay)."""
     try:
-        # Open-WebUI's service token names the person in forwarded headers (AuthGuard).
-        user = await auth.authenticate(authorization, headers)
+        user = await auth.authenticate(authorization)
     except AuthenticationError:
         record_guard_rejection("auth")
         raise _GuardError(user_message_md("authentication_error")) from None
@@ -382,19 +382,18 @@ async def _run_guards(
 
 @router.get("/models")
 async def list_models(
-    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_http_bearer),
     auth: AuthGuard = Depends(get_auth_guard),
 ) -> dict:
     """Model discovery — one model per profile the caller may use.
 
-    Filtered by the caller's assignments so Open-WebUI users can't select a
-    profile they aren't assigned to (admins see all active profiles). An
+    Filtered by the caller's assignments so a client can't select a profile
+    the caller isn't assigned to (admins see all active profiles). An
     unauthenticated probe gets just the legacy default model id.
     """
     authorization = f"Bearer {credentials.credentials}" if credentials else None
     try:
-        user = await auth.authenticate(authorization, request.headers)
+        user = await auth.authenticate(authorization)
     except AuthenticationError:
         return {
             "object": "list",
@@ -405,10 +404,6 @@ async def list_models(
 
     if user.is_admin():
         profiles = await list_profiles(active_only=True)
-    elif "webui_service" in user.roles:
-        # Open-WebUI's own call, with no person forwarded (its model list is shared): every
-        # released agent. A completion is then authorized as the forwarded person.
-        profiles = [p for p in await list_profiles(active_only=True) if p.is_user_visible]
     else:
         ids = await get_user_profile_ids(user.user_id)
         profiles = [p for p in await get_profiles(ids, get_redis()) if p.is_user_visible]
@@ -440,7 +435,6 @@ async def list_models(
 @router.post("/chat/completions")
 async def chat_completions(
     req: _CompletionRequest,
-    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_http_bearer),
     auth: AuthGuard = Depends(get_auth_guard),
     lang_guard: LanguageGuard = Depends(get_language_guard),
@@ -464,7 +458,6 @@ async def chat_completions(
             req=req,
             authorization=authorization,
             auth=auth,
-            headers=request.headers,
             lang_guard=lang_guard,
             topic_guard=topic_guard,
             quota_guard=quota_guard,

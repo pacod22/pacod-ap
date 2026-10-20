@@ -6,7 +6,6 @@
 #   AuthenticatedUser.is_superuser()    has_role pacod.superuser at platform
 #   require_superuser (prompts, agents) allowed pacod.prompts.edit / pacod.profiles.manage
 #   granting/revoking superuser          can_grant pacod.superuser (was guard_superuser_role_change)
-#   Open-WebUI forwarded identity        allowed pacod.attribution.forward (service account only)
 manifests: [pacod]
 cases:
   - name: everyone who signs in may chat, and nothing more
@@ -15,7 +14,6 @@ cases:
       - { allowed: pacod.chat.use, at: [platform], expect: true }
       - { allowed: pacod.chat.use, at: [platform, "pacod.profile:starter"], expect: true }
       - { allowed: pacod.admin.read, at: [platform], expect: false }
-      - { allowed: pacod.attribution.forward, at: [platform], expect: false }
       - { has_role: pacod.user, scope: platform, expect: true }
       - { holds_any_at: platform, expect: false }
       - { can_grant: pacod.admin, at: [platform], expect: not_permitted }
@@ -29,11 +27,10 @@ cases:
       - { allowed: pacod.profiles.assign, at: [platform], expect: true }
       - { allowed: pacod.profiles.manage, at: [platform], expect: false }
       - { allowed: pacod.prompts.edit, at: [platform], expect: false }
-      - { allowed: pacod.webui.admin, at: [platform], expect: false }
+      - { allowed: pacod.superuser.grant, at: [platform], expect: false }
       - { allowed: pacod.chat.use, at: [platform], expect: true }
       - { has_role: pacod.superuser, scope: platform, expect: false }
       - { can_grant: pacod.admin, at: [platform], expect: ok }
-      - { can_grant: pacod.webui_service, at: [platform], expect: ok }
       - { can_grant: pacod.superuser, at: [platform], expect: not_permitted }
       - { can_grant: pacod.admin, at: [platform, "pacod.profile:starter"], expect: scope_type_not_allowed }
 
@@ -43,18 +40,18 @@ cases:
       - { allowed: pacod.admin.write, at: [platform], expect: true }
       - { allowed: pacod.profiles.manage, at: [platform], expect: true }
       - { allowed: pacod.prompts.edit, at: [platform], expect: true }
-      - { allowed: pacod.webui.admin, at: [platform], expect: true }
-      - { allowed: pacod.attribution.forward, at: [platform], expect: false }
+      - { allowed: pacod.superuser.grant, at: [platform], expect: true }
+      - { allowed: pacod.chat.use, at: [platform], expect: true }
       - { has_role: pacod.superuser, scope: platform, expect: true }
       - { can_grant: pacod.superuser, at: [platform], expect: ok }
       - { can_grant: pacod.admin, at: [platform], expect: ok }
 
-  - name: the Open-WebUI service account chats and forwards the person, nothing else
-    subject: { kind: service, bindings: [{ role: pacod.webui_service, path: [platform] }] }
+  - name: a service account holds what its bindings give, and is never an implicit user
+    subject: { kind: service, bindings: [{ role: pacod.admin, path: [platform] }] }
     checks:
-      - { allowed: pacod.chat.use, at: [platform], expect: true }
-      - { allowed: pacod.attribution.forward, at: [platform], expect: true }
-      - { allowed: pacod.admin.read, at: [platform], expect: false }
+      - { allowed: pacod.admin.read, at: [platform], expect: true }
+      - { allowed: pacod.prompts.edit, at: [platform], expect: false }
+      - { allowed: pacod.chat.use, at: [platform], expect: false }
       - { has_role: pacod.user, scope: platform, expect: false }
 
   - name: a service account without a role may not even chat

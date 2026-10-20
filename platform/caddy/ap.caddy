@@ -1,0 +1,105 @@
+# pacod-ap's site behind the shared edge (pacod-caddy): the main shell. A site block only:
+# imported by a Caddyfile that holds the global options — pacod-ap's own
+# (pacod-api/docker/caddy/Caddyfile, Caddyfile.local) or the full stack's (pacod-demo).
+#
+#   AP_SITE          the main shell's address, e.g. http://app.localhost:8800
+#   AP_SITE_OPTIONS  directives the site adds, e.g. "import <snippet>" for certificates and a
+#                    log file; blank: none (plain HTTP, the importer's logging)
+#
+# Caddy substitutes {$VAR} before it parses, so AP_SITE_OPTIONS may be a whole directive.
+# Upstreams are service names on pacod-net. Everything goes through the SvelteKit frontend
+# (ap-frontend), whose auth proxy turns the session cookie into a Bearer token and routes to
+# ap-api / ap-admin-api; only /health reaches ap-api directly.
+
+{$AP_SITE:www.pacod.io:443} {
+	{$AP_SITE_OPTIONS}
+
+	# Health check passthrough — hit the main API directly (no auth needed).
+	handle /health {
+		reverse_proxy ap-api:8000
+	}
+
+	# Monitoring UI (Grafana) served under /monitoring. The prefix is NOT stripped —
+	# Grafana is configured to serve from this sub-path (GF_SERVER_ROOT_URL +
+	# GF_SERVER_SERVE_FROM_SUB_PATH in monitoring/docker-compose.monitoring.yml), so it
+	# emits asset/redirect URLs already prefixed with /monitoring. 502 while pacod-ap's
+	# monitoring module (pacod-grafana) is not running.
+	handle /monitoring* {
+		# Grafana is embedded in the admin console at /metrics (a same-origin
+		# iframe) and serves dashboards as an anonymous Viewer (no Grafana login).
+		# Access control therefore lives HERE: forward_auth asks SvelteKit whether
+		# the app_session cookie belongs to an admin. /internal/monitoring-auth
+		# returns 200 (admin → proxy to Grafana) or 403 (rejected).
+		#
+		# Grafana's static build assets (/monitoring/public/*) carry no tenant
+		# data and are excluded so first-load JS/CSS chunks skip the auth hop; the
+		# dashboard data endpoints (/monitoring/api/*) and pages stay gated.
+		#
+		# `route` pins evaluation order: the (matched) forward_auth MUST run before
+		# the (terminal) reverse_proxy. Without it, Caddy's directive-order sorting
+		# could place the bare reverse_proxy first and serve Grafana unauthenticated.
+		route {
+			@ap_mon_protected not path /monitoring/public/*
+			forward_auth @ap_mon_protected ap-frontend:3000 {
+				uri /internal/monitoring-auth
+				header_up Cookie {http.request.header.Cookie}
+				header_up Host {host}
+			}
+			reverse_proxy pacod-grafana:3000 {
+				header_up Host {host}
+				header_up X-Real-IP {remote_host}
+				header_up X-Forwarded-For {remote_host}
+				header_up X-Forwarded-Proto {scheme}
+			}
+		}
+	}
+
+	# /api/* — all browser API calls go through SvelteKit so the handleApiProxy
+	# hook can convert session cookies to Bearer tokens before forwarding to the
+	# Python backends. `flush_interval -1` and the 10-minute timeouts are what make
+	# SSE chat tokens arrive one at a time and keep long agent turns from being cut
+	# off — do not trim them.
+	handle /api/* {
+		reverse_proxy ap-frontend:3000 {
+			flush_interval -1
+			transport http {
+				read_timeout 10m
+				write_timeout 10m
+				response_header_timeout 10m
+			}
+			header_up Host {host}
+			header_up X-Forwarded-Host {hostport}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Block /internal/* from the public edge. These SvelteKit routes
+	# (monitoring-auth, metrics) are meant only for internal callers:
+	# Caddy forward_auth subrequests and Prometheus scrape both hit ap-frontend:3000
+	# DIRECTLY over pacod-net, bypassing this site — so a 404 here does not affect
+	# them. Without this, the catch-all below would proxy /internal/metrics (the
+	# Prometheus endpoint) to any public visitor. `handle` is path-specific, so this
+	# is evaluated before the terminal catch-all regardless of source order.
+	handle /internal/* {
+		respond 404
+	}
+
+	# SvelteKit frontend shell — pages and static assets (JS, CSS, fonts).
+	# No streaming needed here; regular buffered proxy avoids chunked-encoding
+	# conflicts that cause NS_ERROR_CORRUPTED_CONTENT on static files.
+	# X-Forwarded-Host lets adapter-node reconstruct the public origin for
+	# SvelteKit's CSRF check (HOST_HEADER=x-forwarded-host in env). {hostport}, not
+	# {host}: on a non-default port ("app.localhost:8800") {host} drops the port; on
+	# 443 the browser sends none, so both are the same.
+	handle {
+		reverse_proxy ap-frontend:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-Host {hostport}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+}

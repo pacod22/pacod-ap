@@ -11,9 +11,10 @@
 #   profiles.assign       assign agents to users
 #   profiles.manage       create, edit and delete agents
 #   prompts.edit          edit the agents' phase prompts and the agent editor
-#   webui.admin           an Open-WebUI admin (who can usually read every user's chats)
 #   superuser.grant       give and take the superuser role
-#   attribution.forward   assert the person behind a call (the Open-WebUI service account)
+#
+# A role dropped from here is named in RETIRED_ROLES (app/services/identity.py), which the
+# catalogue push sends as `migrate` so that pacod-id removes its bindings.
 #
 # The scope type `profile` is declared for later use; bindings are all at the platform today.
 product: pacod
@@ -31,10 +32,7 @@ roles:
     protected: true
   superuser:
     at: [platform]
-    permissions: [admin.read, admin.write, profiles.assign, profiles.manage, prompts.edit, webui.admin, superuser.grant]
-  webui_service:
-    at: [platform]
-    permissions: [chat.use, attribution.forward]
+    permissions: [admin.read, admin.write, profiles.assign, profiles.manage, prompts.edit, superuser.grant]
 custom_roles: { at: [platform] }
 grant:
   # Admins give and take roles; only a superuser makes (or unmakes) a superuser.

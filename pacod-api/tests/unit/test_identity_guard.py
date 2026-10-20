@@ -26,14 +26,16 @@ KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 JWK = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(KEY.public_key()))
 JWK.update(kid="k1", use="sig", alg="RS256")
 
-ADMIN, SUPER, PLAIN, WEBUI = "usr_admin", "usr_super", "usr_plain", "sa_webui"
+ADMIN, SUPER, PLAIN, SERVICE, RETIRED = "usr_admin", "usr_super", "usr_plain", "sa_ops", "sa_old"
 SNAPSHOT = {
     "seq": 7,
     "bindings": [
         {"id": "b1", "principal": ADMIN, "role": "pacod.admin", "path": ["platform"]},
         # A superuser without a separate admin binding still reaches the console.
         {"id": "b2", "principal": SUPER, "role": "pacod.superuser", "path": ["platform"]},
-        {"id": "b3", "principal": WEBUI, "role": "pacod.webui_service", "path": ["platform"]},
+        {"id": "b3", "principal": SERVICE, "role": "pacod.admin", "path": ["platform"]},
+        # A binding of a retired role, as the copy holds it until the catalogue push removes it.
+        {"id": "b4", "principal": RETIRED, "role": "pacod.webui_service", "path": ["platform"]},
     ],
     "disabled": ["usr_disabled"],
     "deleted": [],
@@ -86,14 +88,10 @@ def ident(monkeypatch):
         made.append((sub, email, name))
         return True
 
-    async def by_email(email):
-        return {"person@example.com": "usr_person", "off@example.com": "usr_disabled"}.get(email)
-
     async def no_activity(*a, **k):
         return None
 
     monkeypatch.setattr(ident, "ensure_user", ensure_user)
-    monkeypatch.setattr(ident, "user_id_by_email", by_email)
     monkeypatch.setattr("app.services.user_activity.record_activity", no_activity)
     monkeypatch.setattr(identity_mod, "_identity", ident)
     ident.made = made
@@ -142,25 +140,42 @@ async def test_unreadable_keys_are_503_not_401(ident):
         await guard.authenticate(f"Bearer {token(ADMIN)}")
 
 
-async def test_the_webui_service_may_name_the_person_and_no_one_else(ident):
-    ident.introspected["pidt_webui"] = {"active": True, "sub": WEBUI, "pid_kind": "service"}
-    ident.introspected["pidt_other"] = {"active": True, "sub": "sa_other", "pid_kind": "service"}
-    forwarded = {"X-OpenWebUI-User-Email": "person@example.com"}
-    person = await guard.authenticate("Bearer pidt_webui", forwarded)
-    assert person.user_id == "usr_person" and person.roles == ("user",)
-    # Another service account's forwarded header is ignored: the call stays its own.
-    other = await guard.authenticate("Bearer pidt_other", forwarded)
-    assert other.user_id == "sa_other" and not other.is_admin()
+async def test_a_service_token_is_the_service_accounts_own_call(ident):
+    ident.introspected["pidt_ops"] = {"active": True, "sub": SERVICE, "pid_kind": "service"}
+    ident.introspected["pidt_old"] = {"active": True, "sub": RETIRED, "pid_kind": "service"}
+    ident.introspected["pidt_person"] = {"active": True, "sub": PLAIN, "pid_kind": "user"}
+    ops = await guard.authenticate("Bearer pidt_ops")
+    assert ops.user_id == SERVICE and ops.roles == ("admin",) and ops.email is None
+    # A leftover binding of a role the catalogue no longer has grants nothing.
+    retired = await guard.authenticate("Bearer pidt_old")
+    assert retired.user_id == RETIRED and retired.roles == ()
     with pytest.raises(AuthenticationError):
         await guard.authenticate("Bearer pidt_revoked")
-    with pytest.raises(AuthenticationError, match="forwarded address"):
-        await guard.authenticate("Bearer pidt_webui", {"X-OpenWebUI-User-Email": "nobody@x.y"})
-    # A person disabled at pacod-id is refused through Open-WebUI too.
-    with pytest.raises(AuthenticationError, match="disabled"):
-        await guard.authenticate("Bearer pidt_webui", {"X-OpenWebUI-User-Email": "off@example.com"})
-    # Without a person forwarded the call is the service account's own (its model list).
-    own = await guard.authenticate("Bearer pidt_webui")
-    assert own.user_id == WEBUI and "webui_service" in own.roles and not own.is_admin()
+    with pytest.raises(AuthenticationError, match="service token"):
+        await guard.authenticate("Bearer pidt_person")
+
+
+async def test_the_catalogue_push_removes_the_retired_roles_bindings(monkeypatch):
+    pushed: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oidc/token":
+            return httpx.Response(200, json={"access_token": "svc", "expires_in": 300})
+        if request.method == "PUT" and request.url.path == "/internal/v1/catalog/pacod":
+            pushed.append(json.loads(request.content))
+            return httpx.Response(200, json={"version": 2, "changed": True})
+        return httpx.Response(404)
+
+    config = IdConfig((ISSUER,), "http://id.internal", "pacod-api", "secret", "pacod", "pacod-api")
+    ident = identity_mod.Identity(config)
+    ident.client.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await ident._push_catalog()
+    (body,) = pushed
+    # pacod-id takes exactly these two fields; null removes the bindings of the role.
+    assert set(body) == {"manifest", "migrate"}
+    assert body["migrate"] == {"pacod.webui_service": None}
+    assert body["manifest"]["product"] == "pacod"
+    assert "webui_service" not in body["manifest"]["roles"]
 
 
 async def test_a_dev_token_never_asks_pacod_id(monkeypatch):

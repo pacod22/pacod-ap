@@ -94,7 +94,7 @@ MRR_THRESHOLD = _env_float("FINETUNE_MRR_THRESHOLD", 0.01)
 HARD_NEG_COUNT = _env_int("FINETUNE_HARD_NEG_COUNT", 5)
 STAGE1_K = _env_int("FINETUNE_STAGE1_K", 30)
 MODELS_OUTPUT_DIR = Path(_env_str("MODELS_OUTPUT_DIR", "/srv/models"))
-EMBEDDINGS_URL = _env_str("EMBEDDINGS_URL", "http://embeddings:8080")
+EMBEDDINGS_URL = _env_str("EMBEDDINGS_URL", "http://pacod-embeddings:8080")
 
 
 def _get_qdrant_url() -> str:

@@ -1,4 +1,4 @@
-# AMD GPU override for the embeddings service.
+# AMD GPU override for the embeddings service (pacod-embeddings).
 #
 # Use this on hosts with an AMD GPU (amdgpu kernel module loaded,
 # /dev/kfd and /dev/dri present):
@@ -10,7 +10,7 @@
 # CPU-only machines.  This file adds the ROCm device mounts and env vars
 # on top via Compose's merge semantics.
 services:
-  embeddings:
+  pacod-embeddings:
     environment:
       # Radeon 680M is gfx1035 (RDNA 2). ROCm does not officially list it;
       # override to the nearest supported target so HIP initialises correctly.

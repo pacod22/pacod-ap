@@ -26,7 +26,6 @@ Key capabilities:
   pacod-id serves them.
 - A **per-profile chat** (SSE streaming) with an agent picker (`GET /api/v1/my-profiles`). The
   default agent is `starter`; `taxes` is an optional example agent.
-- **Open-WebUI SSO**: a signed-in user who opens Open-WebUI is signed in there server-side.
 - A large **admin console**: users (a facade over pacod-id), profiles (+ assignment), reference
   facts, the knowledge base (collections / points / documents / **curated knowledge**), directives,
   the review process (improvement loop, incl. **per-turn review** from Conversations), the
@@ -102,7 +101,6 @@ pacod-ui/
     │       │   ├── admin-paths.ts  # THE ONE ADMIN_PATH_PREFIXES list (hooks proxy + api.ts import it)
     │       │   ├── admin-load.ts   # adminListLoad(path, schema, what): the SSR load every admin list page shares
     │       │   ├── auth.ts         # clientContextFrom(request): real client IP + UA (no sign-in logic here)
-    │       │   ├── webui-sso.ts    # Open-WebUI SSO: admin session, per-user SSO password, sign-in
     │       │   ├── logger.ts       # Structured logger (JSON in prod, coloured text in dev)
     │       │   ├── metrics.ts      # prom-client registry: request counter, active-sessions gauge, crawler counter
     │       │   ├── crawlers.ts  crawler-verify.ts  crawler-sink.ts  telemetry-sink.ts
@@ -116,8 +114,6 @@ pacod-ui/
         ├── +layout.svelte          # QueryClientProvider root + <CookieConsent> + <Analytics>
         ├── +page.svelte            # Public landing page (agent cards; sign-in / sign-up links)
         ├── health/+server.ts       # GET /health → {status:'ok', service:'frontend'}
-        ├── auth/webui-launch/+server.ts      # Open-WebUI SSO launch (the only route under /auth/)
-        ├── internal/webui-auth/+server.ts    # Caddy forward_auth gate for the Open-WebUI host
         ├── internal/monitoring-auth/+server.ts # Caddy forward_auth gate for /monitoring (admins only)
         ├── internal/metrics/+server.ts       # Prometheus scrape endpoint
         ├── t/pv/+server.ts         # Page-view beacon (analytics consent only)
@@ -168,7 +164,7 @@ handleRequestLogger    ← 8-char rid; logs request.in / request.out; AFTER reso
   handleIdentity       ← @pacod/id-sveltekit: answers /auth/login, /auth/callback, /auth/logout (POST),
                           /auth/backchannel-logout itself; on every other request puts the session (access
                           token refreshed when due) in locals.session. A Redis outage answers 503 with the
-                          cookies INTACT. Appends a webui_sso delete to the callback + logout responses
+                          cookies INTACT
     handleAuth         ← locals.user from GET /api/v1/auth/me, cached 30 s per pacod-id sid; builds
                           locals.apiFetch. 401 → forget the session, locals.sessionEnded = true
       handleParaglide  ← resolves the request locale (?lang / cookie / Accept-Language), replaces %lang%
@@ -182,14 +178,14 @@ handleRequestLogger    ← 8-char rid; logs request.in / request.out; AFTER reso
 
 **Server-to-server callers are let through on any origin.** The handle redirects every GET/HEAD on
 an origin other than `SITE_URL`'s to that origin (so the sign-in cookie and its callback share one
-origin). `/health` and `/internal/*` are reached on `frontend:3000` directly — the healthcheck,
+origin). `/health` and `/internal/*` are reached on `ap-frontend:3000` directly — the healthcheck,
 Prometheus, Caddy's forward_auth — so `handleIdentity` hands the handle a copy of the request rewritten
 onto the public origin: those callers get an answer instead of a redirect, and forward_auth still gets
 the session from the forwarded cookie.
 
 ### Admin path routing — one list
 
-`handleApiProxy` decides `admin-api` vs `api` from `ADMIN_PATH_PREFIXES`, which lives in
+`handleApiProxy` decides `ap-admin-api` vs `ap-api` from `ADMIN_PATH_PREFIXES`, which lives in
 **`lib/server/admin-paths.ts`** and is imported by both the browser-facing proxy (`hooks.server.ts`)
 and the server-to-server client (`lib/server/api.ts`). Caddy sends every `/api/*` request to
 SvelteKit (there is no Caddyfile admin matcher), so this list is the only routing table.
@@ -202,8 +198,8 @@ Current admin prefixes (all `/api/v1/…`): `users`, `profiles`, `reference-fact
 `loop-fix-checks`, `newsletter-config`, `newsletter-sources`, `newsletter-items`,
 `newsletter-issues`, `newsletter-subscribers`, `dashboard`, `analytics`. **Note:** the _public_
 `/api/v1/newsletter/*` subscription routes are deliberately **not** on the list, so they route to the
-chat `api` (not `admin-api`). Everything else (`chat`, `auth/me`, `my-profiles`, `quota`, `public/*`,
-…) goes to `api`.
+chat `ap-api` (not `ap-admin-api`). Everything else (`chat`, `auth/me`, `my-profiles`, `quota`, `public/*`,
+…) goes to `ap-api`.
 
 Matching is a plain prefix test, so **near-miss names each need their own entry** —
 `/api/v1/loop-run-requests` does _not_ match `/api/v1/loop-runs`, and `/api/v1/loop-clusters` matches
@@ -298,7 +294,7 @@ when the issuer it runs with is not in it — otherwise every back-channel logou
 only pacod-id logs. Changing the issuer means **rebuilding** the image, not just restarting it.
 
 pacod-id registers `pacod-web` with `${PACOD_PUBLIC_URL}/auth/callback`, post-logout
-`${PACOD_PUBLIC_URL}/`, and back-channel `http://frontend:3000/auth/backchannel-logout`
+`${PACOD_PUBLIC_URL}/`, and back-channel `http://ap-frontend:3000/auth/backchannel-logout`
 (`pacod-api/docker/pacod-id/pacod-id*.toml`), so `SITE_URL` must match `PACOD_PUBLIC_URL`. Access
 tokens live 5 minutes there.
 
@@ -390,73 +386,6 @@ landing cards, `/agents/<slug>` 404s, sitemap drops it); only when it is unreach
 `$lib/marketing/agents` modules (`starter`, `tax` → profile `taxes`), built-in cards and `AGENT_SLUGS`
 stand in. Card icons are NAMES resolved through `$lib/marketing/agent-icons.ts` (static SVG) — never
 markup from data. `llms.txt` still uses the static modules.
-
----
-
-## Open-WebUI SSO
-
-Open-WebUI runs on its own host — `ai.pacod.io` / `ctest.local:3000` in production,
-`http://localhost:3000` locally. A signed-in user who navigates there is signed in to Open-WebUI
-server-side. There is no Open-WebUI iframe or launch button in `/chat`; the entry point is navigating
-to the Open-WebUI host.
-
-### Layer 1 — Caddy forward_auth gate (`/internal/webui-auth`)
-
-```
-Page navigation to the Open-WebUI host (Sec-Fetch-Mode: navigate; not /auth* /static/* /_app/* /api/* /ws/*)
-  → Caddy forward_auth → frontend:3000/internal/webui-auth   (the browser's Cookie header forwarded)
-      no pacod-id session / no user  → 302 <SITE_URL>/auth/login?next=/auth/webui-launch
-      session, no webui_sso marker   → 302 <SITE_URL>/auth/webui-launch
-      session + webui_sso=1          → 200 (bare — pass through)
-```
-
-The redirects name the main app's public origin (`identity().origin`). The gate reads the app's
-cookies from the Open-WebUI request, so it sees them only when the browser sends them to that host:
-locally both are `localhost` (cookies ignore ports). Open-WebUI's own API calls and assets bypass the
-gate; the SPA authenticates them with the token it stores in localStorage.
-
-### Layer 2 — the launch endpoint (`/auth/webui-launch`)
-
-No signed-in user → pacod-id's sign-in, coming back here. Otherwise `lib/server/webui-sso.ts`
-`getWebuiToken(email, display_name)` gets a **real** Open-WebUI session token, by password, over
-`OPENWEBUI_INTERNAL_URL` (`open-webui:8080`):
-
-1. **Open-WebUI's own admin** (`email` = `WEBUI_ADMIN_EMAIL`, case-insensitive) gets the admin session:
-   signs in with `WEBUI_ADMIN_PASSWORD`, or signs the admin up on Open-WebUI's first start. Cached 23 h.
-2. **Returning user:** `POST auths/signin { email, password: hmac(WEBUI_SECRET_KEY, "sso-user:<email>") }`.
-3. **First visit:** the admin session `auths/add`s the user (role `user`), then signs in.
-4. **Account made elsewhere** (exists with another password): the admin lists users (`users/?q=`,
-   plain-array and paginated shapes both handled), sets the SSO password with `users/{id}/update`
-   (`webui_sso.password_taken_over`), then signs in.
-
-**No token is made here.** Open-WebUI (≥ 0.12) refuses a self-signed JWT — its tokens carry a
-per-account `session_stamp` and an `iat` only it knows — so the old "forge an HS256 token" fallback
-is gone for good; don't bring it back.
-
-It **always** `Set-Cookie: webui_sso=1` (HttpOnly, Secure, Lax, 8 h — even on error, to break redirect
-loops) and 302s to `${OPENWEBUI_URL}/auth?token=<token>&next=/`, or to bare `OPENWEBUI_URL` on failure
-(the admin token is invalidated and the user lands on Open-WebUI unsigned). Missing config
-(`OPENWEBUI_INTERNAL_URL`, `WEBUI_SECRET_KEY`, `WEBUI_ADMIN_EMAIL`/`_PASSWORD`) or no email → straight
-to `OPENWEBUI_URL`, marker set (`webui_launch.sso_skip`).
-
-The marker never outlives the session: it is deleted on a request with no session, on a 401 from
-`/auth/me`, and on `/auth/callback` + `/auth/logout` (a raw `Set-Cookie` header, because the handle
-answers those itself and `event.cookies` does not reach its responses) — so one account's Open-WebUI
-session never carries into the next.
-
-### The rest of the wiring (compose + Caddy)
-
-- **Password sign-in must stay on in Open-WebUI** (`ENABLE_PASSWORD_AUTH: True`) — the bridge uses it
-  over agent-net. The **public** edge closes it instead: both Caddyfiles 403
-  `/api/v1/auths/{signin,signup,add,ldap}*` on the Open-WebUI host (`webui_no_password_login`).
-  Don't set `WEBUI_AUTH_TRUSTED_EMAIL_HEADER` either — the bridge needs password sign-in.
-- **Open-WebUI → the API**: `OPENAI_API_BASE_URL=http://api:8000/v1`, `OPENAI_API_KEY` = the
-  `pacod-webui` **service account's** pacod-id token (`PACOD_WEBUI_SERVICE_TOKEN`, written by
-  `make id-bootstrap`), and `ENABLE_FORWARD_USER_INFO_HEADERS` — each call forwards the person in
-  `X-OpenWebUI-User-*` headers, which the API trusts from that account only, so usage, quota and
-  history are the person's. `BYPASS_MODEL_ACCESS_CONTROL` (the API authorizes agents);
-  `ENABLE_PERSISTENT_CONFIG: "False"` (a rotated token must arrive); `DEFAULT_MODELS` = `starter`.
-- `WEBUI_SECRET_KEY` must be the same in `frontend` and `open-webui` — the SSO passwords derive from it.
 
 ---
 
@@ -595,7 +524,7 @@ agreed to be retargeted — never ship an ad pixel under the analytics toggle.
 - `(marketing)/cookies` has a "Manage cookie preferences" button that calls `cookieConsent.open()`.
   Its cookie table and the Privacy Policy name the actual cookies — update **all four locales**
   whenever an integration or a cookie is added or removed (the sign-in cookies are `app_session` and
-  `pid_login`; `webui_sso`, `PARAGLIDE_LOCALE` and `cookie_consent` are the others this app sets).
+  `pid_login`; `PARAGLIDE_LOCALE` and `cookie_consent` are the others this app sets).
 
 **Nothing loads until the matching consent exists**, and `src/lib/analytics/Analytics.svelte` is the
 only place allowed to load it. Don't load a tracker or set a tracking cookie any other way.
@@ -620,8 +549,8 @@ only — **never add a prefixed read there**. Under **`npm run dev`** there is n
 shim in `vite.config.ts` copies the `PACOD_*` values from `frontend/.env` onto the neutral names.
 
 Adding an integration = the key in `src/lib/server/site-env.ts` (`SITE_ENV_KEYS`) + its read in
-`site-config.ts` + the `frontend` service's compose block + blank in the `frontend` service of
-`docker-compose.local.yml` + both `.env.example` files (`pacod-api/` and `pacod-ui/frontend/`).
+`site-config.ts` + the `ap-frontend` service's compose block + blank in the `ap-frontend` service of
+`pacod-api/docker-compose.local.yml` + both `.env.example` files (`pacod-api/` and `pacod-ui/frontend/`).
 `site-env.test.ts` fails on any of these drifting apart.
 
 | Integration                                              | Keys                                                                                                                                                            | Consent                |
@@ -648,13 +577,13 @@ icon links (not `app.html`), the manifest and the Organization `logo`.
   `</script>` inside any string cannot break out of the tag.
 - `src/lib/seo/routes.ts` — **the list to extend when you add a public page**; it drives `sitemap.xml`
   (`sitemapRoutes`, with the agent slugs) and the `robots.txt` disallow set (`DISALLOWED_PREFIXES`,
-  which covers the `(app)` console, `/auth/`, the legacy `/login` + `/register`, `/api/`, `/internal/`,
-  `/static/` (Open-WebUI) and `/monitoring` (Grafana)).
+  which covers the `(app)` console, `/auth/`, the legacy `/login` + `/register`, `/api/`, `/internal/`
+  and `/monitoring` (Grafana)).
 - `routes/{robots.txt,sitemap.xml,llms.txt,manifest.webmanifest}/+server.ts`. `llms.txt` (llmstxt.org)
   is built in `src/lib/seo/llms.ts` from `AGENT_PAGES` + `COMPANY`, English only.
 - **IndexNow** — `GET /<INDEXNOW_KEY>.txt` is answered by `handleSiteFiles` (`lib/server/indexnow.ts`),
   since the path is the per-deployment key and no route can declare it. After a deploy,
-  `make indexnow-ping` (pacod-api, runs on the host) reads the running `frontend` container's own
+  `make indexnow-ping` (pacod-api, runs on the host) reads the running `ap-frontend` container's own
   `SITE_URL` + key, verifies the key file, and submits the sitemap.
 - **`SITE_INDEXING_ENABLED=false`** ⇒ `robots.txt` is a blanket `Disallow: /`, the sitemap is empty,
   `llms.txt` and the IndexNow key file 404. It is `false` for the local stack; set it false on any
@@ -692,7 +621,7 @@ the visitor decides and is exactly what the consent rule forbids.
 **CSP is derived from what is configured** (`src/lib/server/csp.ts` → `handleSecurityHeaders`): each
 integration's hosts are appended only when its id is set, so a deployment with no tags keeps a
 byte-identical, fully locked-down policy. `YOUTUBE_EMBED_ENABLED` separately opens `frame-src` for
-youtube-nocookie.com; no embed ships today. `frame-src` also names `OPENWEBUI_URL` when set.
+youtube-nocookie.com; no embed ships today.
 
 > `kit.csp` in `svelte.config.js` is **inert** — SvelteKit only turns it into a `<meta http-equiv>`
 > when prerendering, and nothing here prerenders; on every other response `handleSecurityHeaders`
@@ -729,10 +658,10 @@ All server-side logging goes through `lib/server/logger.ts`.
 Key event sources: `hooks.server.ts` (`request.in`/`request.out`, `auth.me.*`,
 `auth.session.store_unavailable`, each proxied `/api/*` call as `proxy.*`, `guard.redirect`),
 `identity.ts` (`identity.init`, `identity.memory_store`, `identity.backchannel_logout_refused`),
-`session.ts` (`session.redis.*`), `lib/server/api.ts` (`apiFetch.*`, every server→backend call), and
-`webui-sso.ts` / `auth/webui-launch` (`webui_sso.*`, `webui_launch.*`). The vendored packages only
-`console.warn` — when a refresh fails because pacod-id cannot be reached, and when sign-out could not
-end the session at pacod-id (usually `ID_INTERNAL_URL` is not its internal listener).
+`session.ts` (`session.redis.*`) and `lib/server/api.ts` (`apiFetch.*`, every server→backend call).
+The vendored packages only `console.warn` — when a refresh fails because pacod-id cannot be reached,
+and when sign-out could not end the session at pacod-id (usually `ID_INTERNAL_URL` is not its
+internal listener).
 
 ---
 
@@ -756,8 +685,8 @@ frontend can (session store + `/auth/me`).
   `locals.user` is populated (by the inner `handleAuth`) and `event.route?.id` gives a low-cardinality
   route label. Note `/api/*` proxy and static requests have no route id → bucket as `route="unmatched"`.
 - Exposed at `routes/internal/metrics/+server.ts` (the `/internal/` prefix keeps it a native route, not
-  proxied to the backend). Prometheus scrapes `frontend:3000/internal/metrics` directly over
-  `agent-net`; the public Caddy edge 404s `/internal/*`, so it stays off the public net.
+  proxied to the backend). Prometheus scrapes `ap-frontend:3000/internal/metrics` directly over
+  `pacod-net`; the public Caddy edge 404s `/internal/*`, so it stays off the public net.
 - **Consent:** these are aggregate counters with no per-user labels and set no cookies → **not**
   analytics, no `hasAnalyticsConsent()` gate. "Anonymous" is request volume, not a distinct headcount.
 - **The Metrics page** (`(app)/metrics`, admin) embeds Grafana in `?kiosk` iframes as tabs:
@@ -766,9 +695,10 @@ frontend can (session store + `/auth/me`).
   and **Providers & models** (`pacod-gw-providers`), which hold the LLM token/cost/latency panels.
   Grafana is same-origin under `/monitoring` behind Caddy's forward_auth →
   `/internal/monitoring-auth` (200 for admins, 403 otherwise; Grafana itself serves anonymous Viewer).
-- **Locally the frames 404.** `Caddyfile.local` has no `/monitoring` route (Grafana lives in the
-  optional monitoring compose), so `/monitoring/*` falls through to SvelteKit. Open Grafana directly at
-  **`http://127.0.0.1:3300/monitoring/`** (`cd monitoring && make up`).
+- **Locally** the local edge imports the same site fragment (`platform/caddy/ap.caddy`), so
+  `/monitoring/*` reaches `pacod-grafana` once the optional monitoring module runs (`make monitor-up`;
+  502 before). The frames need `GF_SERVER_ROOT_URL=http://localhost:8080/monitoring/` in
+  `monitoring/.env`; or open Grafana directly at **`http://127.0.0.1:3300/monitoring/`**.
 - Dashboards + `web.rules.yml` alerts live in `../monitoring`.
 
 ---
@@ -800,7 +730,7 @@ would record nothing.
     operator publishes a contract and this address failed it (a spoof — "Googlebot" is the most
     forged UA on the web); `unknown` = no contract published, so nothing can be checked. Showing
     `unknown` as unverified would accuse honest crawlers of spoofing.
-- `lib/server/crawler-sink.ts` — buffers and POSTs batches to `admin-api` over `agent-net`. Bounded,
+- `lib/server/crawler-sink.ts` — buffers and POSTs batches to `ap-admin-api` over `pacod-net`. Bounded,
   drops rather than grows, never retries (replaying a flood at a backend that just came back is worse
   than a gap in the graph), never throws into the request path.
 - Wired in `handleRequestLogger`, **after** `resolve()` and called as `void …` — verification is a DNS
@@ -834,8 +764,9 @@ per-visit table goes dark.
 Admin **Monitoring → Analytics** (`(app)/analytics`, drill-down `(app)/analytics/users/[id]`) reads
 `/api/v1/analytics/*` on admin-api: request/page/turn analytics from Postgres, LLM figures from the
 gateway (with `gateway_error` / console links, see _LLM figures_). Sites are `pacod` (this app),
-`openwebui` (ai.pacod.io), `internal` (workers) and `unknown`. Grafana's `pacod-usage` dashboard
-(Metrics tab) holds the aggregate Prometheus view. This frontend contributes three things:
+`internal` (workers) and `unknown`; older rows can carry a retired site, which the pages show raw
+(`siteLabel` falls back to the value, and the schemas take any string). Grafana's `pacod-usage`
+dashboard (Metrics tab) holds the aggregate Prometheus view. This frontend contributes three things:
 
 - **`X-Pacod-Site: pacod`** (`lib/server/site.ts`). `handleApiProxy` **sets** it (never appends — a
   browser value must not reach Python) and strips `X-Pacod-Internal`; `createApiFetch` (SSR) sets it
@@ -894,44 +825,43 @@ roles are the backend's, derived from the pacod-id token); use `userLabel`, `use
 
 ## Running it
 
-There is no standalone compose here any more: the frontend is the `frontend` service of
-`pacod-api/docker-compose.yml` (container `pacod-frontend`, compose profile **`ui`**), built from this
+There is no standalone compose here any more: the frontend is the `ap-frontend` service of
+`pacod-api/docker-compose.yml` (container `ap-frontend`, compose profile **`ui`**), built from this
 directory with the build arg `ID_ISSUER: ${PACOD_ID_ISSUER:-https://id.pacod.io}`.
 
-- **Server stack** (repo root): `make up-api` (the services, pacod-id, Caddy, Postgres, Redis, Qdrant,
-  Open-WebUI), `make up-ui` (builds and starts `frontend`), `make bootstrap` (first run: `init_db`,
+- **Server stack** (repo root): `make up-api` (the services, pacod-id, Caddy, Postgres, Redis, Qdrant),
+  `make up-ui` (builds and starts `ap-frontend`), `make bootstrap` (first run: `init_db`,
   `seed_reference_facts --profile starter`, `ingest_corpus --profile starter`).
 - **Local stack** (laptop, plain HTTP): `make up-all` or `make up-local` (includes the `ui` profile),
   then `make bootstrap-local`. The app is `http://localhost:8080`, pacod-id `http://127.0.0.1:8070`,
-  Open-WebUI `http://localhost:3000`, mailpit `http://127.0.0.1:8025`. `docker-compose.local.yml`
-  swaps in `Caddyfile.local`, sets `SITE_URL=http://localhost:8080`, `SITE_INDEXING_ENABLED=false`,
+  mailpit `http://127.0.0.1:8025`. `docker-compose.standalone.local.yml`
+  swaps in `Caddyfile.local`; `docker-compose.local.yml` sets `SITE_URL=http://localhost:8080`, `SITE_INDEXING_ENABLED=false`,
   blanks every tag id and turns crawler DNS verification off.
 - The frontend's environment (no `env_file`):
 
   ```yaml
-  API_INTERNAL_URL: http://api:8000
-  ADMIN_API_INTERNAL_URL: http://admin-api:8000
+  API_INTERNAL_URL: http://ap-api:8000
+  ADMIN_API_INTERNAL_URL: http://ap-admin-api:8000
   SESSION_SECRET: ${SESSION_SECRET} # ≥ 32 characters, `make ensure-env`
-  REDIS_URL: ${FRONTEND_REDIS_URL:-redis://redis:6379/0}
+  REDIS_URL: ${FRONTEND_REDIS_URL:-redis://ap-redis:6379/0}
   ID_ISSUER: ${PACOD_ID_ISSUER:-https://id.pacod.io}
   ID_INTERNAL_URL: http://pacod-id:8071
   ID_CLIENT_SECRET: ${PACOD_WEB_CLIENT_SECRET:-}
   SITE_URL: ${PACOD_SITE_URL:-https://www.pacod.io} # + every other PACOD_* site key, neutral-named
-  OPENWEBUI_URL: ${OPENWEBUI_URL:-https://ctest.local:3000}
-  OPENWEBUI_INTERNAL_URL: http://open-webui:8080
-  WEBUI_SECRET_KEY / WEBUI_ADMIN_EMAIL / WEBUI_ADMIN_PASSWORD
   BODY_SIZE_LIMIT: "52428800" # adapter-node: must cover the largest upload
   ENABLED_LOCALES: ${ENABLED_LOCALES:-en,bg,de,ru}
   PROTOCOL_HEADER: x-forwarded-proto
-  HOST_HEADER: x-forwarded-host # or the origin is frontend:3000 and form POSTs fail CSRF
+  HOST_HEADER: x-forwarded-host # or the origin is ap-frontend:3000 and form POSTs fail CSRF
   CRAWLER_TRACKING_ENABLED / ANALYTICS_TRACKING_ENABLED / CRAWLER_VERIFY_ENABLED / CRAWLER_INGEST_TOKEN
   ```
 
-- **Caddy** sends `/health` to the api, `/static/*` to Open-WebUI, `/api/*` to `frontend:3000` with
+- **Caddy** sends `/health` to the api, `/api/*` to `ap-frontend:3000` with
   `flush_interval -1` and 10-minute timeouts (SSE), 404s `/internal/*`, and everything else to
-  `frontend:3000` with `X-Forwarded-Host` (`{hostport}` locally, so the port survives). Only
-  production has `/monitoring*` (Grafana behind forward_auth). Both serve Open-WebUI, pacod-id and the
-  gateway console as their own sites (hosts in production, ports locally).
+  `ap-frontend:3000` with `X-Forwarded-Host: {hostport}` (so a non-default port survives), and
+  `/monitoring*` to Grafana behind forward_auth. These routes are pacod-ap's site fragment
+  (`platform/caddy/ap.caddy`), which the production and local Caddyfiles (and the full stack's)
+  import; both Caddyfiles also serve pacod-id and the gateway console as their own sites
+  (hosts in production, ports locally).
 - **`npm run dev` (Vite, :5173) is not a full sign-in setup.** It needs the same `ID_*`, `SITE_URL`
   and `SESSION_SECRET` settings (startup refuses otherwise; sessions fall back to memory without
   `REDIS_URL`), `SITE_URL` must be `http://localhost:5173` or every page redirects to it, and
@@ -963,7 +893,7 @@ From `frontend/` (scripts in `package.json`); all four must pass before a change
 
 Read the actual logs and trace the code path before proposing a root cause — don't guess.
 
-- `docker logs -f pacod-frontend` — find the failing request's `rid` and follow it across all lines.
+- `docker logs -f ap-frontend` — find the failing request's `rid` and follow it across all lines.
 - **Startup stops** with `<NAME> is not set: the frontend signs in through pacod-id…`,
   `SESSION_SECRET must have at least 32 characters` or `REDIS_URL is not set…` — a missing sign-in
   setting. `identity.backchannel_logout_refused` at startup → the image was built without (or with a
@@ -979,11 +909,6 @@ Read the actual logs and trace the code path before proposing a root cause — d
 - **404 on an admin endpoint:** the path is missing from `ADMIN_PATH_PREFIXES` (`lib/server/admin-paths.ts`).
 - **0 cost / 0 tokens with a warning** → `gateway_error`: admin-api could not read the gateway's
   reports. Look at admin-api and the gateway, not here.
-- Open-WebUI SSO: `webui_launch.sso_error` (non-fatal — cookie still set, user lands on Open-WebUI
-  unsigned), `webui_launch.sso_skip` (missing config or email), `webui_sso.password_taken_over` (an
-  account made directly in Open-WebUI got the SSO password — expected once per such account). Check
-  `WEBUI_ADMIN_EMAIL`/`_PASSWORD` match the actual Open-WebUI admin and `WEBUI_SECRET_KEY` matches on
-  both containers; blank `OPENWEBUI_INTERNAL_URL` skips SSO.
 - Missing translations: `npm run compile` flags any key absent from a locale.
 - Parsing failures: check the Zod schemas for drift before blaming infrastructure.
 
@@ -1046,7 +971,7 @@ Read the actual logs and trace the code path before proposing a root cause — d
 - **Analytics must go through `hasAnalyticsConsent()`** — the only sanctioned gate.
 - **Role gates in both server loads (403) and UI** — the server is the real gate.
 - **Static values like `/api` are hardcoded** in `client.ts` (not `$env/static/public`) to avoid
-  bake-at-build constraints; run-time values (the issuer, `OPENWEBUI_URL`) reach pages through loads.
+  bake-at-build constraints; run-time values (the issuer) reach pages through loads.
 - `npm run check` is **0 errors / 0 warnings** and `npm run lint` (prettier + eslint) passes — keep it that
   way. (The old `$env/dynamic/private` "noise" was a `tsconfig.json` `include` override hiding
   SvelteKit's ambient types; it is gone.)

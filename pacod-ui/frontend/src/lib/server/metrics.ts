@@ -28,7 +28,7 @@ function gauge(name: string, help: string): Gauge {
 }
 
 // Every series carries the analytics site this frontend serves (`pacod`), so the
-// dashboards can split this traffic from the other surfaces (e.g. Open-WebUI).
+// dashboards can split this traffic from the other surfaces (e.g. the workers).
 register.setDefaultLabels({ site: currentSite() });
 
 // Default Node process metrics (event-loop lag, heap, GC, …) — registered once.

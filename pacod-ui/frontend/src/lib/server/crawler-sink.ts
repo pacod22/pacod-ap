@@ -7,7 +7,7 @@
  * the aggregate goes to the counter in `metrics.ts` and the per-visit row goes
  * to Postgres via the backend.
  *
- * The frontend has no database of its own, so rows travel over `agent-net` to
+ * The frontend has no database of its own, so rows travel over `pacod-net` to
  * the admin API. They are batched: a crawl can arrive as hundreds of requests a
  * minute, and one HTTP round trip per hit would be absurd.
  *

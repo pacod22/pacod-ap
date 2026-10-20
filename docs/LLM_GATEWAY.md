@@ -16,10 +16,12 @@ settings, the agent editor's overlay).
 | Usage, cost and analytics pages | `admin_api/services/gateway_reports.py` (the reports facade) |
 | The gateway's objects | `deploy/pacod-gw/platform-config.{dev,live}.json`, imported by `scripts/gw_bootstrap.py` (`make gw-bootstrap`) |
 | Metrics, dashboards, alerts | `monitoring/` (job `pacod-gw-core`, Grafana folder `pacod-gw`, `alerts/gw.rules.yml`) |
+| Addresses | `GATEWAY_URL=http://pacod-gw:8080` (data plane) and `GATEWAY_ADMIN_URL=http://pacod-gw:8081` (management API), the gateway's name on the shared network `pacod-net` (the code's defaults; compose sets them too) |
 
 ## Keys
 
-Each service that calls the gateway has its own key (`pgw_…`), interpolated into its compose
+Each service that calls the gateway (`ap-api`, `ap-admin-api`, `ap-improvement-loop(-worker)`,
+`ap-newsletter-worker`) has its own key (`pgw_…`), interpolated into its compose
 environment from `pacod-api/.env.gateway`: `GATEWAY_KEY_API`, `GATEWAY_KEY_ADMIN_API`,
 `GATEWAY_KEY_LOOP` (improvement loop, daily spend cap 20 USD) and `GATEWAY_KEY_NEWSLETTER`
 (5 USD). A key belongs to the workspace `pacod` of the organisation `pacod`. admin-api also holds
@@ -42,7 +44,9 @@ Every request carries a `gateway` object in its body (merged next to `thinking` 
 - `trace_id` = the turn id: the console's trace page shows one chat turn, every call in it.
 - The tag keys are the workspace's `tag_keys`. Tags are not retroactive: a key added later
   only applies to calls made after it.
-- Open-WebUI's calls are the forwarded person's (`site=openwebui`).
+- A call on the OpenAI-compatible `/v1/*` is its caller's (a person, or a service account as
+  itself); without a trusted site header it is tagged `site=unknown`. Calls made before Open-WebUI
+  was retired keep their tag `site=openwebui` in the gateway's records.
 
 ## Retries and timeouts
 

@@ -53,6 +53,12 @@ PLATFORM = ("platform",)
 INTROSPECT_CACHE_SECONDS = 30.0
 # A person's local row is checked at most this often per process.
 KNOWN_USER_SECONDS = 300.0
+# Roles this app no longer has, sent as the catalogue push's `migrate`: pacod-id refuses a
+# manifest that drops a role still bound (409 role_in_use) unless the push says what becomes
+# of its bindings — None removes them. A name with no bindings is ignored by pacod-id, so a
+# fresh install is unaffected. pacod.webui_service was the Open-WebUI service account's
+# (pacod-webui), retired with Open-WebUI.
+RETIRED_ROLES: dict[str, str | None] = {"pacod.webui_service": None}
 
 
 def load_manifest() -> dict:
@@ -101,12 +107,14 @@ class Identity:
 
     async def _push_catalog(self) -> None:
         """PUT /internal/v1/catalog/pacod until pacod-id takes it (the same manifest again
-        changes nothing)."""
+        changes nothing). The retired roles' bindings go with the first push that drops them."""
         backoff = 2.0
         while True:
             try:
                 answer = await self.client.call(
-                    "PUT", f"/internal/v1/catalog/{PRODUCT}", {"manifest": load_manifest()}
+                    "PUT",
+                    f"/internal/v1/catalog/{PRODUCT}",
+                    {"manifest": load_manifest(), "migrate": RETIRED_ROLES},
                 )
                 log.info(
                     "identity_catalog_pushed",
@@ -159,8 +167,6 @@ class Identity:
             roles.append("admin")
         if self.catalog.has_role(subject, "pacod.superuser", "platform"):
             roles.append("superuser")
-        if self.catalog.has_role(subject, "pacod.webui_service", "platform"):
-            roles.append("webui_service")
         return tuple(roles)
 
     def allowed(self, sub: str, permission: str, kind: str = "user") -> bool:
@@ -232,20 +238,6 @@ class Identity:
                 )
         except Exception as e:  # display data only
             log.warning("identity_last_login_failed", user_id=sub, error=str(e))
-
-    async def user_id_by_email(self, email: str) -> str | None:
-        """The person with this address. Addresses are not unique locally (a development
-        row may share one): a pacod-id account (``usr_…``) wins, then the newest row."""
-        from sqlalchemy import case, select
-
-        async with session_scope() as db:
-            row = await db.execute(
-                select(User.id)
-                .where(User.email == email)
-                .order_by(case((User.id.like("usr\\_%"), 0), else_=1), User.created_at.desc())
-                .limit(1)
-            )
-            return row.scalar_one_or_none()
 
     # ---- the feed ------------------------------------------------------------------------
 

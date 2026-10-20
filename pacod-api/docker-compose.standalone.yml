@@ -1,0 +1,200 @@
+# pacod-ap's stack, standalone: its own copies of the shared components pacod-ap needs, under
+# their shared names (pacod-demo/docs/NETWORK.md). Loaded together with docker-compose.yml by
+# every Makefile target (and, on a laptop, with docker-compose.local.yml and
+# docker-compose.standalone.local.yml). The full stack (pacod-demo) does not load this file:
+# it runs one pacod-caddy, pacod-postgres, pacod-db-init, pacod-qdrant and pacod-id for every
+# product and reuses these definitions through "extends".
+#
+# The server values are here (TLS on the real hostnames, /data/** bind mounts); the laptop's
+# are in docker-compose.standalone.local.yml.
+
+services:
+  # -----------------------------------------------------------------
+  # Edge / reverse proxy
+  # -----------------------------------------------------------------
+  # Global options and the ap-standalone-only sites (pacod-id's issuer, the gateway console)
+  # are in docker/caddy/Caddyfile; pacod-ap's own sites are platform/caddy/ap.caddy, which it
+  # imports from /etc/caddy/sites (the same fragment the full stack imports).
+  pacod-caddy:
+    image: caddy:2.11.6-alpine
+    container_name: pacod-caddy
+    restart: unless-stopped
+    environment:
+      # The address of pacod-ap's site (platform/caddy/ap.caddy) and what the site adds to
+      # its routes here: the certificates and the log file, by importing a snippet of
+      # docker/caddy/Caddyfile. Caddy substitutes {$VAR} before parsing, so a value may be a
+      # whole directive.
+      AP_SITE: www.pacod.io:443
+      AP_SITE_OPTIONS: import ap_tls_pacod_io
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../platform/caddy:/etc/caddy/sites:ro
+      - /data/caddy/data:/data
+      - /data/caddy/config:/config
+      - /data/caddy/certs:/etc/caddy/certs
+      - /data/caddy/logs:/var/log
+    networks:
+      # The gateway console (gw-console) is on pacod-net too; Caddy is the platform's only
+      # edge and serves it, and pacod-id, on their own hosts (docker/caddy/Caddyfile).
+      - pacod-net
+    depends_on:
+      ap-api:
+        condition: service_healthy
+      ap-admin-api:
+        condition: service_healthy
+      # NB: no depends_on for ap-frontend — it is profile-gated ("ui") and started
+      # separately (make up-ui), so this always-on proxy cannot hard-depend on it.
+      # Caddy retries the upstream, serving 502 until the frontend is up.
+
+  # -----------------------------------------------------------------
+  # PostgreSQL: the app's database (pacod) and pacod-id's (pacod_id)
+  # -----------------------------------------------------------------
+  pacod-postgres:
+    # The version pacod-id and pacod-gw are tested on.
+    image: postgres:18.6-alpine3.24
+    container_name: pacod-postgres
+    restart: unless-stopped
+    environment:
+      # The superuser is the app's own role here, as it always was (existing installations
+      # keep working); in the full stack the app's role is an owner role, not a superuser.
+      POSTGRES_USER: ${POSTGRES_USER:-pacod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-pacod}
+    # Loopback only: the identity database (pacod_id) lives here too.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # PostgreSQL 18 images keep the data in /var/lib/postgresql/18/docker; the volume is
+      # mounted one level up so that a later major version can sit beside it for pg_upgrade.
+      # A volume made by the old postgres:16 service (data at its root) is NOT read: start
+      # from a fresh volume (make clean / clean-local).
+      - pacod-postgres-data:/var/lib/postgresql
+    networks:
+      - pacod-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pacod} -d ${POSTGRES_DB:-pacod}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Creates each product's role and database on pacod-postgres, at every start (idempotent),
+  # then stops: every *-db.sh in /initdb.d, in name order. Here pacod-ap's
+  # (platform/postgres/ap-db.sh: the role pacod, the database pacod, the text search
+  # configuration) and pacod-id's (platform/postgres/id-db.sh); the repo root's up
+  # targets add pacod-gw's when GW_DIR has it (deploy/pacod-gw/docker-compose.gw-db.yml). The fragments are mounted one by
+  # one, so another can be added without touching the directory.
+  pacod-db-init:
+    image: postgres:18.6-alpine3.24
+    container_name: pacod-db-init
+    restart: "no"
+    # The password variables of the fragments: PID_DB_PASSWORD (id.env) and, for up-all,
+    # GW_DB_PASSWORD (gw.env), both written by `make secrets-init`. Every variable the
+    # fragments or libpq read otherwise is set below, so nothing in these files can replace it.
+    env_file:
+      - path: ../deploy/secrets/id.env
+        required: false
+      - path: ../deploy/secrets/gw.env
+        required: false
+    environment:
+      # libpq's variables, a superuser: nothing secret on the command line.
+      PGHOST: pacod-postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-pacod}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: postgres
+      # ap-db.sh: the role is the superuser itself here, so its password is left alone.
+      POSTGRES_USER: ${POSTGRES_USER:-pacod}
+      POSTGRES_DB: ${POSTGRES_DB:-pacod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      AP_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ../platform/postgres/ap-db.sh:/initdb.d/ap-db.sh:ro
+      - ../platform/postgres/id-db.sh:/initdb.d/id-db.sh:ro
+    entrypoint: ["sh", "-c", "set -e; for f in /initdb.d/*.sh; do sh \"$$f\"; done"]
+    networks:
+      - pacod-net
+    depends_on:
+      pacod-postgres:
+        condition: service_healthy
+
+  # -----------------------------------------------------------------
+  # Qdrant: the knowledge bases (pacod_<slug>_* collections)
+  # -----------------------------------------------------------------
+  pacod-qdrant:
+    image: qdrant/qdrant:v1.19.2
+    container_name: pacod-qdrant
+    restart: unless-stopped
+    volumes:
+      - /data/qdrant/storage:/qdrant/storage
+    networks:
+      - pacod-net
+    # Optional: expose for debugging via http://localhost:6333/dashboard
+    ports:
+      - "127.0.0.1:6333:6333"
+
+  # ------------------------------------------------------------------
+  # Identity: pacod-id (sign-in, accounts, roles) for the app and the gateway console.
+  # ------------------------------------------------------------------
+  pacod-id:
+    # Built from the pinned pacod-id tree by `make id-image` (PACOD_ID_SRC, default the copy
+    # pacod-gw vendors); the tag is that tree's commit.
+    image: ${PACOD_ID_IMAGE:-pacod-id:c4eb04b}
+    container_name: pacod-id
+    restart: unless-stopped
+    command: ["serve"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # Secrets (KEK, pepper, database password, client secrets, bootstrap admin) come from
+    # deploy/secrets/id.env — `make secrets-init` writes it.
+    env_file:
+      - path: ../deploy/secrets/id.env
+        required: false
+    environment:
+      PID_CONFIG: /etc/pacod-id/pacod-id.toml
+      # Read by the configuration file. The issuer is the `iss` of every token: changing it
+      # signs everybody out and breaks every client that checks it.
+      PACOD_ID_ISSUER: ${PACOD_ID_ISSUER:-https://id.pacod.io}
+      PACOD_PUBLIC_URL: ${PACOD_PUBLIC_URL:-https://www.pacod.io}
+      PGW_CONSOLE_URL: ${PGW_CONSOLE_URL:-https://console.pacod.io}
+      PACOD_ID_SELF_SIGNUP: ${PACOD_ID_SELF_SIGNUP:-true}
+      # Caddy, on a private network, says who the client is.
+      PID_TRUSTED_PROXIES: private_ranges
+      PID_BOOTSTRAP_ADMIN_ROLES: id.admin,pacod.superuser,pacod.admin,gw.platform_admin
+      PID_LOG_FORMAT: ${PID_LOG_FORMAT:-json}
+      # Nothing that id.env sets may be named here: `environment:` wins over `env_file:`.
+      # That includes PID_DATABASE_URL (a direct connection to pacod-postgres, never through
+      # PgBouncer — pacod-id relies on LISTEN/NOTIFY; secrets-init writes it from
+      # PID_DB_PASSWORD) and the account mail, PID_SMTP_* / PID_EMAIL_FROM_* (none: no mail is
+      # sent and none is asked for, so sign-ups are not confirmed — set them in id.env for a
+      # deployment).
+    volumes:
+      - ./docker/pacod-id/pacod-id.toml:/etc/pacod-id/pacod-id.toml:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck", "http://127.0.0.1:9170/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
+    # pacod-net: the database, Caddy (public listener 8070), the app and the gateway's
+    # pacod-gw, gw-console and gw-tester (internal listener 8071).
+    networks:
+      - pacod-net
+    depends_on:
+      # Its role and database (platform/postgres/id-db.sh).
+      pacod-db-init:
+        condition: service_completed_successfully
+
+networks:
+  pacod-net:
+    external: true
+
+volumes:
+  # Pinned to the volume the service had before the pacod-net names, so an existing database
+  # is kept (docs/RUNBOOK.md, "Upgrading to the pacod-net names").
+  pacod-postgres-data:
+    name: pacod_postgres_data

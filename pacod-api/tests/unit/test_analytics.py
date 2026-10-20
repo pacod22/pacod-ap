@@ -64,7 +64,9 @@ def _now() -> datetime:
 
 
 # The gateway's record of the LLM calls (what usage_events held before it kept the books).
-# The loop worker's call has no end user (internal calls carry none).
+# The loop worker's call has no end user (internal calls carry none). "openwebui" is a site
+# no longer produced (Open-WebUI was retired) that rows written before then still carry: it
+# is reported and filtered like any other.
 _KEYS = ("site", "profile", "end_user", "model", "purpose")
 _FIGS = ("requests", "input_tokens", "output_tokens", "cost")
 CALLS = [
@@ -180,7 +182,7 @@ async def _seed(db) -> None:
                 output_tokens=0,
                 cost_usd=0.01,
             ),
-            # openwebui / other — u2
+            # openwebui (a retired site, on historical rows) / other — u2
             AuditLog(
                 id=3,
                 occurred_at=t,
@@ -398,7 +400,7 @@ class TestIngest:
         with pytest.raises(ValidationError):
             WebRequestIngest(rows=[row] * 501)
         with pytest.raises(ValidationError):  # api-only sites are not ingestable
-            WebRequestIngest(rows=[{**row, "site": "openwebui"}])
+            WebRequestIngest(rows=[{**row, "site": "unknown"}])
         with pytest.raises(ValidationError):
             PageViewIngest(rows=[{"pageview_id": "not-a-uuid", "site": "pacod", "route": "/"}])
 
