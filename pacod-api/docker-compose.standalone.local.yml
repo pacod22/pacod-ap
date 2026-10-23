@@ -14,8 +14,17 @@
 # CONCATENATE ports (leaving 80/443 published) and keep the certs mount pointing at a path
 # that does not exist.
 
+# Every service rotates its container log the same way (pacod-demo/docs/LOGGING.md, section 2).
+# YAML anchors do not cross files, so each compose file declares its own copy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   pacod-caddy:
+    logging: *logging
     environment:
       # Plain HTTP on ports (docker/caddy/Caddyfile.local): no certificates, logs on stdout.
       AP_SITE: ":8080"
@@ -39,15 +48,18 @@ services:
       # NB: no /etc/caddy/certs mount — Caddyfile.local terminates no TLS.
 
   pacod-qdrant:
+    logging: *logging
     volumes: !override
       - pacod-qdrant-data:/qdrant/storage
 
   pacod-postgres:
+    logging: *logging
     # 5432 collides with a locally installed Postgres more often than not.
     ports: !override
       - "127.0.0.1:15432:5432"
 
   pacod-id:
+    logging: *logging
     environment:
       # The addresses the browser uses here; pacod-id.local.toml adds the development client
       # gw-smoke for `make gw-smoke`.
@@ -75,6 +87,7 @@ services:
     image: axllent/mailpit:v1.27
     container_name: pacod-mailpit
     restart: unless-stopped
+    logging: *logging
     security_opt: ["no-new-privileges:true"]
     ports:
       - "127.0.0.1:8025:8025"

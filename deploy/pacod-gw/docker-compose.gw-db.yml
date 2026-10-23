@@ -7,8 +7,18 @@
 # Loaded into pacod-ap's project (pacod-api/), not the gateway's: the repo root's up targets
 # (up, up-api, up-local, up-all) pass it to pacod-api/Makefile as AP_EXTRA_FILES, with GW_DIR
 # (absolute) in the environment, whenever GW_DIR holds the fragment.
+
+# Every service rotates its container log the same way (pacod-demo/docs/LOGGING.md, section 2).
+# YAML anchors do not cross files, so each compose file declares its own copy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   pacod-db-init:
+    logging: *logging
     volumes:
       - type: bind
         source: ${GW_DIR:?the pacod-gw checkout}/platform/postgres/gw-db.sh

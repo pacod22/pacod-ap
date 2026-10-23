@@ -15,11 +15,20 @@ networks:
   pacod-net:
     external: true
 
+# Every service rotates its container log the same way (pacod-demo/docs/LOGGING.md, section 2).
+# YAML anchors do not cross files, so each compose file declares its own copy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   pacod-postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
     container_name: pacod-postgres-exporter
     restart: unless-stopped
+    logging: *logging
     environment:
       # Connects to Postgres DIRECTLY (not PgBouncer). Uses the app DB creds; a
       # dedicated read-only monitoring role is preferable in production.
@@ -34,6 +43,7 @@ services:
     image: prometheuscommunity/pgbouncer-exporter:v0.10.2
     container_name: ap-pgbouncer-exporter
     restart: unless-stopped
+    logging: *logging
     command:
       - "--pgBouncer.connectionString=postgres://${POSTGRES_USER:-pacod}:${POSTGRES_PASSWORD}@ap-pgbouncer:5432/pgbouncer?sslmode=disable"
     ports:
@@ -44,6 +54,7 @@ services:
     image: oliver006/redis_exporter:v1.66.0
     container_name: ap-redis-exporter
     restart: unless-stopped
+    logging: *logging
     environment:
       REDIS_ADDR: "redis://ap-redis:6379"
     ports:
@@ -54,6 +65,7 @@ services:
     image: prom/node-exporter:v1.8.2
     container_name: pacod-node-exporter
     restart: unless-stopped
+    logging: *logging
     command:
       - "--path.procfs=/host/proc"
       - "--path.sysfs=/host/sys"
@@ -71,6 +83,7 @@ services:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: pacod-cadvisor
     restart: unless-stopped
+    logging: *logging
     privileged: true
     volumes:
       - /:/rootfs:ro

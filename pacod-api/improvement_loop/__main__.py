@@ -84,7 +84,7 @@ async def _meta_eval(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    configure_logging()
+    configure_logging("ap-improvement-loop")
     args = _parse_args(argv if argv is not None else sys.argv[1:])
     if args.command == "run":
         return asyncio.run(_run(args))

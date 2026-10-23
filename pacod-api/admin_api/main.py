@@ -84,12 +84,13 @@ from admin_api.routes.usage_events import router as usage_events_router
 from admin_api.routes.user_profiles import router as user_profiles_router
 from admin_api.routes.users import router as users_router
 from admin_api.routes.vector_store import router as vector_store_router
+from app.core.client_ip import client_ip_from_headers
 from app.core.config import get_settings
 from app.core.exceptions import IdentityUnavailableError
-from app.core.logging import configure_logging, get_logger
+from app.core.logging import configure_logging, get_logger, log_request
 from app.core.metrics import setup_metrics
 
-configure_logging()
+configure_logging("ap-admin-api", access_log=False)
 log = get_logger(__name__)
 
 
@@ -130,26 +131,26 @@ app.add_middleware(
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    """One request line per request (pacod-demo/docs/LOGGING.md): ``GET /api/v1/users 200`` with
+    method, path (never the query string: it can carry tokens), status, duration_ms and the
+    edge-reported client IP; /health at debug. uvicorn's own access log is off in this service
+    (configure_logging(access_log=False)), so this is the only line."""
     start = time.perf_counter()
-    client = request.client.host if request.client else "unknown"
-    qs = f"?{request.url.query}" if request.url.query else ""
-    log.info(
-        "admin_request",
-        method=request.method,
-        path=request.url.path,
-        query=qs or None,
-        client=client,
-    )
-    response = await call_next(request)
-    duration_ms = round((time.perf_counter() - start) * 1000)
-    log.info(
-        "admin_response",
-        method=request.method,
-        path=request.url.path,
-        status=response.status_code,
-        duration_ms=duration_ms,
-    )
-    return response
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        log_request(
+            log,
+            method=request.method,
+            path=request.url.path,
+            status=status,
+            duration_ms=round((time.perf_counter() - start) * 1000),
+            client_ip=client_ip_from_headers(request.headers)
+            or (request.client.host if request.client else None),
+        )
 
 
 setup_metrics(app, "admin-api")

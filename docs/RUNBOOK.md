@@ -46,9 +46,44 @@ standalone pacod-gw development stack (project `pacod-gw`, whose volumes it neve
 | 9095, 3300, 9093 | monitoring: Prometheus (not 9090), Grafana, Alertmanager |
 
 In production Caddy is the only public edge: `www.<domain>` (the app), `id.<domain>` (pacod-id's
-public listener, with a log filter that drops `code`, `state` and `token`), `console.<domain>`
-(the gateway console). The gateway's management API and pacod-id's internal listener are never
-routed.
+public listener), `console.<domain>` (the gateway console), each with an access log that leaves out
+sign-in codes, tokens and API keys (see **Logs**). The gateway's management API and pacod-id's
+internal listener are never routed.
+
+## Logs
+
+Every pacod repo logs the same way: [pacod-demo/docs/LOGGING.md](../../pacod-demo/docs/LOGGING.md).
+
+- **stdout, one event per line**, read with `docker logs <container>` / `make logs`. Every compose
+  service (third-party ones included) rotates its container log: `json-file`, 10 MB × 5
+  (`x-logging` in each compose file).
+- **The event:** `timestamp` (UTC, milliseconds, `Z`), `level` (`debug|info|warn|error`), `service`
+  (the compose service name, `SERVICE_NAME`), `logger`, `message`, then the fields flat;
+  `error` + `stack_trace` with an exception. JSON, or one text line:
+
+  ```text
+  {"timestamp":"2026-10-23T06:41:07.695Z","level":"info","service":"ap-api","logger":"uvicorn.access","message":"GET /api/v1/quota 200","method":"GET","path":"/api/v1/quota","status":200,"client_ip":"172.18.0.9"}
+  2026-10-23T06:41:07.695Z INFO  ap-api uvicorn.access: GET /api/v1/quota 200 method=GET path=/api/v1/quota status=200 client_ip=172.18.0.9
+  ```
+
+- **Level and format.** Python services: `APP_LOG_LEVEL` and `APP_LOG_FORMAT` (`json|text`; unset:
+  text while `APP_ENV=development`, else json) in `.env` (pacod-embeddings, which has no env_file,
+  by compose interpolation of the same names). The frontend: `FRONTEND_LOG_LEVEL` (default `info`)
+  and `FRONTEND_LOG_FORMAT` (default `json`) by interpolation, its `LOG_LEVEL` / `LOG_FORMAT`.
+  Request lines (`GET /path 200`, never the query string) come from uvicorn's access log, the
+  admin-api middleware and the frontend's request hook; health checks are at `debug`.
+- **Files** (the Python services with a log directory: ap-api, ap-admin-api, ap-ingestion(-cpu),
+  both loop services, ap-newsletter-worker): `APP_LOG_DIR` (`/srv/logs`, mounted from
+  `/data/logs/<service>` on a server) holds `<service>.log` (e.g. `ap-api.log`), always JSON,
+  rotated at midnight UTC and at 20 MB to `<service>.<yyyy-mm-dd>.<n>.log.gz`; rotated files are
+  kept 30 days and 600 MB per directory. **The file used to be `pacod-agent.log`** (rotated to
+  `pacod-agent.log.<date>.tar.gz`): point log shippers, `tail -f` habits and logrotate rules at
+  the new names. The old archives are not touched by the new rotation; delete them by hand when no
+  longer needed.
+- **The edge:** `/data/caddy/logs/caddy.log`, JSON, every site's requests (`www`, `id`, `console`)
+  with the query parameters `token`, `code`, `state`, `next`, `flow`, `id_token_hint`,
+  `login_hint`, `key`, the request headers `Referer`, `X-Api-Key`, `X-Goog-Api-Key` and the response
+  header `Location` removed.
 
 ## Secrets
 
@@ -223,7 +258,8 @@ postgres → `pacod-postgres`, …); the networks `agent-net` and `pacod-link` a
    the new one. `docker network rm agent-net pacod-link` when nothing uses them.
 2. The database volume keeps its old name (`pacod_postgres_data`, pinned in
    `docker-compose.standalone.yml`), and so does the local Qdrant volume (`pacod_qdrant_data`); the
-   server's Qdrant, Caddy and log data are bind mounts under `/data` and stay.
+   server's Qdrant, Caddy and log data are bind mounts under `/data` and stay (the services' log
+   files are now `<service>.log`, not `pacod-agent.log`: see **Logs**).
 3. The other named volumes have new names, and start empty unless copied. Copy the uploads (the
    only irreplaceable one) before the first start:
 

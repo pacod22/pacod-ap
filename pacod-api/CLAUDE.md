@@ -302,7 +302,8 @@ app/                    Main chat API (FastAPI)
   agent_editor/         Visual agent editor (registry, compile, effective overlay, importer, legacy_lock, validate,
                         assistant); marketing_seed/{starter,taxes}.json
   core/                 config.py (Settings), db.py (engine/session_scope), db_models.py (ORM + DEFAULT/GLOBAL ids),
-                        models.py (Pydantic I/O), exceptions.py, logging.py (structlog), metrics.py (Prometheus),
+                        models.py (Pydantic I/O), exceptions.py, logging.py (structlog → the pacod log format),
+                        log_schema.py (that format on the stdlib alone; pacod-embeddings copies it), metrics.py (Prometheus),
                         i18n.py (enabled/default languages), request_context.py (site/user/profile per request),
                         client_ip.py
   guards/               auth.py (AuthGuard: dev token → pidt_ → pacod-id JWT), language.py (lingua),
@@ -452,8 +453,9 @@ context is `../pacod-ui/frontend`, relative to this directory. The gateway is a 
 TLS is terminated at Caddy with externally-provisioned certs (`auto_https off`, `admin off`); plain HTTP
 → 301 HTTPS (`pacod.io` → `www.pacod.io`). pacod-ap's own site (www) is the fragment
 `../platform/caddy/ap.caddy`: a site block only, its address from `{$AP_SITE}` (default
-`www.pacod.io:443`), and `{$AP_SITE_OPTIONS}` for what a Caddyfile adds to it (the server: `import ap_tls_pacod_io` — certificates and the log
-file; locally and in the full stack: nothing). `docker/caddy/Caddyfile` and `Caddyfile.local` hold the
+`www.pacod.io:443`), and `{$AP_SITE_OPTIONS}` for what a Caddyfile adds to it (the server: `import ap_tls_pacod_io` — certificates and the redacted
+log file; the full stack: its redacted stdout log; locally: nothing, so the local :8080 site logs no
+requests). `docker/caddy/Caddyfile` and `Caddyfile.local` hold the
 global options, the `:9180` metrics listener and the sites only pacod-ap's own stack serves (id,
 console, the redirects), and
 `import /etc/caddy/sites/*.caddy`. The full stack imports the same fragment with HTTP-only globals
@@ -465,9 +467,12 @@ console, the redirects), and
 | `id.pacod.io` | `pacod-id:8070` (HSTS, nosniff, no-referrer); 8071 and 9170 are never routed |
 | `console.pacod.io` | `gw-console:3000`; the gateway's management API is never routed |
 
-The id and console vhosts log through the `(redacted_logging)` snippet, which deletes the query
-parameters `token, code, state, id_token_hint, login_hint, flow, next`, the request `Referer` and the
-response `Location`. Caddy routes `/api/*` to the SvelteKit `ap-frontend`, which (in `hooks.server.ts`)
+Every vhost here (www through `ap_tls_pacod_io`, id, console) logs through the `(redacted_logging)`
+snippet (JSON, `/var/log/caddy.log` = `/data/caddy/logs/caddy.log`), which deletes the query
+parameters `token, code, state, next, flow, id_token_hint, login_hint, key`, the request headers
+`Referer`, `X-Api-Key`, `X-Goog-Api-Key` and the response `Location` (pacod-demo/docs/LOGGING.md,
+section 6); `Caddyfile.local`'s `(redacted_log)` is the same on stdout for `:8070`/`:13000`. The
+fragment `ap.caddy` has no `log` directive: its access log comes from `AP_SITE_OPTIONS`. Caddy routes `/api/*` to the SvelteKit `ap-frontend`, which (in `hooks.server.ts`)
 puts the pacod-id access token of the session in `Authorization` and proxies admin paths
 (`ADMIN_PATH_PREFIXES`) to `ap-admin-api`, everything else to `ap-api`; it 401s an `/api/` request that has
 no session (except the public newsletter subscribe/confirm/unsubscribe prefixes) and always replaces
@@ -681,7 +686,9 @@ singleton — always use `get_settings()`). `make ensure-env` seeds `.env` from 
 
 **Environment:** `APP_ENV` (`development`/`staging`/`production`; **defaults to `development`**),
 `AUTH_ALLOW_DEV_TOKENS` (false — the second lock on dev tokens, see Identity), `APP_LOG_LEVEL`
-(`INFO`), `APP_LOG_DIR` (blank = no file logging), `APP_SECRETS_KEY` (Fernet key for the search keys in
+(`INFO`; `debug|info|warn|error`, any case, `warning` = warn, unknown = info), `APP_LOG_FORMAT`
+(`json|text`; blank = text while `APP_ENV=development`, else json), `APP_LOG_DIR` (blank = no file
+logging; see **Logging** below), `APP_SECRETS_KEY` (Fernet key for the search keys in
 `provider_secrets`; empty → key editing disabled).
 
 **Service URLs** (the defaults are the names on `pacod-net`): `POSTGRES_*` (host `ap-pgbouncer`, user +
@@ -894,6 +901,45 @@ drops the field only for the adaptive-thinking Claude models (`llm_capabilities`
 `API_INTERNAL_URL` (`http://ap-api:8000`), `ADMIN_API_INTERNAL_URL` (`http://ap-admin-api:8000`),
 `ENABLED_LOCALES`, `BODY_SIZE_LIMIT`, `PROTOCOL_HEADER`, `HOST_HEADER`, plus the site/SEO/analytics
 ids (see pacod-ui).
+
+## Logging
+
+The pacod logging convention, shared by every pacod repo: **`../../pacod-demo/docs/LOGGING.md`**.
+`app/core/logging.py` configures structlog on top of the stdlib (`configure_logging(<default
+service>)`, called by every entry point: ap-api, ap-admin-api, ap-ingestion, both loop services,
+ap-newsletter-worker, ap-mcp and the scripts); the format itself is `app/core/log_schema.py`
+(standard library only — `pacod-embeddings` copies that one file into its image and calls
+`configure_from_env("pacod-embeddings")`).
+
+- **One event per line on stdout**, structlog's and every library's (uvicorn, httpx, sqlalchemy):
+  `timestamp` (RFC 3339 UTC, 3 fraction digits, `Z`), `level` (`debug|info|warn|error`; Python's
+  `warning` → `warn`, `critical` → `error`), `service` (`SERVICE_NAME`, set by compose to the service
+  name; each entry point has its own default), `logger` (the logger name), `message` (structlog's
+  event), then the event's kwargs and the bound contextvars flat (the event's own wins); a field
+  named like one of the five gets a trailing `_`; an exception adds `error` (`ValueError: bad
+  input`) and `stack_trace`.
+- **`APP_LOG_FORMAT`** `json` | `text` (`2026-10-23T06:41:07.695Z INFO  ap-api app.main: migrations_done
+  applied=0`); blank = text while `APP_ENV=development`, else json. ANSI colours only when stdout is
+  a terminal. **`APP_LOG_LEVEL`** as above.
+- **uvicorn's loggers** (`uvicorn`, `uvicorn.error`, `uvicorn.access`) lose their own handlers and
+  propagate to the root; an access record becomes the request line `GET /api/v1/quota 200` with
+  `method`, `path` (**no query string**), `status`, `client_ip`; `/health` (and `/healthz`,
+  `/ready*`, `/live*`) at `debug`. ap-admin-api turns uvicorn's access log off
+  (`configure_logging(..., access_log=False)`) and logs one line per request from its middleware
+  (`log_request`: + `duration_ms`, the edge-reported client IP).
+- **httpx's `HTTP Request: GET <url> …` lines** lose the URL's query string (`HttpxUrlFilter`): the
+  Google Custom Search key travels as `?key=`.
+- **Files** (`APP_LOG_DIR`, blank = none; compose mounts `/data/logs/<dir>` at `/srv/logs` for ap-api,
+  ap-admin-api, ap-ingestion(-cpu), both loop services, ap-newsletter-worker; ap-mcp is pinned to
+  `APP_LOG_DIR=""` because it has no mount): `<service>.log`, always JSON, rotated at midnight UTC
+  and before a line would take it past 20 MB to `<service>.<yyyy-mm-dd>.<n>.log.gz` (the day the
+  file holds; `n` from 0, the next free one), rotated files deleted after 30 days, then oldest
+  first above 600 MB (`ServiceRotatingFileHandler`; `tests/unit/test_logging.py` drives it on a fake
+  clock). It replaced `pacod-agent.log` + `.tar.gz` archives, whose stdlib-based rotation stopped
+  for good after the second rotation of a day (the archive name already existed, so it returned
+  without moving on). One process per file: a script run with `docker compose exec ap-api …`
+  writes to the same `ap-api.log` as the server.
+- **Containers:** every compose service has `logging: *logging` (`json-file`, 10 MB × 5).
 
 ## Identity & authorisation (pacod-id)
 
@@ -2262,6 +2308,9 @@ add `requirements-base.txt` to it first. Directive injection + cache are covered
 - **Directives** — injected on every synthesis surface (chat + both OpenAI-compat paths) and the planner;
   loaded once per turn before planning; best-effort (an outage never blocks a turn); brace-safe; cache
   busted on admin write. They never override the illegal-request refusal.
-- **structlog everywhere** — `get_logger(__name__)`, context as kwargs. Admin API: `DEBUG` reads / `INFO`
+- **structlog everywhere** — `get_logger(__name__)`, context as kwargs (snake_case; never a token,
+  password, cookie, session id or request body — log a short hash or the last four characters if
+  one must be identified). Fields named `timestamp`/`level`/`service`/`logger`/`message` come out
+  with a trailing underscore. Admin API: `DEBUG` reads / `INFO`
   mutations / `WARNING` 404/409/502; event names `admin_{resource}_{action}`.
 - **`requirements-finetune.txt` is separate** — training deps only in the fine-tuning environment.

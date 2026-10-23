@@ -1,6 +1,8 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { logger } from '$lib/server/logger';
+import { createLogger } from '$lib/server/logger';
+
+const logger = createLogger('account');
 import { identity } from '$lib/server/identity';
 
 export interface NewsletterSubscriptionInfo {
@@ -32,7 +34,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			);
 		}
 	} catch (err) {
-		logger.warn('account.newsletters.unreachable', { rid: locals.rid, error: String(err) });
+		logger.warn('account.newsletters.unreachable', { request_id: locals.rid, error: String(err) });
 	}
 
 	// Password, signed-in devices and connected Google accounts live at pacod-id.
@@ -53,7 +55,10 @@ export const actions: Actions = {
 			body: JSON.stringify({ profile_id, subscribe })
 		});
 		if (!res.ok) {
-			logger.warn('account.newsletter.toggle_failed', { rid: locals.rid, status: res.status });
+			logger.warn('account.newsletter.toggle_failed', {
+				request_id: locals.rid,
+				status: res.status
+			});
 			return fail(res.status, { error: 'Failed to update newsletter subscription.' });
 		}
 		return { newsletterToggled: true };

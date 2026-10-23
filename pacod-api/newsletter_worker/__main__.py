@@ -36,7 +36,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    configure_logging()
+    configure_logging("ap-newsletter-worker")
     args = _parse_args(argv if argv is not None else sys.argv[1:])
     if args.command == "worker":
         asyncio.run(run_worker())  # runs until the container stops

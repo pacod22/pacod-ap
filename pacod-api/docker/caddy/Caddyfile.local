@@ -44,8 +44,11 @@
 # certificates.
 import /etc/caddy/sites/*.caddy
 
-# The logs of the two sites below keep one-time values out: sign-in codes, their state, the
-# hints at sign-out, and the tokens of account-email links (pacod-gw's Caddyfile does the same).
+# The logs of the two sites below keep out what a request may carry that must never be logged
+# (pacod-demo/docs/LOGGING.md, section 6): sign-in codes and their state, the hints at sign-out,
+# the tokens of account-email links, API keys in a query or a header, the Referer that can repeat
+# any of them, and the Location of a redirect that hands one on. pacod-ap's own site (:8080) logs
+# nothing here (AP_SITE_OPTIONS is blank in docker-compose.standalone.local.yml).
 (redacted_log) {
     log {
         output stdout
@@ -56,12 +59,15 @@ import /etc/caddy/sites/*.caddy
                     delete token
                     delete code
                     delete state
+                    delete next
+                    delete flow
                     delete id_token_hint
                     delete login_hint
-                    delete flow
-                    delete next
+                    delete key
                 }
                 request>headers>Referer delete
+                request>headers>X-Api-Key delete
+                request>headers>X-Goog-Api-Key delete
                 resp_headers>Location delete
             }
         }

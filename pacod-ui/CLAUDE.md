@@ -101,7 +101,7 @@ pacod-ui/
     │       │   ├── admin-paths.ts  # THE ONE ADMIN_PATH_PREFIXES list (hooks proxy + api.ts import it)
     │       │   ├── admin-load.ts   # adminListLoad(path, schema, what): the SSR load every admin list page shares
     │       │   ├── auth.ts         # clientContextFrom(request): real client IP + UA (no sign-in logic here)
-    │       │   ├── logger.ts       # Structured logger (JSON in prod, coloured text in dev)
+    │       │   ├── logger.ts       # The pacod log format (LOG_FORMAT json|text, LOG_LEVEL); createLogger(module)
     │       │   ├── metrics.ts      # prom-client registry: request counter, active-sessions gauge, crawler counter
     │       │   ├── crawlers.ts  crawler-verify.ts  crawler-sink.ts  telemetry-sink.ts
     │       │   ├── site.ts         # X-Pacod-Site value (`pacod`) + X-Pacod-Internal
@@ -159,7 +159,7 @@ module load (`if (!building)`), so a missing or invalid sign-in setting stops th
 a message naming it, not on the first visitor's request.
 
 ```
-handleRequestLogger    ← 8-char rid; logs request.in / request.out; AFTER resolve(): the Prometheus
+handleRequestLogger    ← 8-char rid (request_id); AFTER resolve(): one request line, the Prometheus
                           counter (registered / anonymous / bot), the web_requests row, the crawler visit
   handleIdentity       ← @pacod/id-sveltekit: answers /auth/login, /auth/callback, /auth/logout (POST),
                           /auth/backchannel-logout itself; on every other request puts the session (access
@@ -647,21 +647,45 @@ install). Committed deliberately. Social scrapers reject SVG, hence raster; `og:
 
 ## Logging
 
-All server-side logging goes through `lib/server/logger.ts`.
+All server-side logging goes through `lib/server/logger.ts`, in the pacod logging convention shared
+by every pacod repo (`../../pacod-demo/docs/LOGGING.md`). One event per line on **stdout**.
 
-- **Format:** dev → coloured single-line text; prod → one JSON object per line.
-- **Level:** `LOG_LEVEL` ∈ `debug|info|warn|error` (default `debug` dev / `info` prod).
-- **Request correlation:** every request gets an 8-char `rid` (in `handleRequestLogger`); all subsequent
-  log lines within that request carry it.
-- **Never logged:** access tokens, refresh tokens, passwords, session ids.
+- **Schema:** `timestamp` (RFC 3339 UTC, milliseconds, `Z`), `level` (`debug|info|warn|error`),
+  `service` (`SERVICE_NAME`, compose sets `ap-frontend`; that is also the default), `logger` (the
+  module: `const logger = createLogger('hooks')`; the plain `logger` export is `"frontend"`),
+  `message`, then the fields flat. A field named like one of those five gets a trailing `_`. An
+  `Error` passed as the `error` (or `err`) field becomes `error` (`TypeError: msg`, one line) +
+  `stack_trace`; `error: String(err)` stays a plain field.
 
-Key event sources: `hooks.server.ts` (`request.in`/`request.out`, `auth.me.*`,
+  ```text
+  {"timestamp":"2026-10-23T06:41:07.695Z","level":"info","service":"ap-frontend","logger":"hooks","message":"GET /chat 200","request_id":"x1Y2z3A4","method":"GET","path":"/chat","status":200,"duration_ms":41,"client_ip":"203.0.113.9"}
+  2026-10-23T06:41:07.695Z INFO  ap-frontend hooks: GET /chat 200 request_id=x1Y2z3A4 method=GET path=/chat status=200 duration_ms=41 client_ip=203.0.113.9
+  ```
+
+- **Format:** `LOG_FORMAT` = `json` | `text` (any case); unset → json under `NODE_ENV=production`,
+  else text; any other value → json. ANSI colours only when stdout is a terminal (never in
+  `docker logs`). Compose passes `LOG_FORMAT: ${FRONTEND_LOG_FORMAT:-json}`.
+- **Level:** `LOG_LEVEL` = `debug|info|warn|error` (any case; `warning` = warn; unknown = info;
+  unset = `debug` in dev / `info` in prod). Compose passes `LOG_LEVEL: ${FRONTEND_LOG_LEVEL:-info}`;
+  the full stack (pacod-demo) sets both interpolation names.
+- **One request line per request** (`handleRequestLogger`, after `resolve()`): message
+  `<METHOD> <path> <status>`, fields `request_id`, `method`, `path` (**never the query string** —
+  `requestLine()` / `stripQuery()`), `status`, `duration_ms`, `client_ip` (from
+  `clientContextFrom`, when the edge sent one). `/health` at `debug`, otherwise `error` for 5xx,
+  `warn` for 4xx, `info` for the rest.
+- **Request correlation:** every request gets an 8-char id (`locals.rid`, made in
+  `handleRequestLogger`), logged as **`request_id`** on every line of that request.
+- **Never logged:** access tokens, refresh tokens, passwords, session ids, cookies, query strings
+  (`apiFetch.*` and `proxy.request` strip them too), request and response bodies.
+
+Key event sources: `hooks.server.ts` (logger `hooks`: the request line, `auth.me.*`,
 `auth.session.store_unavailable`, each proxied `/api/*` call as `proxy.*`, `guard.redirect`),
-`identity.ts` (`identity.init`, `identity.memory_store`, `identity.backchannel_logout_refused`),
-`session.ts` (`session.redis.*`) and `lib/server/api.ts` (`apiFetch.*`, every server→backend call).
-The vendored packages only `console.warn` — when a refresh fails because pacod-id cannot be reached,
-and when sign-out could not end the session at pacod-id (usually `ID_INTERNAL_URL` is not its
-internal listener).
+`identity.ts` (`identity`: `identity.init`, `identity.memory_store`,
+`identity.backchannel_logout_refused`), `session.ts` (`session`: `session.redis.*`) and
+`lib/server/api.ts` (`api`: `apiFetch.*`, every server→backend call). `logger.test.ts` pins the
+schema. The vendored packages only `console.warn` (plain text, outside this format) — when a
+refresh fails because pacod-id cannot be reached, and when sign-out could not end the session at
+pacod-id (usually `ID_INTERNAL_URL` is not its internal listener).
 
 ---
 
@@ -893,7 +917,7 @@ From `frontend/` (scripts in `package.json`); all four must pass before a change
 
 Read the actual logs and trace the code path before proposing a root cause — don't guess.
 
-- `docker logs -f ap-frontend` — find the failing request's `rid` and follow it across all lines.
+- `docker logs -f ap-frontend` — find the failing request's `request_id` and follow it across all lines.
 - **Startup stops** with `<NAME> is not set: the frontend signs in through pacod-id…`,
   `SESSION_SECRET must have at least 32 characters` or `REDIS_URL is not set…` — a missing sign-in
   setting. `identity.backchannel_logout_refused` at startup → the image was built without (or with a

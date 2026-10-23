@@ -27,6 +27,13 @@ from typing import Protocol
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+# The pacod logging convention (pacod-demo/docs/LOGGING.md) from the standard library alone: the
+# image carries app/core/log_schema.py but not structlog or the app's settings. APP_LOG_LEVEL,
+# APP_LOG_FORMAT and SERVICE_NAME come from compose; uvicorn's lines go through it too.
+from app.core.log_schema import configure_from_env
+
+configure_from_env("pacod-embeddings")
+
 _reload_lock = Lock()
 _logger = logging.getLogger(__name__)
 

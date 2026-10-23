@@ -9,8 +9,18 @@
 # The base docker-compose.yml runs without GPU devices so it works on
 # CPU-only machines.  This file adds the ROCm device mounts and env vars
 # on top via Compose's merge semantics.
+
+# Every service rotates its container log the same way (pacod-demo/docs/LOGGING.md, section 2).
+# YAML anchors do not cross files, so each compose file declares its own copy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   pacod-embeddings:
+    logging: *logging
     environment:
       # Radeon 680M is gfx1035 (RDNA 2). ROCm does not officially list it;
       # override to the nearest supported target so HIP initialises correctly.

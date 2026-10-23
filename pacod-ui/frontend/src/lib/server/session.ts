@@ -18,7 +18,9 @@
 import { Redis } from 'ioredis';
 import type { RedisLike } from '@pacod/id-sveltekit';
 import { env } from '$env/dynamic/private';
-import { logger } from '$lib/server/logger';
+import { createLogger } from '$lib/server/logger';
+
+const logger = createLogger('session');
 
 /** The Redis key prefix of the sessions (and the store's cookie name). */
 export const SESSION_PREFIX = 'app_session';

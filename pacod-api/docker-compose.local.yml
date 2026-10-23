@@ -26,6 +26,14 @@
 # reproduced below, for every affected service rather than just those two.
 # ---------------------------------------------------------------------------
 
+# Every service rotates its container log the same way (pacod-demo/docs/LOGGING.md, section 2).
+# YAML anchors do not cross files, so each compose file declares its own copy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # NB: the frontend deliberately gets NO `env_file` here. In production they
   # receive only the handful of variables listed in their compose `environment:`
@@ -35,6 +43,7 @@ services:
   # interpolation instead, which is why those live in .env.local *and* are read
   # via --env-file.
   ap-frontend:
+    logging: *logging
     environment:
       # Canonical/OG URLs must name the origin the browser actually used, or
       # every link preview and canonical points at production from a laptop.
@@ -78,6 +87,7 @@ services:
       CRAWLER_VERIFY_ENABLED: ${LOCAL_CRAWLER_VERIFY_ENABLED:-false}
 
   ap-api:
+    logging: *logging
     # Production publishes nothing here — the browser only ever reaches the API
     # through Caddy → SvelteKit. Locally the api is also reachable directly, for
     # curl and scripts that call it with a dev token.
@@ -100,6 +110,7 @@ services:
       - ap-api-logs:/srv/logs
 
   ap-admin-api:
+    logging: *logging
     env_file:
       - .env
       - path: .env.local
@@ -108,6 +119,7 @@ services:
       - ap-admin-api-logs:/srv/logs
 
   ap-ingestion:
+    logging: *logging
     env_file:
       - .env
       - path: .env.local
@@ -116,6 +128,7 @@ services:
       - ap-ingestion-logs:/srv/logs
 
   ap-ingestion-cpu:
+    logging: *logging
     env_file:
       - .env
       - path: .env.local
@@ -124,6 +137,7 @@ services:
       - ap-ingestion-cpu-logs:/srv/logs
 
   ap-improvement-loop:
+    logging: *logging
     env_file:
       - .env
       - path: .env.local
@@ -132,6 +146,7 @@ services:
       - ap-improvement-loop-logs:/srv/logs
 
   ap-improvement-loop-worker:
+    logging: *logging
     env_file:
       - .env
       - path: .env.local
@@ -140,6 +155,7 @@ services:
       - ap-improvement-loop-worker-logs:/srv/logs
 
   ap-newsletter-worker:
+    logging: *logging
     env_file:
       - .env
       - path: .env.local
@@ -150,12 +166,14 @@ services:
   # The MCP server checks the shared secret the api presents (fails closed), so
   # it must read the same .env.local the api reads.
   ap-mcp:
+    logging: *logging
     env_file:
       - .env
       - path: .env.local
         required: false
 
   pacod-embeddings:
+    logging: *logging
     # CPU PyTorch: the server image's ROCm wheel has no arm64 build (Apple
     # Silicon) and no laptop here has an AMD GPU anyway.
     build:

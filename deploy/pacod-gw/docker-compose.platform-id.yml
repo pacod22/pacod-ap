@@ -26,11 +26,20 @@ x-identity: &identity
   PGW_ID_ISSUER: ${PACOD_ID_ISSUER:-https://id.pacod.io}
   PGW_ID_INTERNAL_URL: http://pacod-id:8071
 
+# Every service rotates its container log the same way (pacod-demo/docs/LOGGING.md, section 2).
+# YAML anchors do not cross files, so each compose file declares its own copy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # Preflight still checks pacod-id's secrets in OIDC mode, for the identity service it
   # expects next to it. That service is pacod-ap's here, with secrets of its own, so these
   # three are placeholders that nothing reads. The client secrets are the real ones.
   gw-preflight:
+    logging: *logging
     environment:
       PGW_AUTH: oidc
       PGW_ID_HOST: ${PACOD_ID_HOST:-id.pacod.io}
@@ -46,12 +55,14 @@ services:
       PGW_UI_SESSION_SECRET: ${PGW_UI_SESSION_SECRET:?run make secrets-init}
 
   pacod-gw:
+    logging: *logging
     environment:
       <<: *identity
       PGW_ID_CLIENT_SECRET: ${PGW_ID_CLIENT_SECRET:?run make secrets-init}
       PGW_CONSOLE_URL: ${PGW_CONSOLE_URL:-https://console.pacod.io}
 
   gw-console:
+    logging: *logging
     environment:
       <<: *identity
       PGW_UI_CLIENT_SECRET: ${PGW_UI_CLIENT_SECRET:?run make secrets-init}
@@ -66,17 +77,18 @@ services:
   # the project does not define, even an optional one, so they are named here, in a profile
   # nothing enables: never started by this project, only skipped. `make up-all` starts
   # pacod-ap's stack (and its pacod-db-init) before this one.
-  pacod-postgres: {profiles: [pacod-ap-provides]}
-  pacod-db-init: {profiles: [pacod-ap-provides]}
-  pacod-id: {profiles: [pacod-ap-provides]}
-  pacod-caddy: {profiles: [pacod-ap-provides]}
-  pacod-otel: {profiles: [pacod-ap-provides]}
-  pacod-prometheus: {profiles: [pacod-ap-provides]}
-  pacod-alertmanager: {profiles: [pacod-ap-provides]}
-  pacod-grafana: {profiles: [pacod-ap-provides]}
-  pacod-mailpit: {profiles: [pacod-ap-provides]}
+  pacod-postgres: {profiles: [pacod-ap-provides], logging: *logging}
+  pacod-db-init: {profiles: [pacod-ap-provides], logging: *logging}
+  pacod-id: {profiles: [pacod-ap-provides], logging: *logging}
+  pacod-caddy: {profiles: [pacod-ap-provides], logging: *logging}
+  pacod-otel: {profiles: [pacod-ap-provides], logging: *logging}
+  pacod-prometheus: {profiles: [pacod-ap-provides], logging: *logging}
+  pacod-alertmanager: {profiles: [pacod-ap-provides], logging: *logging}
+  pacod-grafana: {profiles: [pacod-ap-provides], logging: *logging}
+  pacod-mailpit: {profiles: [pacod-ap-provides], logging: *logging}
 
   gw-tester:
+    logging: *logging
     environment:
       PGW_AUTH: oidc
       PGW_ID_INTERNAL_URL: http://pacod-id:8071

@@ -23,7 +23,7 @@ import { env } from '$env/dynamic/private';
 import { identity } from '$lib/server/identity';
 import { SessionStoreUnavailableError } from '$lib/server/session';
 import { createApiFetch, expectJson } from '$lib/server/api';
-import { logger, elapsed } from '$lib/server/logger';
+import { createLogger, elapsed, requestLine, stripQuery } from '$lib/server/logger';
 import { recordRequest } from '$lib/server/metrics';
 import { classifyUserAgent } from '$lib/server/crawlers';
 import { captureCrawlerVisit } from '$lib/server/crawler-sink';
@@ -44,6 +44,8 @@ import { indexNowResponse } from '$lib/server/indexnow';
 // (ID_ISSUER, ID_CLIENT_SECRET, SESSION_SECRET, …) stops the server here with a
 // message naming it, instead of failing the first visitor's request.
 if (!building) identity();
+
+const logger = createLogger('hooks');
 
 // -----------------------------------------------------------------
 // 1. Request / response logger (outermost — sees final status + ms)
@@ -73,14 +75,21 @@ const handleRequestLogger: Handle = async ({ event, resolve }) => {
 	const { method } = event.request;
 	const path = event.url.pathname;
 
-	logger.info('request.in', { rid, method, path });
-
 	const response = await resolve(event);
 
 	const ms = elapsed(start);
 	const status = response.status;
-	const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
-	logger[level]('request.out', { rid, method, path, status, ms });
+	// The IP comes from `clientContextFrom`, NOT `event.getClientAddress()`:
+	// ADDRESS_HEADER is unset on both frontend containers, so adapter-node
+	// would hand back Caddy's internal Docker address for every request.
+	// Caddy sets X-Forwarded-For to the real client (overwrite, not append),
+	// which is what that helper reads.
+	const { ip, userAgent } = clientContextFrom(event.request);
+
+	// One request line (pacod-demo/docs/LOGGING.md): `GET /chat 200`, the path without
+	// its query string, health checks at debug.
+	const line = requestLine(method, path, status, { durationMs: ms, clientIp: ip });
+	logger[line.level](line.message, { request_id: rid, ...line.fields });
 
 	// Server-side traffic metric, split by registered vs anonymous. This runs after
 	// resolve(), so the inner handleAuth has populated locals.user. Use the matched
@@ -92,13 +101,6 @@ const handleRequestLogger: Handle = async ({ event, resolve }) => {
 		// Identify crawlers so they stop being counted as anonymous humans. The
 		// User-Agent is the only signal available, and matching it is pure and
 		// synchronous — see lib/server/crawlers.ts.
-		//
-		// The IP comes from `clientContextFrom`, NOT `event.getClientAddress()`:
-		// ADDRESS_HEADER is unset on both frontend containers, so adapter-node
-		// would hand back Caddy's internal Docker address for every request.
-		// Caddy sets X-Forwarded-For to the real client (overwrite, not append),
-		// which is what that helper reads.
-		const { ip, userAgent } = clientContextFrom(event.request);
 		const crawler = classifyUserAgent(userAgent);
 		const userType = crawler ? 'bot' : event.locals.user ? 'registered' : 'anonymous';
 
@@ -170,7 +172,10 @@ const handleIdentity: Handle = async ({ event, resolve }) => {
 		if (err instanceof SessionStoreUnavailableError) {
 			// The session is not gone — the store is. Fail THIS request (cookies
 			// intact) instead of signing the user out of every device at once.
-			logger.error('auth.session.store_unavailable', { rid: event.locals.rid, error: String(err) });
+			logger.error('auth.session.store_unavailable', {
+				request_id: event.locals.rid,
+				error: String(err)
+			});
 			return new Response(JSON.stringify({ error: 'session_store_unavailable' }), {
 				status: 503,
 				headers: { 'content-type': 'application/json', 'retry-after': '5' }
@@ -223,31 +228,35 @@ const handleAuth: Handle = async ({ event, resolve }) => {
 		return resolve(event);
 	}
 
-	logger.debug('auth.me.start', { rid, sub: session.sub });
+	logger.debug('auth.me.start', { request_id: rid, sub: session.sub });
 	try {
 		const res = await event.locals.apiFetch('/api/v1/auth/me');
 		if (res.ok) {
 			const user = await expectJson<User>(res);
-			logger.debug('auth.me.ok', { rid, user_id: user.user_id, email: user.email });
+			logger.debug('auth.me.ok', { request_id: rid, user_id: user.user_id, email: user.email });
 			cacheUser(session.sid, user);
 			event.locals.user = user;
 		} else if (res.status === 401) {
 			// The API refuses this session's token (ended at pacod-id, or the
 			// account is disabled): forget it here too.
-			logger.warn('auth.me.unauthorized', { rid, sub: session.sub });
+			logger.warn('auth.me.unauthorized', { request_id: rid, sub: session.sub });
 			userCache.delete(session.sid);
 			await identity().forget(event.cookies, session);
 			event.locals.session = null;
 			event.locals.sessionEnded = true;
 			event.locals.apiFetch = createApiFetch(null, rid, client);
 		} else {
-			logger.warn('auth.me.error', { rid, status: res.status, stale_identity: cached != null });
+			logger.warn('auth.me.error', {
+				request_id: rid,
+				status: res.status,
+				stale_identity: cached != null
+			});
 			event.locals.user = cached?.user ?? null;
 		}
 	} catch (err) {
 		if (err instanceof SessionStoreUnavailableError) throw err;
 		logger.warn('auth.me.unreachable', {
-			rid,
+			request_id: rid,
 			error: String(err),
 			stale_identity: cached != null
 		});
@@ -308,7 +317,7 @@ const handleApiProxy: Handle = async ({ event, resolve }) => {
 	const isPublic = PUBLIC_API_PREFIXES.some((p) => event.url.pathname.startsWith(p));
 
 	if (!session && !isPublic) {
-		logger.warn('proxy.unauthenticated', { rid, path: event.url.pathname });
+		logger.warn('proxy.unauthenticated', { request_id: rid, path: event.url.pathname });
 		return new Response(JSON.stringify({ error: 'unauthenticated' }), {
 			status: 401,
 			headers: { 'content-type': 'application/json' }
@@ -348,7 +357,7 @@ const handleApiProxy: Handle = async ({ event, resolve }) => {
 	const path = event.url.pathname;
 	const start = performance.now();
 
-	logger.debug('proxy.request', { rid, method, path, target });
+	logger.debug('proxy.request', { request_id: rid, method, path, target: stripQuery(target) });
 
 	let res: Response;
 	try {
@@ -367,7 +376,12 @@ const handleApiProxy: Handle = async ({ event, resolve }) => {
 	} catch (err) {
 		// A backend restart used to surface as SvelteKit's HTML 500 page inside an
 		// XHR; give the API client a JSON status it can render.
-		logger.error('proxy.backend_unreachable', { rid, method, path, error: String(err) });
+		logger.error('proxy.backend_unreachable', {
+			request_id: rid,
+			method,
+			path,
+			error: String(err)
+		});
 		return new Response(JSON.stringify({ error: 'backend_unreachable' }), {
 			status: 502,
 			headers: { 'content-type': 'application/json' }
@@ -377,7 +391,7 @@ const handleApiProxy: Handle = async ({ event, resolve }) => {
 	const ms = elapsed(start);
 	const status = res.status;
 	const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
-	logger[level]('proxy.response', { rid, method, path, status, ms });
+	logger[level]('proxy.response', { request_id: rid, method, path, status, duration_ms: ms });
 
 	return new Response(res.body, {
 		status: res.status,
@@ -433,7 +447,11 @@ const handleGuards: Handle = async ({ event, resolve }) => {
 		path.startsWith('/chat');
 
 	if (isProtected && !event.locals.user) {
-		logger.info('guard.redirect', { rid: event.locals.rid, path, reason: 'unauthenticated' });
+		logger.info('guard.redirect', {
+			request_id: event.locals.rid,
+			path,
+			reason: 'unauthenticated'
+		});
 		redirect(
 			303,
 			signInHref(path + event.url.search, {

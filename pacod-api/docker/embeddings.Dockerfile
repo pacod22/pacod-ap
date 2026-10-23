@@ -42,12 +42,14 @@ RUN pip install \
 RUN pip install "optimum[onnxruntime]>=1.20.0,<2.0.0"
 
 # The embeddings service is otherwise isolated from the `app` package; pull in
-# only the shared Prometheus metrics module (and its empty package inits) so
-# `from app.core.metrics import setup_metrics` resolves without dragging in the
-# rest of app/core (config/db/services).
+# only the shared Prometheus metrics module and the standard-library logging
+# format (and their empty package inits) so `from app.core.metrics import
+# setup_metrics` and `from app.core.log_schema import configure_from_env` resolve
+# without dragging in the rest of app/core (config/db/services, structlog).
 COPY app/__init__.py ./app/__init__.py
 COPY app/core/__init__.py ./app/core/__init__.py
 COPY app/core/metrics.py ./app/core/metrics.py
+COPY app/core/log_schema.py ./app/core/log_schema.py
 
 COPY embeddings_service ./embeddings_service
 
@@ -56,4 +58,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
     CMD curl -fsS http://localhost:8080/health || exit 1
 
 EXPOSE 8080
-CMD ["uvicorn", "embeddings_service.server:app", "--host", "0.0.0.0", "--port", "8080", "--log-level", "info"]
+# The log level is APP_LOG_LEVEL (embeddings_service/server.py routes uvicorn's loggers).
+CMD ["uvicorn", "embeddings_service.server:app", "--host", "0.0.0.0", "--port", "8080"]

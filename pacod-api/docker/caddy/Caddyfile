@@ -34,10 +34,34 @@
     metrics /metrics
 }
 
-(logging) {
+# The access log of every site here, pacod-ap's own (www) included: one file, JSON, with what a
+# request may carry that must never be logged left out (pacod-demo/docs/LOGGING.md, section 6):
+# sign-in codes and their state, the hints at sign-out, the tokens of account-email links,
+# API keys in a query or a header, the Referer that can repeat any of them, and the Location of
+# a redirect that hands one on. Caddy itself already leaves out Cookie, Set-Cookie and
+# Authorization.
+(redacted_logging) {
     log {
         output file /var/log/caddy.log
-        format json
+        format filter {
+            wrap json
+            fields {
+                request>uri query {
+                    delete token
+                    delete code
+                    delete state
+                    delete next
+                    delete flow
+                    delete id_token_hint
+                    delete login_hint
+                    delete key
+                }
+                request>headers>Referer delete
+                request>headers>X-Api-Key delete
+                request>headers>X-Goog-Api-Key delete
+                resp_headers>Location delete
+            }
+        }
     }
 }
 
@@ -50,42 +74,17 @@ http://www.pacod.io, http://id.pacod.io, http://console.pacod.io {
     redir https://{host}{uri} permanent
 }
 
-# The certificates and the log file of pacod-ap's site (platform/caddy/ap.caddy): the
+# The certificates and the access log of pacod-ap's site (platform/caddy/ap.caddy): the
 # standalone compose file sets AP_SITE_OPTIONS to "import ap_tls_pacod_io". Defined before
 # the import below, so the imported site can use it.
 (ap_tls_pacod_io) {
     tls /etc/caddy/certs/pacod.io.full /etc/caddy/certs/pacod.io.key
-    import logging
+    import redacted_logging
 }
 
 # pacod-ap's own site, the main shell (AP_SITE, www.pacod.io): the fragment the full stack
 # imports too (platform/caddy/ap.caddy, mounted at /etc/caddy/sites).
 import /etc/caddy/sites/*.caddy
-
-# The logs of pacod-id's and the gateway console's sites keep one-time values out: sign-in
-# codes, their state, the hints at sign-out, the tokens of account-email links (as pacod-gw's
-# own Caddyfile does). Same file as every other site, JSON.
-(redacted_logging) {
-    log {
-        output file /var/log/caddy.log
-        format filter {
-            wrap json
-            fields {
-                request>uri query {
-                    delete token
-                    delete code
-                    delete state
-                    delete id_token_hint
-                    delete login_hint
-                    delete flow
-                    delete next
-                }
-                request>headers>Referer delete
-                resp_headers>Location delete
-            }
-        }
-    }
-}
 
 # pacod-id's public listener: the issuer of the `pacod` realm (PACOD_ID_ISSUER). Its internal
 # listener (8071) and metrics (9170) are never routed. The certificate must cover id.pacod.io.

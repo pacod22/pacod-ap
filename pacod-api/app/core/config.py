@@ -29,7 +29,11 @@ class Settings(BaseSettings):
     # request goes through SvelteKit, which 401s a bearer-only caller. Any edge
     # route that reaches the api directly removes that shield, so both must say yes.
     auth_allow_dev_tokens: bool = False
-    app_log_level: str = "INFO"
+    # The pacod logging convention (pacod-demo/docs/LOGGING.md; app/core/logging.py). Plain
+    # strings on purpose: an unknown value falls back (level → info, format → the default)
+    # instead of stopping the service.
+    app_log_level: str = "INFO"  # debug | info | warn (warning) | error
+    app_log_format: str = ""  # json | text; blank: text while app_env=development, else json
     app_log_dir: str = ""  # absolute path; empty = file logging disabled
     # Fernet key (urlsafe base64, 32 bytes) used to encrypt provider API keys
     # managed from the admin panel. Empty → key editing is disabled and the panel

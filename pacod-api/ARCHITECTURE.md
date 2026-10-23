@@ -893,7 +893,15 @@ never blocked. Global settings use the `__global__` profile_id.
   purpose, variant), per end user and per trace (= turn). The admin **Usage & costs**, **Analytics**,
   dashboard and per-turn breakdown read it through `admin_api/services/gateway_reports.py` and add the
   local web-search rows; every page links into the gateway console for more.
-- **structlog everywhere** — structured logs with context (incl. `profile_id`) as kwargs.
+- **structlog everywhere** — structured logs with context (incl. `profile_id`) as kwargs, written in
+  the pacod logging convention (pacod-demo/docs/LOGGING.md; `app/core/logging.py` +
+  `app/core/log_schema.py`): one event per line on stdout with `timestamp`, `level`, `service`
+  (`SERVICE_NAME`), `logger`, `message` and the fields flat, JSON or text (`APP_LOG_FORMAT`;
+  `APP_LOG_LEVEL`), uvicorn's access log turned into request lines without the query string (health
+  checks at debug), and, with `APP_LOG_DIR`, `<service>.log` in JSON rotated at midnight UTC / 20 MB
+  to `<service>.<yyyy-mm-dd>.<n>.log.gz`, kept 30 days / 600 MB. Every compose service rotates its
+  container log (`json-file`, 10 MB × 5); Caddy's access log redacts codes, tokens, keys, `Referer`
+  and `Location`.
 - **Prometheus metrics** — every HTTP service exposes `/metrics` via a shared pure-ASGI middleware
   (`app/core/metrics.py`: `http_requests_total`, `http_request_duration_seconds`,
   `http_requests_in_progress`, `guard_rejections_total`, and the client-side LLM counters

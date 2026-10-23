@@ -12,7 +12,9 @@
  */
 
 import { env } from '$env/dynamic/private';
-import { logger, elapsed } from '$lib/server/logger';
+import { createLogger, elapsed, stripQuery } from '$lib/server/logger';
+
+const logger = createLogger('api');
 import { isAdminApiPath } from '$lib/server/admin-paths';
 import { currentSite, INTERNAL_HEADER, SITE_HEADER } from '$lib/server/site';
 import type { ClientContext } from '$lib/server/auth';
@@ -51,14 +53,22 @@ export function createApiFetch(accessToken: string | null, rid?: string, client?
 		const method = (init.method ?? 'GET').toUpperCase();
 		const start = performance.now();
 
-		logger.debug('apiFetch.request', { rid, method, path });
+		// The path without its query string: it can carry tokens and codes.
+		const logPath = stripQuery(path);
+		logger.debug('apiFetch.request', { request_id: rid, method, path: logPath });
 
 		const res = await fetch(url, { ...init, headers });
 
 		const ms = elapsed(start);
 		const status = res.status;
 		const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'debug';
-		logger[level]('apiFetch.response', { rid, method, path, status, ms });
+		logger[level]('apiFetch.response', {
+			request_id: rid,
+			method,
+			path: logPath,
+			status,
+			duration_ms: ms
+		});
 
 		return res;
 	};

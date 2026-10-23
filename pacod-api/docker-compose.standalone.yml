@@ -8,6 +8,14 @@
 # The server values are here (TLS on the real hostnames, /data/** bind mounts); the laptop's
 # are in docker-compose.standalone.local.yml.
 
+# Every service rotates its container log the same way (pacod-demo/docs/LOGGING.md, section 2).
+# YAML anchors do not cross files, so each compose file declares its own copy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # -----------------------------------------------------------------
   # Edge / reverse proxy
@@ -19,6 +27,7 @@ services:
     image: caddy:2.11.6-alpine
     container_name: pacod-caddy
     restart: unless-stopped
+    logging: *logging
     environment:
       # The address of pacod-ap's site (platform/caddy/ap.caddy) and what the site adds to
       # its routes here: the certificates and the log file, by importing a snippet of
@@ -57,6 +66,7 @@ services:
     image: postgres:18.6-alpine3.24
     container_name: pacod-postgres
     restart: unless-stopped
+    logging: *logging
     environment:
       # The superuser is the app's own role here, as it always was (existing installations
       # keep working); in the full stack the app's role is an owner role, not a superuser.
@@ -90,6 +100,7 @@ services:
     image: postgres:18.6-alpine3.24
     container_name: pacod-db-init
     restart: "no"
+    logging: *logging
     # The password variables of the fragments: PID_DB_PASSWORD (id.env) and, for up-all,
     # GW_DB_PASSWORD (gw.env), both written by `make secrets-init`. Every variable the
     # fragments or libpq read otherwise is set below, so nothing in these files can replace it.
@@ -127,6 +138,7 @@ services:
     image: qdrant/qdrant:v1.19.2
     container_name: pacod-qdrant
     restart: unless-stopped
+    logging: *logging
     volumes:
       - /data/qdrant/storage:/qdrant/storage
     networks:
@@ -144,6 +156,7 @@ services:
     image: ${PACOD_ID_IMAGE:-pacod-id:c4eb04b}
     container_name: pacod-id
     restart: unless-stopped
+    logging: *logging
     command: ["serve"]
     read_only: true
     cap_drop: [ALL]

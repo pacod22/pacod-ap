@@ -10,8 +10,18 @@
 #
 # The ports are those of pacod-gw's own development stack, so the two cannot run at the same
 # time; this one is the project pacod-ap-gw, with volumes of its own.
+
+# Every service rotates its container log the same way (pacod-demo/docs/LOGGING.md, section 2).
+# YAML anchors do not cross files, so each compose file declares its own copy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   gw-preflight:
+    logging: *logging
     environment:
       # The preflight check accepts only https:// addresses; the development ones are fixed
       # here instead (as pacod-gw's development file does for its own).
@@ -21,11 +31,13 @@ services:
       PGW_CONSOLE_URL: ""
 
   pacod-gw:
+    logging: *logging
     environment:
       PGW_ID_ISSUER: http://127.0.0.1:8070
       PGW_CONSOLE_URL: http://127.0.0.1:13000
 
   gw-console:
+    logging: *logging
     environment:
       PGW_ID_ISSUER: http://127.0.0.1:8070
       PGW_CONSOLE_URL: http://127.0.0.1:13000

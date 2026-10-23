@@ -22,8 +22,12 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.db_models import DEFAULT_PROFILE_ID
+from app.core.logging import configure_logging
 from app.core.metrics import setup_metrics
 from app.services import reference_facts as facts
+
+# The pacod logging convention (app/core/logging.py): uvicorn's lines and the app's in one format.
+configure_logging("ap-mcp")
 
 
 def _build_postgres_dsn() -> str:

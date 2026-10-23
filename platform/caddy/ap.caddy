@@ -4,7 +4,15 @@
 #
 #   AP_SITE          the main shell's address, e.g. http://app.localhost:8800
 #   AP_SITE_OPTIONS  directives the site adds, e.g. "import <snippet>" for certificates and a
-#                    log file; blank: none (plain HTTP, the importer's logging)
+#                    log file; blank: none (plain HTTP, no access log)
+#
+# The site's access log comes from AP_SITE_OPTIONS: this fragment has no `log` directive of its
+# own. pacod-ap's server stack imports `ap_tls_pacod_io` (pacod-api/docker/caddy/Caddyfile:
+# certificates and the redacted JSON file /var/log/caddy.log); the full stack (pacod-demo) passes
+# its redacted stdout log there. Whatever supplies it redacts what pacod-demo/docs/LOGGING.md
+# (section 6) lists: the query parameters token, code, state, next, flow, id_token_hint,
+# login_hint and key, the request headers Referer, X-Api-Key and X-Goog-Api-Key, the response
+# header Location.
 #
 # Caddy substitutes {$VAR} before it parses, so AP_SITE_OPTIONS may be a whole directive.
 # Upstreams are service names on pacod-net. Everything goes through the SvelteKit frontend

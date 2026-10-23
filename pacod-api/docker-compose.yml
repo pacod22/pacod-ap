@@ -14,6 +14,14 @@
 
 name: pacod
 
+# Every service rotates its container log the same way (pacod-demo/docs/LOGGING.md, section 2).
+# YAML anchors do not cross files, so each compose file declares its own copy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # -----------------------------------------------------------------
   # Application services
@@ -31,7 +39,14 @@ services:
     container_name: ap-frontend
     profiles: ["ui"]
     restart: unless-stopped
+    logging: *logging
     environment:
+      # The name in every log line (pacod-demo/docs/LOGGING.md) and of the log file.
+      SERVICE_NAME: ap-frontend
+      # The log's level (debug | info | warn | error) and format (json | text); the full
+      # stack sets them for every product. The environment is this list (no env_file).
+      LOG_LEVEL: ${FRONTEND_LOG_LEVEL:-info}
+      LOG_FORMAT: ${FRONTEND_LOG_FORMAT:-json}
       NODE_ENV: production
       API_INTERNAL_URL: http://ap-api:8000
       ADMIN_API_INTERNAL_URL: http://ap-admin-api:8000
@@ -135,8 +150,11 @@ services:
       dockerfile: docker/api.Dockerfile
     container_name: ap-api
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
+      # The name in every log line (pacod-demo/docs/LOGGING.md) and of the log file.
+      SERVICE_NAME: ap-api
       POSTGRES_HOST: ap-pgbouncer
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://ap-redis:6379/0
@@ -182,8 +200,11 @@ services:
       dockerfile: docker/admin_api.Dockerfile
     container_name: ap-admin-api
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
+      # The name in every log line (pacod-demo/docs/LOGGING.md) and of the log file.
+      SERVICE_NAME: ap-admin-api
       POSTGRES_HOST: ap-pgbouncer
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://ap-redis:6379/0
@@ -246,8 +267,11 @@ services:
     container_name: ap-ingestion
     profiles: ["gpu"]
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
+      # The name in every log line (pacod-demo/docs/LOGGING.md) and of the log file.
+      SERVICE_NAME: ap-ingestion
       POSTGRES_HOST: ap-pgbouncer
       POSTGRES_PORT: "5432"
       QDRANT_URL: http://pacod-qdrant:6333
@@ -284,8 +308,11 @@ services:
     container_name: ap-ingestion-cpu
     profiles: ["cpu"]
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
+      # The name in every log line (pacod-demo/docs/LOGGING.md) and of the log file.
+      SERVICE_NAME: ap-ingestion-cpu
       POSTGRES_HOST: ap-pgbouncer
       POSTGRES_PORT: "5432"
       QDRANT_URL: http://pacod-qdrant:6333
@@ -335,8 +362,11 @@ services:
     container_name: ap-improvement-loop
     profiles: ["loop"]
     restart: "no"
+    logging: *logging
     env_file: .env
     environment:
+      # The name in every log line (pacod-demo/docs/LOGGING.md) and of the log file.
+      SERVICE_NAME: ap-improvement-loop
       POSTGRES_HOST: ap-pgbouncer
       POSTGRES_PORT: "5432"
       QDRANT_URL: http://pacod-qdrant:6333
@@ -378,8 +408,11 @@ services:
     container_name: ap-improvement-loop-worker
     command: ["worker"]
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
+      # The name in every log line (pacod-demo/docs/LOGGING.md) and of the log file.
+      SERVICE_NAME: ap-improvement-loop-worker
       POSTGRES_HOST: ap-pgbouncer
       POSTGRES_PORT: "5432"
       QDRANT_URL: http://pacod-qdrant:6333
@@ -429,8 +462,11 @@ services:
     container_name: ap-newsletter-worker
     command: ["worker"]
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
+      # The name in every log line (pacod-demo/docs/LOGGING.md) and of the log file.
+      SERVICE_NAME: ap-newsletter-worker
       POSTGRES_HOST: ap-pgbouncer
       POSTGRES_PORT: "5432"
       # The LLM gateway (pacod-gw, on pacod-net) and this service's own key, from
@@ -456,8 +492,14 @@ services:
       dockerfile: docker/mcp.Dockerfile
     container_name: ap-mcp
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
+      # The name in every log line (pacod-demo/docs/LOGGING.md) and of the log file.
+      SERVICE_NAME: ap-mcp
+      # stdout only: no log volume is mounted here, so .env's APP_LOG_DIR would fill the
+      # container's own filesystem (environment: wins over env_file:).
+      APP_LOG_DIR: ""
       MCP_POSTGRES_DSN: postgresql+asyncpg://${POSTGRES_USER:-pacod}:${POSTGRES_PASSWORD}@ap-pgbouncer:5432/${POSTGRES_DB:-pacod}
     networks:
       - pacod-net
@@ -476,7 +518,13 @@ services:
       dockerfile: docker/embeddings.Dockerfile
     container_name: pacod-embeddings
     restart: unless-stopped
+    logging: *logging
     environment:
+      # The name in every log line (pacod-demo/docs/LOGGING.md) and of the log file.
+      SERVICE_NAME: pacod-embeddings
+      # No env_file here: the level and format by interpolation (the full stack sets them).
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-info}
+      APP_LOG_FORMAT: ${APP_LOG_FORMAT:-json}
       EMBEDDINGS_BACKEND: bge        # set to 'hash' for CI / lightweight dev
       EMBEDDINGS_DEVICE: ${EMBEDDINGS_DEVICE:-auto}   # auto|cpu|cuda
       RERANKER_BACKEND: ${RERANKER_BACKEND:-flag}     # flag|onnx_int8 (onnx = CPU path)
@@ -496,6 +544,7 @@ services:
       dockerfile: docker/pgbouncer.Dockerfile
     container_name: ap-pgbouncer
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRESQL_HOST: pacod-postgres
       POSTGRESQL_PORT: "5432"
@@ -523,6 +572,7 @@ services:
     image: redis:7-alpine
     container_name: ap-redis
     restart: unless-stopped
+    logging: *logging
     command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
     volumes:
       - ap-redis-data:/data
@@ -541,6 +591,7 @@ services:
     image: adminer:4.8.1
     container_name: ap-adminer
     restart: unless-stopped
+    logging: *logging
     ports:
       - "127.0.0.1:8081:8080"
     networks:

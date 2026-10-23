@@ -22,7 +22,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.metrics import setup_metrics
 from ingestion_api.routes import router
 
-configure_logging()
+configure_logging("ap-ingestion")
 log = get_logger(__name__)
 
 

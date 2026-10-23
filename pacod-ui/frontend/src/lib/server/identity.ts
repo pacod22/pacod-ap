@@ -31,7 +31,9 @@ import {
 	type IdSession,
 	type SessionStore
 } from '@pacod/id-sveltekit';
-import { logger } from '$lib/server/logger';
+import { createLogger } from '$lib/server/logger';
+
+const logger = createLogger('identity');
 import { countRedisSessions, redis, redisLike, SESSION_PREFIX } from '$lib/server/session';
 
 /** The client pacod-id knows this frontend as, unless `ID_CLIENT_ID` says otherwise. */
