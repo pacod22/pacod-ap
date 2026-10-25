@@ -35,6 +35,9 @@ services:
     environment:
       PGW_ID_ISSUER: http://127.0.0.1:8070
       PGW_CONSOLE_URL: http://127.0.0.1:13000
+      # pacod-gw's development file fixes its own development password here, but the role
+      # pacod_gw is pacod-ap's pacod-db-init's, with the password GW_DB_PASSWORD (gw.env).
+      DATABASE_URL: postgres://pacod_gw:${GW_DB_PASSWORD:?deploy/secrets/gw.env}@pacod-postgres:5432/pacod_gw
 
   gw-console:
     logging: *logging
