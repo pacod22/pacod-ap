@@ -9,7 +9,7 @@
 #   pacod-postgres   pacod-ap's; the database pacod_gw and its role come from pacod-ap's
 #                    pacod-db-init, which runs pacod-gw's platform/postgres/gw-db.sh
 #                    (docker-compose.gw-db.yml, the repo root's up targets)
-#   pacod-id         pacod-ap's (http://pacod-id:8071, the issuer PACOD_ID_ISSUER)
+#   pacod-id         pacod-ap's (http://pacod-id-internal:8071 on pacod-admin-net, the issuer PACOD_ID_ISSUER)
 #   pacod-caddy      pacod-ap's: it serves the console (gw-console:3000); nothing outside the
 #                    platform calls the data plane, and the management API is never routed
 #   pacod-prometheus pacod-ap's monitoring module (make monitor-up): the console's Metrics
@@ -24,7 +24,7 @@
 x-identity: &identity
   PGW_AUTH: oidc
   PGW_ID_ISSUER: ${PACOD_ID_ISSUER:-https://id.pacod.io}
-  PGW_ID_INTERNAL_URL: http://pacod-id:8071
+  PGW_ID_INTERNAL_URL: http://pacod-id-internal:8071
 
 # Every service rotates its container log the same way (pacod-demo/docs/LOGGING.md, section 2).
 # YAML anchors do not cross files, so each compose file declares its own copy.
@@ -91,5 +91,5 @@ services:
     logging: *logging
     environment:
       PGW_AUTH: oidc
-      PGW_ID_INTERNAL_URL: http://pacod-id:8071
+      PGW_ID_INTERNAL_URL: http://pacod-id-internal:8071
       TESTER_ID_CLIENT_SECRET: ${TESTER_ID_CLIENT_SECRET:?run make secrets-init}

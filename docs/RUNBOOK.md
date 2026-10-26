@@ -19,8 +19,15 @@ target creates it (`make ensure-pacod-net`). The gateway runs from pacod-gw's ap
 shared components it uses are the platform's — `pacod-postgres` (its database `pacod_gw`, made by
 the platform's `pacod-db-init` from pacod-gw's `platform/postgres/gw-db.sh`, password
 `GW_DB_PASSWORD` in `deploy/secrets/gw.env`), `pacod-id` (`PGW_AUTH=oidc`,
-`PGW_ID_INTERNAL_URL=http://pacod-id:8071`), `pacod-caddy` (the console) and `pacod-prometheus`
+`PGW_ID_INTERNAL_URL=http://pacod-id-internal:8071`), `pacod-caddy` (the console) and `pacod-prometheus`
 (the console's Metrics page, `make monitor-up`).
+
+Listeners that only servers reach are on a second external network, **`pacod-admin-net`**, which is
+internal (no route out): the gateway's management API, bound to `pacod-gw-admin:8081`, and
+pacod-id's internal listener, bound to `pacod-id-internal:8071`, each an alias its service has there
+alone. Their callers join it too (`ap-frontend`, `ap-api`, `ap-admin-api`; the gateway's `pacod-gw`,
+`gw-console`, `gw-analytics`, `gw-tester`) and use those aliases; the rest of `pacod-net` cannot
+reach either. `make ensure-pacod-net` creates it as well.
 
 **Start order matters:** pacod-id first (the gateway signs in through it), then the gateway, then
 its bootstrap (which hands the app's services their gateway keys and recreates them).
@@ -167,9 +174,11 @@ Status: the switch to real providers has been prepared but **not yet run** with 
 3. Create a platform-admin token in the console (Platform → Access → Admin tokens, role
    `platform_admin`) and store it: `make secret-set FILE=pacod-api/.env.gateway NAME=GW_ADMIN_TOKEN`
    (only development signs in by itself).
-4. `make gw-bootstrap GW_ENV=live GW_BOOTSTRAP_ARGS="--admin-url http://<core>:8081 --data-url
-   http://<core>:8080"` (live has no default addresses) imports `platform-config.live.json` and the
-   provider credentials.
+4. `make gw-bootstrap GW_ENV=live GW_BOOTSTRAP_ARGS="--admin-url https://<API host> --data-url
+   https://<API host>"` (live has no default addresses) imports `platform-config.live.json` and the
+   provider credentials. Live listens for the management API on `pacod-admin-net` only, which this
+   host does not reach: enable its route on the gateway's Caddy for this host's address first
+   (pacod-gw runbook, section 4, "the management API from outside").
 
 Every provider's timeout in the gateway must stay at least the app's `LLM_TIMEOUT_SECONDS` (180)
 and `LOOP_LLM_TIMEOUT_SECONDS` (600): the configs carry 600 s.

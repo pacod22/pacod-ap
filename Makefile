@@ -151,9 +151,14 @@ secrets-init:
 id-image:
 	$(MAKE) -C $(API_DIR) id-image $(if $(PACOD_ID_SRC),PACOD_ID_SRC=$(PACOD_ID_SRC))
 
-# The shared network every pacod stack joins (pacod-demo/docs/NETWORK.md); idempotent.
+# The shared networks every pacod stack joins (pacod-demo/docs/NETWORK.md); idempotent.
+# pacod-admin-net carries the listeners only servers reach (the gateway's management API,
+# pacod-id's internal one) and must be internal; compose never checks that, so this does.
 ensure-pacod-net:
 	@docker network inspect pacod-net >/dev/null 2>&1 || docker network create pacod-net >/dev/null
+	@docker network inspect pacod-admin-net >/dev/null 2>&1 || docker network create --internal pacod-admin-net >/dev/null
+	@test "$$(docker network inspect -f '{{.Internal}}' pacod-admin-net)" = true || \
+		{ echo "pacod-admin-net is not internal: remove it (docker network rm pacod-admin-net) and run make ensure-pacod-net" >&2; exit 1; }
 
 # --- The gateway ---
 gw-up: ensure-pacod-net secrets-init
@@ -176,7 +181,9 @@ gw-config:
 	$(GW_COMPOSE) config --quiet && echo "gw compose files: ok"
 
 # GW_BOOTSTRAP_ARGS passes options through, e.g. on a server (GW_ENV=live):
-#   GW_BOOTSTRAP_ARGS="--admin-url http://<core>:8081 --data-url http://<core>:8080"
+#   GW_BOOTSTRAP_ARGS="--admin-url https://<API host> --data-url https://<API host>"
+# (live listens for the management API on pacod-admin-net only: the gateway's Caddy route to it,
+# pacod-gw runbook section 4, must admit this host).
 # Imports deploy/pacod-gw/platform-config.$(GW_ENV).json, provider keys from
 # deploy/secrets/providers.env, and writes the services' gateway keys and tokens to
 # pacod-api/.env.gateway (0600). Idempotent. Prints names, never values.

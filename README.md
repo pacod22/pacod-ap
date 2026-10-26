@@ -55,6 +55,13 @@ role and databases (`platform/postgres/ap-db.sh`) and the scrape jobs
 [pacod-demo/docs/NETWORK.md](../pacod-demo/docs/NETWORK.md). Every `make up*` target creates the
 network when it is missing (`make ensure-pacod-net`).
 
+The listeners that only servers reach are on a second external network, **`pacod-admin-net`**, which
+is internal (no route out): the gateway's management API, bound to `pacod-gw-admin:8081`, and
+pacod-id's internal listener, bound to `pacod-id-internal:8071`, each an alias its service has there
+alone. Their callers join it too (`ap-frontend`, `ap-api`, `ap-admin-api`; the gateway's `pacod-gw`,
+`gw-console`, `gw-analytics`, `gw-tester`) and use those aliases; the rest of `pacod-net` cannot
+reach either. `make ensure-pacod-net` creates it as well.
+
 ## Requirements
 
 pacod-ap runs next to two sibling projects, both Apache-2.0:

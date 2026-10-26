@@ -169,7 +169,7 @@ Read at run time via `$env/dynamic/private`. In Docker they are set on the `ap-f
 | Variable                                     | Default                        | Purpose                                                                                                   |
 | -------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | `ID_ISSUER`                                  | _(required)_                   | pacod-id's public issuer. **Also a build arg** — it becomes SvelteKit's CSRF trusted origin, which the back-channel logout (a cross-site POST) needs |
-| `ID_INTERNAL_URL`                            | _(required)_                   | pacod-id's internal listener (`http://pacod-id:8071`): tokens, keys, revocation                           |
+| `ID_INTERNAL_URL`                            | _(required)_                   | pacod-id's internal listener (`http://pacod-id-internal:8071`): tokens, keys, revocation                           |
 | `ID_CLIENT_SECRET`                           | _(required)_                   | Secret of the client `pacod-web` (`ID_CLIENT_ID` overrides the id)                                         |
 | `SITE_URL`                                   | _(required)_                   | The public origin; the callback and post-logout addresses derive from it; also the canonical URL           |
 | `SESSION_SECRET`                             | _(required, ≥ 32 characters)_  | Seals the pending sign-in cookie                                                                          |

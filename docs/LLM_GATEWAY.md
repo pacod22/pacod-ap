@@ -16,7 +16,7 @@ settings, the agent editor's overlay).
 | Usage, cost and analytics pages | `admin_api/services/gateway_reports.py` (the reports facade) |
 | The gateway's objects | `deploy/pacod-gw/platform-config.{dev,live}.json`, imported by `scripts/gw_bootstrap.py` (`make gw-bootstrap`) |
 | Metrics, dashboards, alerts | `monitoring/` (job `pacod-gw-core`, Grafana folder `pacod-gw`, `alerts/gw.rules.yml`) |
-| Addresses | `GATEWAY_URL=http://pacod-gw:8080` (data plane) and `GATEWAY_ADMIN_URL=http://pacod-gw:8081` (management API), the gateway's name on the shared network `pacod-net` (the code's defaults; compose sets them too) |
+| Addresses | `GATEWAY_URL=http://pacod-gw:8080` (data plane) and `GATEWAY_ADMIN_URL=http://pacod-gw-admin:8081` (management API), the gateway's names on the shared networks `pacod-net` and `pacod-admin-net`; only the latter reaches the management API (the code's defaults; compose sets them too) |
 
 ## Keys
 

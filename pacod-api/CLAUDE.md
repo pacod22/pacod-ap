@@ -401,8 +401,12 @@ runs each shared component once; that is why every `depends_on` on a shared comp
 One network: **`pacod-net`**, `external: true`, created by `ensure-pacod-net` (both Makefiles; every
 `up*` target). Service key = container name = DNS name; shared components are `pacod-*`, pacod-ap's own
 `ap-*`, the gateway's `gw-*` (and `pacod-gw`: 8080 data plane, 8081 management, 9100 metrics;
-`gw-console` 3000), all on the same network. Server ports below; the local overlays' are in **Running
-the stack locally**.
+`gw-console` 3000), all on the same network. A second external network, **`pacod-admin-net`**
+(internal), carries the listeners only servers reach: the gateway's management API
+(`pacod-gw-admin:8081`) and pacod-id's internal listener (`pacod-id-internal:8071`), each bound to
+that alias, which its service has there alone. `ap-frontend`, `ap-api` and `ap-admin-api` join it
+to call them; never call `pacod-gw:8081` or `pacod-id:8071`, which find nothing. Server ports
+below; the local overlays' are in **Running the stack locally**.
 
 | Container | File | Image / Dockerfile | Host port | Purpose |
 |---|---|---|---|---|
@@ -423,7 +427,7 @@ the stack locally**.
 | `pacod-postgres` | standalone | postgres:18.6-alpine3.24 | 127.0.0.1:5432 | Databases `pacod` (the app), `pacod_id`; superuser `POSTGRES_USER` (`pacod`, as always). Volume key `pacod-postgres-data`, pinned to its old name `pacod_postgres_data` |
 | `pacod-db-init` | standalone | same image (as a psql client) | — | One-shot, at every start: runs each `/initdb.d/*.sh` — `../platform/postgres/ap-db.sh` (the role `pacod`, the database `pacod`, the `bulgarian_simple` text search configuration) and `id-db.sh` (the non-superuser role + database `pacod_id`, its password reset to `PID_DB_PASSWORD`); the repo-root up targets (`up`, `up-api`, `up-local`, `up-all`) add pacod-gw's `gw-db.sh` (`../deploy/pacod-gw/docker-compose.gw-db.yml`, `AP_EXTRA_FILES`) whenever `GW_DIR` has it |
 | `pacod-qdrant` | standalone | qdrant/qdrant:v1.19.2 | 127.0.0.1:6333 | Vector store |
-| `pacod-id` | standalone | `${PACOD_ID_IMAGE:-pacod-id:c4eb04b}` (built by `make id-image` from the vendored pacod-id source) | — (via Caddy) | Identity provider: public listener 8070 (routed), internal 8071 and readyz/metrics 9170 (never routed); read-only FS, `cap_drop: ALL`. Connects to `pacod-postgres` **directly, never through PgBouncer** (it relies on `LISTEN/NOTIFY`). `PID_BOOTSTRAP_ADMIN_ROLES=id.admin,pacod.superuser,pacod.admin,gw.platform_admin`; env from `../deploy/secrets/id.env` |
+| `pacod-id` | standalone | `${PACOD_ID_IMAGE:-pacod-id:3872f32}` (built by `make id-image` from the vendored pacod-id source) | — (via Caddy) | Identity provider: public listener 8070 (routed), internal 8071 bound to `pacod-id-internal` on `pacod-admin-net` and readyz/metrics 9170 (never routed); read-only FS, `cap_drop: ALL`. Connects to `pacod-postgres` **directly, never through PgBouncer** (it relies on `LISTEN/NOTIFY`). `PID_BOOTSTRAP_ADMIN_ROLES=id.admin,pacod.superuser,pacod.admin,gw.platform_admin`; env from `../deploy/secrets/id.env` |
 | `pacod-mailpit` | standalone.local only | axllent/mailpit:v1.27 | 127.0.0.1:8025 | Catches pacod-id's mail locally |
 
 The gateway clients (`ap-api`, `ap-admin-api`, both loop services, `ap-newsletter-worker`) each get
@@ -701,12 +705,12 @@ db `pacod`), `REDIS_URL` (`redis://ap-redis:6379/0`), `QDRANT_URL` (`http://paco
 `POSTGRES_*`).
 
 **Identity (pacod-id):** `ID_ISSUERS` (CSV, one per realm; blank = only dev tokens), `ID_AUDIENCE`
-(`pacod-api`), `ID_INTERNAL_URL` (`http://pacod-id:8071`), `ID_CLIENT_ID` (`pacod-api`),
+(`pacod-api`), `ID_INTERNAL_URL` (`http://pacod-id-internal:8071`), `ID_CLIENT_ID` (`pacod-api`),
 `ID_CLIENT_SECRET` (compose: `${PACOD_API_CLIENT_SECRET}` from `.env.gateway`), `ID_MAX_STALENESS`
 (60 s; admin-api 503s past it).
 
 **LLM gateway (pacod-gw):** `GATEWAY_URL` (`http://pacod-gw:8080`), `GATEWAY_API_KEY` (each service's
-`pgw_` key, from `.env.gateway` by compose interpolation), `GATEWAY_ADMIN_URL` (`http://pacod-gw:8081`,
+`pgw_` key, from `.env.gateway` by compose interpolation), `GATEWAY_ADMIN_URL` (`http://pacod-gw-admin:8081`,
 the management API: reports + limits), `GATEWAY_CONSOLE_URL` (deep links; blank hides them),
 `GATEWAY_ORG_ID` / `GATEWAY_WORKSPACE_ID`, admin-api only `GATEWAY_REPORT_TOKEN` (viewer) and
 `GATEWAY_ADMIN_TOKEN` (workspace_admin). `gw_bootstrap.py` writes the per-service keys

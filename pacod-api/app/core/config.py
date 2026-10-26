@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     # introspects service tokens, exchanges a caller's token for the admin facades).
     id_issuers: str = ""
     id_audience: str = "pacod-api"
-    id_internal_url: str = "http://pacod-id:8071"
+    id_internal_url: str = "http://pacod-id-internal:8071"
     id_client_id: str = "pacod-api"
     id_client_secret: str = ""
     # Admin surfaces refuse (503 identity_unavailable) while the copy of pacod-id's
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     # The management API (admin facades, usage reports; never routed publicly),
     # the console as the browser reaches it (deep links; blank hides them), and
     # the platform's organisation and workspace there (gw_bootstrap writes both).
-    gateway_admin_url: str = "http://pacod-gw:8081"
+    gateway_admin_url: str = "http://pacod-gw-admin:8081"
     gateway_console_url: str = ""
     gateway_org_id: str = ""
     gateway_workspace_id: str = ""

@@ -153,7 +153,7 @@ services:
   pacod-id:
     # Built from the pinned pacod-id tree by `make id-image` (PACOD_ID_SRC, default the copy
     # pacod-gw vendors); the tag is that tree's commit.
-    image: ${PACOD_ID_IMAGE:-pacod-id:c4eb04b}
+    image: ${PACOD_ID_IMAGE:-pacod-id:3872f32}
     container_name: pacod-id
     restart: unless-stopped
     logging: *logging
@@ -178,6 +178,8 @@ services:
       PID_TRUSTED_PROXIES: private_ranges
       PID_BOOTSTRAP_ADMIN_ROLES: id.admin,pacod.superuser,pacod.admin,gw.platform_admin
       PID_LOG_FORMAT: ${PID_LOG_FORMAT:-json}
+      # Its address on pacod-admin-net alone: on 0.0.0.0 all of pacod-net would reach it.
+      PID_INTERNAL_LISTEN: pacod-id-internal:8071
       # Nothing that id.env sets may be named here: `environment:` wins over `env_file:`.
       # That includes PID_DATABASE_URL (a direct connection to pacod-postgres, never through
       # PgBouncer — pacod-id relies on LISTEN/NOTIFY; secrets-init writes it from
@@ -193,10 +195,13 @@ services:
       retries: 3
       start_period: 60s
       start_interval: 2s
-    # pacod-net: the database, Caddy (public listener 8070), the app and the gateway's
-    # pacod-gw, gw-console and gw-tester (internal listener 8071).
+    # pacod-net: the database and Caddy (public listener 8070). pacod-admin-net: the app and
+    # the gateway's pacod-gw, gw-console and gw-tester, which call the internal listener (8071)
+    # at its alias there.
     networks:
-      - pacod-net
+      pacod-net:
+      pacod-admin-net:
+        aliases: [pacod-id-internal]
     depends_on:
       # Its role and database (platform/postgres/id-db.sh).
       pacod-db-init:
@@ -204,6 +209,8 @@ services:
 
 networks:
   pacod-net:
+    external: true
+  pacod-admin-net:
     external: true
 
 volumes:

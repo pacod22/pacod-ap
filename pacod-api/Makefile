@@ -317,9 +317,14 @@ ensure-env-local: ensure-env
 
 # pacod-net, the one network every pacod stack joins (the gateway's, the monitoring module,
 # the full stack: pacod-demo/docs/NETWORK.md), is declared `external: true`, so Compose will
-# not create it. On a fresh machine it does not exist. Created once, kept by "down".
+# not create it. On a fresh machine it does not exist. Created once, kept by "down". So is
+# pacod-admin-net, the internal network of the listeners only servers reach (the gateway's
+# management API, pacod-id's internal one); compose never checks that it is internal.
 ensure-pacod-net:
 	@docker network inspect pacod-net >/dev/null 2>&1 || docker network create pacod-net >/dev/null
+	@docker network inspect pacod-admin-net >/dev/null 2>&1 || docker network create --internal pacod-admin-net >/dev/null
+	@test "$$(docker network inspect -f '{{.Internal}}' pacod-admin-net)" = true || \
+		{ echo "pacod-admin-net is not internal: remove it (docker network rm pacod-admin-net) and run make ensure-pacod-net" >&2; exit 1; }
 
 # pacod-id's and the gateway's secrets (deploy/secrets/*.env, gitignored, 0600). Idempotent:
 # fills only what is missing, prints names only.

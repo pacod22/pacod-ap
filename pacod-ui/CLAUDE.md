@@ -278,7 +278,7 @@ removed at the callback). Without `REDIS_URL` the sessions live in process memor
 | Variable           | Required                | Purpose                                                                                                                      |
 | ------------------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `ID_ISSUER`        | yes                     | pacod-id's public issuer — the browser goes there to sign in and out. Also a **build arg** (below)                           |
-| `ID_INTERNAL_URL`  | yes                     | pacod-id's internal listener as this server reaches it (token, keys, revocation, ending the session) — `http://pacod-id:8071` |
+| `ID_INTERNAL_URL`  | yes                     | pacod-id's internal listener as this server reaches it (token, keys, revocation, ending the session) — `http://pacod-id-internal:8071`, on `pacod-admin-net` |
 | `ID_CLIENT_SECRET` | yes                     | `pacod-web`'s secret (compose: `${PACOD_WEB_CLIENT_SECRET}`, copied into `pacod-api/.env.gateway` by `make secrets-init`)                     |
 | `ID_CLIENT_ID`     | no                      | default `pacod-web`                                                                                                          |
 | `SITE_URL`         | yes                     | the public origin; `/auth/callback` and the post-logout address derive from it; also the canonical URL (SEO)                |
@@ -869,7 +869,7 @@ directory with the build arg `ID_ISSUER: ${PACOD_ID_ISSUER:-https://id.pacod.io}
   SESSION_SECRET: ${SESSION_SECRET} # ≥ 32 characters, `make ensure-env`
   REDIS_URL: ${FRONTEND_REDIS_URL:-redis://ap-redis:6379/0}
   ID_ISSUER: ${PACOD_ID_ISSUER:-https://id.pacod.io}
-  ID_INTERNAL_URL: http://pacod-id:8071
+  ID_INTERNAL_URL: http://pacod-id-internal:8071
   ID_CLIENT_SECRET: ${PACOD_WEB_CLIENT_SECRET:-}
   SITE_URL: ${PACOD_SITE_URL:-https://www.pacod.io} # + every other PACOD_* site key, neutral-named
   BODY_SIZE_LIMIT: "52428800" # adapter-node: must cover the largest upload
