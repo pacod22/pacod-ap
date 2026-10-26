@@ -10,7 +10,7 @@
 #   deploy/secrets/gw.env         pacod-gw (the --env-file of its compose): its database role's
 #                                 password (GW_DB_PASSWORD, also read by pacod-ap's
 #                                 pacod-db-init, which makes the role in `make up-all`), its
-#                                 own PostgreSQL's and ClickHouse's passwords, KEK, pepper,
+#                                 own PostgreSQL's, ClickHouse's and Valkey's passwords, KEK, pepper,
 #                                 internal token, console session secret, and the client
 #                                 secrets it shares with pacod-id
 #   deploy/secrets/providers.env  LLM provider API keys, read only by scripts/gw_bootstrap.py;
@@ -94,6 +94,8 @@ ensure "$GW" GW_DB_PASSWORD hex 24
 # The superuser of pacod-gw's own PostgreSQL, for its standalone stack and its preflight.
 ensure "$GW" POSTGRES_PASSWORD hex 24
 ensure "$GW" CLICKHOUSE_PASSWORD hex 24
+# Valkey (gw-valkey), the response cache's store; pacod-gw's preflight refuses to start without it.
+ensure "$GW" PGW_VALKEY_PASSWORD hex 24
 ensure "$GW" PGW_KEK b64 32
 ensure "$GW" PGW_KEK_ID echo k1
 ensure "$GW" PGW_KEY_PEPPER b64 32
