@@ -174,11 +174,12 @@ Status: the switch to real providers has been prepared but **not yet run** with 
 3. Create a platform-admin token in the console (Platform → Access → Admin tokens, role
    `platform_admin`) and store it: `make secret-set FILE=pacod-api/.env.gateway NAME=GW_ADMIN_TOKEN`
    (only development signs in by itself).
-4. `make gw-bootstrap GW_ENV=live GW_BOOTSTRAP_ARGS="--admin-url https://<API host> --data-url
-   https://<API host>"` (live has no default addresses) imports `platform-config.live.json` and the
-   provider credentials. Live listens for the management API on `pacod-admin-net` only, which this
-   host does not reach: enable its route on the gateway's Caddy for this host's address first
-   (pacod-gw runbook, section 4, "the management API from outside").
+4. `make gw-bootstrap GW_ENV=live` imports `platform-config.live.json` and the provider
+   credentials. A server publishes neither the gateway's data plane nor its management API, which
+   listens on `pacod-admin-net` only, so the target runs `scripts/gw_bootstrap.py` in a one-shot
+   container (`python:3.13-slim`, `GW_BOOTSTRAP_IMAGE`, as your user) on `pacod-net` and
+   `pacod-admin-net`, where they are `pacod-gw:8080` and `pacod-gw-admin:8081`. Two networks on
+   one `docker run` need Docker 25 or later.
 
 Every provider's timeout in the gateway must stay at least the app's `LLM_TIMEOUT_SECONDS` (180)
 and `LOOP_LLM_TIMEOUT_SECONDS` (600): the configs carry 600 s.

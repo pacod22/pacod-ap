@@ -7,6 +7,12 @@
 Standard library only, so it runs on any host with Python 3.11+ and no virtualenv. Idempotent:
 every step checks what is there first. It prints names and ids, never a secret.
 
+Where it runs: development on this host, which reaches the development gateway on its published
+ports and pacod-id's issuer on 127.0.0.1:8070. A server publishes neither the data plane nor the
+management API, which listens on pacod-admin-net only, so `make gw-bootstrap GW_ENV=live` runs
+this script in a one-shot container on pacod-net and pacod-admin-net, where the live defaults
+below are the gateway's names.
+
 What it does, in order:
 
 1. An admin credential for the management API. GW_ADMIN_TOKEN from pacod-api/.env.gateway when
@@ -65,7 +71,13 @@ DEFAULTS = {
         "data_url": "http://127.0.0.1:18080",
         "issuer": "http://127.0.0.1:8070",
     },
-    "live": {"admin_url": None, "data_url": None, "issuer": None},
+    # As a container on pacod-net and pacod-admin-net reaches them (make gw-bootstrap runs it in
+    # one). Live never signs in: it uses the stored GW_ADMIN_TOKEN.
+    "live": {
+        "admin_url": "http://pacod-gw-admin:8081",
+        "data_url": "http://pacod-gw:8080",
+        "issuer": None,
+    },
 }
 
 ORG = "pacod"
@@ -762,8 +774,14 @@ def ensure_admin_api_tokens(api: Api) -> None:
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="gw_bootstrap.py", description=__doc__.split("\n\n")[0])
     p.add_argument("--env", choices=("dev", "live"), default="dev")
-    p.add_argument("--admin-url", help="the management API (dev: http://127.0.0.1:18081)")
-    p.add_argument("--data-url", help="the data plane (dev: http://127.0.0.1:18080)")
+    p.add_argument(
+        "--admin-url",
+        help="the management API (dev: http://127.0.0.1:18081, live: http://pacod-gw-admin:8081)",
+    )
+    p.add_argument(
+        "--data-url",
+        help="the data plane (dev: http://127.0.0.1:18080, live: http://pacod-gw:8080)",
+    )
     p.add_argument(
         "--issuer", help="pacod-id's issuer, for signing in (dev: http://127.0.0.1:8070)"
     )
@@ -791,8 +809,6 @@ def main(argv: list[str] | None = None) -> None:
     d = DEFAULTS[a.env]
     admin_url = a.admin_url or os.environ.get("GW_ADMIN_URL") or d["admin_url"]
     data_url = a.data_url or os.environ.get("GW_DATA_URL") or d["data_url"]
-    if not (admin_url and data_url):
-        fail("--env live needs --admin-url and --data-url (or GW_ADMIN_URL / GW_DATA_URL)")
     path = Path(str(CONFIG).format(env=a.env))
     api = admin_api(a.env, admin_url, a.issuer or d["issuer"])
     if a.author:

@@ -180,18 +180,26 @@ gw-logs:
 gw-config:
 	$(GW_COMPOSE) config --quiet && echo "gw compose files: ok"
 
-# GW_BOOTSTRAP_ARGS passes options through, e.g. on a server (GW_ENV=live):
-#   GW_BOOTSTRAP_ARGS="--admin-url https://<API host> --data-url https://<API host>"
-# (live listens for the management API on pacod-admin-net only: the gateway's Caddy route to it,
-# pacod-gw runbook section 4, must admit this host).
+# GW_BOOTSTRAP_ARGS passes options through (scripts/gw_bootstrap.py --help).
+# Where it runs: development on this host (the dev stack's published ports, pacod-id's issuer on
+# 127.0.0.1:8070). A server publishes neither the data plane nor the management API, which
+# listens on pacod-admin-net only, so live runs the same script in a one-shot container on
+# pacod-net and pacod-admin-net (pacod-gw:8080, pacod-gw-admin:8081), as this user so that the
+# files it writes stay theirs. It needs the standard library only; two --network flags on one
+# docker run need Docker 25 or later.
 # Imports deploy/pacod-gw/platform-config.$(GW_ENV).json, provider keys from
 # deploy/secrets/providers.env, and writes the services' gateway keys and tokens to
 # pacod-api/.env.gateway (0600). Idempotent. Prints names, never values.
 # The app's services read their key when their container is created: when the file changed
 # and the app is running, they are recreated (a restart would keep the old keys).
+GW_BOOTSTRAP_IMAGE ?= python:3.13-slim
+GW_BOOTSTRAP_dev = python3 -I $(CURDIR)/scripts/gw_bootstrap.py
+GW_BOOTSTRAP_live = docker run --rm --user $(shell id -u):$(shell id -g) \
+	--network pacod-net --network pacod-admin-net -v "$(CURDIR):/src" -w /src \
+	$(GW_BOOTSTRAP_IMAGE) python -I scripts/gw_bootstrap.py
 gw-bootstrap:
 	@before="$$(shasum $(API_DIR)/.env.gateway 2>/dev/null)"; \
-	python3 -I $(CURDIR)/scripts/gw_bootstrap.py --env $(GW_ENV) $(GW_BOOTSTRAP_ARGS) || exit 1; \
+	$(GW_BOOTSTRAP_$(GW_ENV)) --env $(GW_ENV) $(GW_BOOTSTRAP_ARGS) || exit 1; \
 	if [ "$$before" != "$$(shasum $(API_DIR)/.env.gateway 2>/dev/null)" ] && docker inspect ap-api >/dev/null 2>&1; then \
 		echo "gw-bootstrap: the gateway credentials changed; recreating the services that use them"; \
 		$(MAKE) --no-print-directory -C $(API_DIR) $(if $(filter dev,$(GW_ENV)),recreate-gateway-clients-local,recreate-gateway-clients); \

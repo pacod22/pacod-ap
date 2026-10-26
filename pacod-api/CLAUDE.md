@@ -559,7 +559,7 @@ make id-image                       # build pacod-id:<commit> from the vendored 
 make up-all                         # local: up-local (+ pacod-gw's database) → gw-up → gw-bootstrap (→ monitor-up), then the URLs
 make down-all                       # gw-down + down-local
 make gw-up / gw-down / gw-ps / gw-logs / gw-config   # the gateway stack (project pacod-ap-gw, GW_DIR=../pacod-gw)
-make gw-bootstrap [GW_ENV=dev|live] # config import, provider credentials, per-service keys, report/admin tokens
+make gw-bootstrap [GW_ENV=dev|live] # config import, provider credentials, per-service keys, report/admin tokens (live: in a container on pacod-net + pacod-admin-net)
 make smoke-all                      # smoke-local + gw-turn-smoke (a turn traced through the gw mock) + gw-smoke
 make test                           # backend unit tests + pacod-ui tests
 make monitor-up / monitor-down      # the monitoring stack
