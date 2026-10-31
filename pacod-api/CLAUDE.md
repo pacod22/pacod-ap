@@ -417,7 +417,7 @@ below; the local overlays' are in **Running the stack locally**.
 | `ap-ingestion` *(gpu profile)* | app | docker/ingestion.Dockerfile | — | Ingestion service (embeddings over HTTP) |
 | `ap-ingestion-cpu` *(cpu profile)* | app | docker/ingestion_cpu.Dockerfile | — | Ingestion service (`EMBEDDINGS_BACKEND=inline_cpu`), network alias `ap-ingestion`, `mem_limit 7g` |
 | `ap-mcp` | app | docker/mcp.Dockerfile | — | `get_fact` / `list_facts` over `reference_facts` (`MCP_POSTGRES_DSN` via `ap-pgbouncer`) |
-| `pacod-embeddings` | app | docker/embeddings.Dockerfile | — | bge-m3 embedding/rerank server, shared (other products embed with it in the full stack); `docker-compose.gpu.yml` adds the AMD GPU devices |
+| `pacod-embeddings` | app | docker/embeddings.Dockerfile | — | bge-m3 embedding/rerank server, shared (other products embed with it in the full stack); `docker-compose.gpu.yml` adds the AMD GPU devices. Models in the **external** volume `pacod-hf-cache` (made by `ensure-pacod-net`, shared with pacod-demo, kept by every `clean` unless `MODELS=1`); `EMBEDDINGS_HF_OFFLINE=1` → `HF_HUB_OFFLINE` once it is filled. Its image copies `app/core/metrics.py` + `log_schema.py`, so the `rebuild-*` targets pass `--no-deps` to keep it from being rebuilt and reloaded |
 | `ap-pgbouncer` | app | docker/pgbouncer.Dockerfile | — | Connection pooler (session mode) for `pacod`, in front of `pacod-postgres` |
 | `ap-redis` | app | redis:7-alpine | — | Request quota + throttle, config/topic/directive/answer caches, the frontend's sessions |
 | `ap-improvement-loop-worker` | app | docker/improvement_loop.Dockerfile | — | Always-on: drains the run-request queue ("Run now") + fires the daily schedules (loop runs, meta-eval, fix verification, the evidence/crawler/analytics/activity prunes). Fix verification runs a **real agent turn in-process**, so the worker needs the MCP server (`MCP_SERVER_URL`, default `http://ap-mcp:8000`) and `MCP_SHARED_SECRET`; without them the re-check degrades to KB-only |
@@ -530,7 +530,8 @@ combined tests.
 # pacod-api/Makefile — server
 make up-cpu / up-gpu / up-ui        # start the stack (cpu + tools profiles) / with the AMD GPU overlay (no profiles) / the frontend
 make down-cpu / down-ui             # stop (volumes preserved)
-make restart / rebuild-cpu          # restart / rebuild + restart the ap-api container only
+make restart / rebuild-cpu [SVC=…]  # restart / rebuild + recreate only SVC (default ap-api; --no-deps)
+make start-cpu / rebuild-embeddings # start from the existing images (no build) / rebuild pacod-embeddings alone
 make bootstrap                      # init_db + seed_reference_facts --profile starter + ingest_corpus --profile starter
 make seed-example PROFILE=taxes     # install an example agent (seed_profile) + ingest its knowledge base
 make seed-profile PROFILE=<id>      # provision one agent from scripts/profiles/<id>.py (no ingest)
@@ -542,7 +543,7 @@ make test-unit / test-integration / eval [PROFILE=<id>]   # tests / golden-set e
 make lint / format                  # uvx ruff@0.7.1 check + format --check / format + check --fix
 make dev-install                    # local venv: requirements-dev + the vendored pacod_id wheel
 make secret-set NAME=… [FILE=…]     # store one secret from stdin (never echoed)
-make logs / ps / clean              # logs / status / stop + DELETE volumes
+make logs / ps / clean [MODELS=1]   # logs / status / stop + DELETE volumes (the models in pacod-hf-cache only with MODELS=1)
 ```
 
 `bootstrap`, `seed-example`, `ingest`, `ingest-clean` and `reingest` `exec` the **`ap-ingestion`**
@@ -616,7 +617,10 @@ make bootstrap-local   # init_db + seed_reference_facts --profile starter + seed
 make seed-example-local PROFILE=taxes   # optional: the tax example agent
 make smoke-local       # /health through the edge + a real SSE chat turn (see the trap below)
 make smoke-all         # (repo root) smoke-local + a turn traced through the gw mock + gw-smoke
-make up-local / logs-local / ps-local / down-local / clean-local   # the app stack alone
+make up-local / logs-local / ps-local / down-local / clean-local [MODELS=1]   # the app stack alone
+make start-local                         # start from the existing images, no build
+make rebuild-local / restart-local [SVC="ap-api ap-admin-api"]   # only those services (--no-deps; default ap-api)
+make rebuild-embeddings-local            # pacod-embeddings alone (after embeddings_service/ changes)
 ```
 
 | | |
@@ -660,7 +664,9 @@ Traps, in the order they bite:
 - **The frontend deliberately gets no `env_file`** in the overlay. It receives only its compose
   `environment:` block in production; handing it the backend `.env` would put the DB password and the
   provider-facing secrets into a public-facing Node process.
-- **First `up-local` downloads ~2 GB** (bge-m3, cached in `pacod-embeddings-hf-cache` afterwards).
+- **First `up-local` downloads ~2 GB** (bge-m3, cached in the external volume `pacod-hf-cache`
+  afterwards — shared with pacod-demo, made by `ensure-pacod-net`, kept by `clean`/`clean-local`
+  unless `MODELS=1`; `EMBEDDINGS_HF_OFFLINE=1` then skips the HuggingFace checks at boot).
   `LOCAL_EMBEDDINGS_BACKEND=hash` in `.env.local` boots in seconds instead — but hash embeddings are
   random projections, so KB retrieval returns nonsense. Use it only for paths that don't depend on
   retrieval: sign-in, quotas, admin CRUD, the gateway wiring.

@@ -10,6 +10,8 @@
 # ===========================================================================
 
 .PHONY: help upgrade-cpu upgrade-ui up-cpu up-gpu up-ui down-cpu down-ui restart rebuild-cpu \
+        start-cpu start-local rebuild-embeddings rebuild-embeddings-local \
+        ensure-hf-cache clean-models \
         ensure-gateway-env recreate-gateway-clients recreate-gateway-clients-local gw-matrix-local \
         bootstrap seed-profile seed-example seed-example-local reset-prompt-overrides \
         indexnow-ping import-agents adopt-agents \
@@ -59,8 +61,10 @@ help:
 	@echo "  make up-gpu             Start the stack with AMD GPU support"
 	@echo "  make down-ui            Stop the UI only (frontend, no backend)"
 	@echo "  make down-cpu           Stop the stack (preserves volumes)"
-	@echo "  make restart            Restart the ap-api container only"
-	@echo "  make rebuild-cpu        Rebuild + restart the ap-api container only"
+	@echo "  make start-cpu          Start the stack from the existing images (no build)"
+	@echo "  make restart [SVC=...]  Restart services (default ap-api)"
+	@echo "  make rebuild-cpu [SVC=...]  Rebuild + recreate services only (default ap-api; deps untouched)"
+	@echo "  make rebuild-embeddings Rebuild + recreate pacod-embeddings only"
 	@echo "  make recreate-gateway-clients  Recreate the services that call the gateway (new keys)"
 	@echo "  make bootstrap          init_db + the starter agent's reference facts + corpus"
 	@echo "  make seed-profile PROFILE=<id>    Provision one agent from scripts/profiles/<id>.py"
@@ -84,19 +88,21 @@ help:
 	@echo "  make eval               Run golden-set evaluation"
 	@echo "  make logs               Tail logs from all services"
 	@echo "  make ps                 List service status"
-	@echo "  make clean              Stop stack and DELETE all volumes"
+	@echo "  make clean [MODELS=1]   Stop stack and DELETE all volumes (the models only with MODELS=1)"
 	@echo ""
 	@echo "  --- Local test stack (laptop; plain HTTP on ports, no TLS/certs) ---"
 	@echo "  make up-local           Start the whole stack locally (api + both UIs + tools)"
 	@echo "  make down-local         Stop the local stack (preserves volumes)"
-	@echo "  make restart-local      Restart the local ap-api container only"
-	@echo "  make rebuild-local      Rebuild + restart the local ap-api container only"
+	@echo "  make start-local        Start the local stack from the existing images (no build)"
+	@echo "  make restart-local [SVC=...]  Restart local services (default ap-api)"
+	@echo "  make rebuild-local [SVC=...]  Rebuild + recreate local services only (default ap-api; deps untouched)"
+	@echo "  make rebuild-embeddings-local  Rebuild + recreate the local pacod-embeddings only"
 	@echo "  make bootstrap-local    init_db + starter facts + dev users + corpus (CPU pipeline)"
 	@echo "  make seed-example-local PROFILE=taxes  Install an example agent locally"
 	@echo "  make smoke-local        Check health + an SSE chat turn against localhost"
 	@echo "  make logs-local         Tail local stack logs"
 	@echo "  make ps-local           List local service status"
-	@echo "  make clean-local        Stop the local stack and DELETE ALL volumes (incl. the database)"
+	@echo "  make clean-local [MODELS=1]  Stop the local stack and DELETE ALL volumes (incl. the database; the models only with MODELS=1)"
 
 upgrade-cpu: down-cpu up-cpu
 
@@ -131,11 +137,26 @@ down-ui:
 down-cpu:
 	$(COMPOSE) --profile tools --profile cpu down
 
+# --- Fast re-deploys. SVC names the services (default ap-api; several: SVC="ap-api ap-admin-api").
+# --no-deps: compose would otherwise build and recreate what they depend on too, pacod-embeddings
+# among them, whose image also changes with app/core/{metrics,log_schema}.py; a recreated
+# embeddings container reloads its models and every service waiting on it waits too.
+# start-* bring the whole stack up from the images there are, building nothing.
+SVC ?= ap-api
+
 restart:
-	$(COMPOSE) restart ap-api
+	$(COMPOSE) restart $(SVC)
 
 rebuild-cpu: ensure-pacod-net
-	$(COMPOSE) --profile tools --profile cpu up -d --build ap-api
+	$(COMPOSE) --profile tools --profile cpu up -d --no-deps --build $(SVC)
+
+start-cpu: ensure-env ensure-pacod-net ensure-secrets ensure-id-image
+	$(COMPOSE) --profile tools --profile cpu up -d --no-build
+	$(COMPOSE) ps
+
+# The embeddings service alone, after a change to embeddings_service/ or its Dockerfile.
+rebuild-embeddings: ensure-pacod-net
+	$(COMPOSE) up -d --no-deps --build pacod-embeddings
 
 # The services that call the gateway read their key when the container is CREATED: after
 # `make gw-bootstrap` issued new keys, recreate them (a plain restart keeps the old key).
@@ -267,6 +288,7 @@ ps:
 
 clean:
 	$(COMPOSE) down -v
+	@$(if $(filter 1,$(MODELS)),$(MAKE) --no-print-directory clean-models,echo "clean: the models ($(HF_CACHE)) are kept; MODELS=1 deletes them")
 
 # ===========================================================================
 # Local test stack
@@ -320,11 +342,31 @@ ensure-env-local: ensure-env
 # not create it. On a fresh machine it does not exist. Created once, kept by "down". So is
 # pacod-admin-net, the internal network of the listeners only servers reach (the gateway's
 # management API, pacod-id's internal one); compose never checks that it is internal.
-ensure-pacod-net:
+ensure-pacod-net: ensure-hf-cache
 	@docker network inspect pacod-net >/dev/null 2>&1 || docker network create pacod-net >/dev/null
 	@docker network inspect pacod-admin-net >/dev/null 2>&1 || docker network create --internal pacod-admin-net >/dev/null
 	@test "$$(docker network inspect -f '{{.Internal}}' pacod-admin-net)" = true || \
 		{ echo "pacod-admin-net is not internal: remove it (docker network rm pacod-admin-net) and run make ensure-pacod-net" >&2; exit 1; }
+
+# The external volume pacod-hf-cache (pacod-embeddings' models, shared with pacod-demo): made
+# here, never by compose, so no project's `down -v` deletes it. The first time, the models of
+# the project-owned volume it replaces (pacod_pacod-embeddings-hf-cache) are copied over.
+HF_CACHE := pacod-hf-cache
+HF_CACHE_OLD := pacod_pacod-embeddings-hf-cache
+ensure-hf-cache:
+	@docker volume inspect $(HF_CACHE) >/dev/null 2>&1 || { \
+		docker volume create $(HF_CACHE) >/dev/null; \
+		if docker volume inspect $(HF_CACHE_OLD) >/dev/null 2>&1; then \
+			echo "ensure-hf-cache: copying the models from $(HF_CACHE_OLD) (remove it afterwards)"; \
+			docker run --rm -v $(HF_CACHE_OLD):/from:ro -v $(HF_CACHE):/to alpine:3.20 cp -a /from/. /to/ || \
+				{ docker volume rm $(HF_CACHE) >/dev/null; echo "ensure-hf-cache: the copy failed; run it again" >&2; exit 1; }; \
+		fi; }
+
+# Only `make clean[-local] MODELS=1` deletes the models; every other teardown keeps them.
+clean-models:
+	@if [ -n "$$(docker ps -aq --filter volume=$(HF_CACHE))" ]; then \
+		echo "clean-models: $(HF_CACHE) is still mounted (stop pacod-embeddings first)" >&2; exit 1; fi
+	@docker volume rm $(HF_CACHE) >/dev/null 2>&1 && echo "clean-models: $(HF_CACHE) removed" || true
 
 # pacod-id's and the gateway's secrets (deploy/secrets/*.env, gitignored, 0600). Idempotent:
 # fills only what is missing, prints names only.
@@ -369,10 +411,17 @@ down-local: ensure-env-local
 	$(COMPOSE_LOCAL) $(LOCAL_PROFILES) down
 
 restart-local: ensure-env-local
-	$(COMPOSE_LOCAL) restart ap-api
+	$(COMPOSE_LOCAL) restart $(SVC)
 
 rebuild-local: ensure-env-local ensure-pacod-net
-	$(COMPOSE_LOCAL) $(LOCAL_PROFILES) up -d --build ap-api
+	$(COMPOSE_LOCAL) $(LOCAL_PROFILES) up -d --no-deps --build $(SVC)
+
+start-local: ensure-env-local ensure-pacod-net ensure-secrets ensure-id-image
+	$(COMPOSE_LOCAL) $(LOCAL_PROFILES) up -d --no-build
+	$(COMPOSE_LOCAL) ps
+
+rebuild-embeddings-local: ensure-env-local ensure-pacod-net
+	$(COMPOSE_LOCAL) up -d --no-deps --build pacod-embeddings
 
 # Same steps as `bootstrap`, but ingestion runs in `ap-ingestion-cpu`: the GPU
 # `ap-ingestion` container is behind the gpu profile and is not started here.
@@ -417,3 +466,4 @@ ps-local: ensure-env-local
 # log volumes the local overlay adds. Same semantics as `clean`.
 clean-local: ensure-env-local
 	$(COMPOSE_LOCAL) $(LOCAL_PROFILES) down -v
+	@$(if $(filter 1,$(MODELS)),$(MAKE) --no-print-directory clean-models,echo "clean-local: the models ($(HF_CACHE)) are kept; MODELS=1 deletes them")

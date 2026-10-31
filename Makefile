@@ -45,7 +45,7 @@ GW_COMPOSE = docker compose -p $(GW_PROJECT) --project-directory $(GW_DIR)/deplo
 .PHONY: help update up down up-api down-api up-ui down-ui logs ps bootstrap test rebuild upgrade upgrade-ui clean monitor-up monitor-down monitor-logs backup restore \
         up-local down-local bootstrap-local smoke-local clean-local secret-set secrets-init id-image \
         ensure-pacod-net gw-up gw-down gw-ps gw-logs gw-config gw-bootstrap gw-smoke gw-turn-smoke \
-        up-all down-all smoke-all
+        up-all down-all smoke-all start start-local rebuild-local restart-local
 
 help:
 	@echo "pacod — full platform (api + ui)"
@@ -63,17 +63,21 @@ help:
 	@echo "  make secrets-init  Generate pacod-id's and the gateway's secrets (deploy/secrets/, names only)"
 	@echo "  make id-image      Build the pacod-id image from the pinned tree (PACOD_ID_SRC)"
 	@echo "  make update        git pull the latest code (no rebuild)"
-	@echo "  make rebuild       Rebuild + restart both api and frontend"
+	@echo "  make start         Start the server stack from the existing images (no build)"
+	@echo "  make rebuild [SVC=...]  Rebuild + recreate services only (default ap-api; dependencies untouched)"
 	@echo "  make upgrade       update + rebuild (pull, then rebuild both)"
 	@echo "  make upgrade-ui    update + rebuild the UI only (pull, then rebuild both)"
-	@echo "  make clean         Stop the stack and DELETE all volumes"
+	@echo "  make clean [MODELS=1]  Stop the stack and DELETE all volumes (the models only with MODELS=1)"
 	@echo ""
 	@echo "  --- Local test stack (laptop; plain HTTP on ports, no TLS/certs) ---"
 	@echo "  make up-local        Start the whole stack locally (:8080 app)"
 	@echo "  make bootstrap-local init_db + starter facts + dev users + corpus (first local run)"
 	@echo "  make smoke-local     Health + one SSE chat turn against localhost"
+	@echo "  make start-local     Start the local stack from the existing images (no build)"
+	@echo "  make rebuild-local [SVC=...]  Rebuild + recreate local services only (default ap-api)"
+	@echo "  make restart-local [SVC=...]  Restart local services (default ap-api)"
 	@echo "  make down-local      Stop the local stack (preserves volumes)"
-	@echo "  make clean-local     Stop the local stack and DELETE ALL volumes (incl. the database)"
+	@echo "  make clean-local [MODELS=1]  Stop the local stack and DELETE ALL volumes (incl. the database; the models only with MODELS=1)"
 	@echo ""
 	@echo "  --- The gateway (pacod-gw at GW_DIR=$(GW_DIR); GW_ENV=dev|live) ---"
 	@echo "  make gw-up           Start it, signed in through this platform's pacod-id"
@@ -108,6 +112,9 @@ down-api:
 up-ui: ensure-pacod-net
 	$(MAKE) -C $(API_DIR) up-ui
 
+start: ensure-pacod-net
+	$(AP_GW_DB) $(MAKE) -C $(API_DIR) start-cpu
+
 down-ui:
 	$(MAKE) -C $(API_DIR) down-ui
 
@@ -116,6 +123,17 @@ down-ui:
 # bind mounts. See pacod-api/docker-compose.local.yml and CLAUDE.md.
 up-local: ensure-pacod-net
 	$(AP_GW_DB) $(MAKE) -C $(API_DIR) up-local
+
+# Re-deploys without the full build: start-local brings everything up from the images there are,
+# rebuild-local / restart-local touch only SVC (default ap-api), never pacod-embeddings.
+start-local: ensure-pacod-net
+	$(AP_GW_DB) $(MAKE) -C $(API_DIR) start-local
+
+rebuild-local:
+	$(MAKE) -C $(API_DIR) rebuild-local
+
+restart-local:
+	$(MAKE) -C $(API_DIR) restart-local
 
 down-local:
 	$(MAKE) -C $(API_DIR) down-local

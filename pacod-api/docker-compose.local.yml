@@ -185,7 +185,7 @@ services:
       EMBEDDINGS_DEVICE: cpu
       # bge-m3 is the real embedder and the default here, so local retrieval
       # behaves like production — at the cost of a ~2 GB model download on the
-      # first `up` (cached in the pacod-embeddings-hf-cache volume afterwards) and slow CPU
+      # first `up` (cached in the shared pacod-hf-cache volume afterwards) and slow CPU
       # inference. Set LOCAL_EMBEDDINGS_BACKEND=hash in .env.local for a stack
       # that boots in seconds — but be aware that hash embeddings are random
       # projections: KB retrieval returns nonsense, so it is only useful for

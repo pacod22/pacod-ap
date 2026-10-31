@@ -27,7 +27,8 @@ internal (no route out): the gateway's management API, bound to `pacod-gw-admin:
 pacod-id's internal listener, bound to `pacod-id-internal:8071`, each an alias its service has there
 alone. Their callers join it too (`ap-frontend`, `ap-api`, `ap-admin-api`; the gateway's `pacod-gw`,
 `gw-console`, `gw-analytics`, `gw-tester`) and use those aliases; the rest of `pacod-net` cannot
-reach either. `make ensure-pacod-net` creates it as well.
+reach either. `make ensure-pacod-net` creates it as well, and the external volume
+`pacod-hf-cache` (the embedding models, see [Re-deploying and restarting](#re-deploying-and-restarting)).
 
 **Start order matters:** pacod-id first (the gateway signs in through it), then the gateway, then
 its bootstrap (which hands the app's services their gateway keys and recreates them).
@@ -141,9 +142,53 @@ make smoke-all       # smoke-local + gw-turn-smoke + the gateway's own smoke-moc
   trace of it (trace id = the turn id) has the same cost as the turn's `done` event.
 - Locally `LOCAL_EMBEDDINGS_BACKEND=hash` (`.env.local`) keeps the embeddings service from
   downloading bge-m3 (~2 GB, 7 GB on disk); retrieval quality is then meaningless.
+- The models are downloaded once per host into the volume `pacod-hf-cache` (see
+  [Re-deploying and restarting](#re-deploying-and-restarting)): later starts, `make clean` and
+  `make clean-local` included, reuse them.
 
 Sign in at http://localhost:8080 with the bootstrap admin (`PID_BOOTSTRAP_ADMIN_*`), or create an
 account (self sign-up is `PACOD_ID_SELF_SIGNUP`, default on); the confirmation mail is in mailpit.
+
+## Re-deploying and restarting
+
+`make up-local` / `make up-cpu` build every image and start every service: right for the first
+start and after pulling, slow for anything else. Two things make it slow: building, and
+`pacod-embeddings`, which loads bge-m3 and its reranker at every container start (tens of seconds
+on CPU) while every service that waits for it to be healthy waits too. The targets below avoid both.
+From the repo root or in `pacod-api/` (where the server variants live):
+
+| Task | Local (repo root or `pacod-api/`) | Server (`pacod-api/`; repo root in brackets) |
+|---|---|---|
+| Start everything from the images there are, building nothing | `make start-local` | `make start-cpu` (`make start`) |
+| Rebuild and recreate only the changed services | `make rebuild-local SVC="ap-api ap-admin-api"` | `make rebuild-cpu SVC="…"` (`make rebuild SVC="…"`) |
+| Restart services as they are (new env from a `restart` is **not** read: recreate for that) | `make restart-local SVC="…"` | `make restart SVC="…"` |
+| Rebuild the embeddings service alone (after a change to `embeddings_service/` or its Dockerfile) | `make -C pacod-api rebuild-embeddings-local` | `make rebuild-embeddings` |
+
+- `SVC` defaults to `ap-api`; several services are one quoted, space-separated list.
+- `rebuild-*` pass `--no-deps`: without it compose builds and recreates what the services depend
+  on as well, `pacod-embeddings` among them — whose image also copies `app/core/metrics.py` and
+  `app/core/log_schema.py`, so an edit there would recreate it and reload its models. The other side
+  of `--no-deps`: a dependency that is stopped stays stopped (`make start-local` starts it).
+- `start-*` need the images: after a pull, or the first time, use `make up-local` / `make up-cpu`.
+- After `make gw-bootstrap` issued new keys, `make -C pacod-api recreate-gateway-clients[-local]`
+  recreates the services that read them.
+
+**The model cache.** The models live in the external Docker volume **`pacod-hf-cache`**, shared
+by every pacod stack on the host (pacod-demo's too) and owned by none of their compose projects.
+`make ensure-pacod-net` — run by every `up*` / `start*` target — creates it; `down -v`,
+`make clean` and `make clean-local` leave it alone, so a teardown never costs the download again.
+`make clean MODELS=1` / `make clean-local MODELS=1` (or `make -C pacod-api clean-models`) delete it,
+and refuse while a container still mounts it. Once it is filled, `EMBEDDINGS_HF_OFFLINE=1` in
+`pacod-api/.env` (or `.env.local`) makes `pacod-embeddings` load the models without asking
+HuggingFace for updates — leave it at 0 on a host whose cache is still empty, or the first start
+fails.
+
+**First deploy of this on a server.** `make up-cpu` creates `pacod-hf-cache` and copies the models
+over from the volume it replaces, `pacod_pacod-embeddings-hf-cache` (2–4 GB, about a minute; a failed
+copy removes the new volume, so the next run tries again). `pacod-embeddings` is recreated once
+because its mount changed. Afterwards `docker volume rm pacod_pacod-embeddings-hf-cache` frees the
+old copy. A server's own `docker-compose.override.yml` that names `pacod-embeddings-hf-cache` must
+say `pacod-hf-cache` instead, or compose refuses to start.
 
 ## The gateway's configuration
 
@@ -256,6 +301,8 @@ pacod-gw's tooling, not here.
 | Admin LLM figures are 0 with a "gateway did not answer" note | admin-api could not read the gateway's reports (`GATEWAY_REPORT_TOKEN`, the workspace ids in `.env.gateway`, or the gateway is down). |
 | Docker builds fail, PostgreSQL crash-loops with "No space left" | The Docker VM's disk is full (the CPU ingestion image alone is ~10 GB; a rebuild needs much more transiently). `docker builder prune -f`, build one image at a time, check with `docker run --rm alpine df -h /`. PostgreSQL and pacod-id recover once space is free. |
 | A person exists at pacod-id but not on the Users page | The page lists the app's shadow rows; a row appears with the person's first request to the API. |
+| Every start of `pacod-embeddings` downloads the models again | Its volume is not the shared `pacod-hf-cache` (an old override file, a hand-run compose without the Makefile). `docker volume inspect pacod-hf-cache`, then `make ensure-pacod-net`. |
+| `external volume "pacod-hf-cache" not found` | Compose was run without the Makefile, which creates it: `make -C pacod-api ensure-hf-cache` (or `docker volume create pacod-hf-cache`). |
 | `pacod` containers collide with another checkout | The original pacod uses the same compose project name and container names: do not run both on one Docker host. |
 | "container name `/pacod-postgres` is already in use" | Another pacod stack (pacod-id, pacod-gw, pacod-cms, pacod-kb standalone, or pacod-demo) runs its own copy of a shared component: only one of each `pacod-*` may run on a host. Stop the other stack. |
 
@@ -280,7 +327,9 @@ postgres → `pacod-postgres`, …); the networks `agent-net` and `pacod-link` a
    ```
 
    The same works for `pacod_redis_data` → `pacod_ap-redis-data` (sessions and caches; without it
-   everybody signs in again). `pacod_hf_cache` → `pacod_pacod-embeddings-hf-cache` only saves the model download. The
+   everybody signs in again). The models now live in the external volume `pacod-hf-cache`, which `make ensure-pacod-net`
+   creates and, the first time, fills from `pacod_pacod-embeddings-hf-cache` when that exists;
+   copying `pacod_hf_cache` → `pacod-hf-cache` the same way only saves the model download. The
    monitoring volumes (`pacod-monitoring_prometheus_data`, `…_grafana_data`) become
    `pacod-monitoring_pacod-prometheus-data` / `…_pacod-grafana-data`.
 4. `make secrets-init` rewrites `PID_DATABASE_URL` in `deploy/secrets/id.env` to the host

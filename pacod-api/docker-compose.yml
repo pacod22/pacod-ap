@@ -537,8 +537,11 @@ services:
       EMBEDDINGS_DEVICE: ${EMBEDDINGS_DEVICE:-auto}   # auto|cpu|cuda
       RERANKER_BACKEND: ${RERANKER_BACKEND:-flag}     # flag|onnx_int8 (onnx = CPU path)
       RERANKER_ONNX_PATH: ${RERANKER_ONNX_PATH:-}     # dir of pre-quantized INT8 ONNX model
+      # 1 = load the models from pacod-hf-cache without asking HuggingFace (faster, offline-safe
+      # boots). Only once the cache is filled: a first start with it set fails.
+      HF_HUB_OFFLINE: ${EMBEDDINGS_HF_OFFLINE:-0}
     volumes:
-      - pacod-embeddings-hf-cache:/root/.cache/huggingface
+      - pacod-hf-cache:/root/.cache/huggingface
     networks:
       - pacod-net
 
@@ -619,5 +622,9 @@ networks:
 
 volumes:
   ap-redis-data:
-  pacod-embeddings-hf-cache:
+  # The models of pacod-embeddings (about 2-4 GB), shared by every pacod stack on the host and
+  # owned by none: `make ensure-pacod-net` creates it, `down -v` / `make clean` leave it alone
+  # (`make clean MODELS=1` deletes it), so a teardown never costs the download again.
+  pacod-hf-cache:
+    external: true
   ap-documents-data:

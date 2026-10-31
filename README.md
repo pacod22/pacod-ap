@@ -94,6 +94,19 @@ make bootstrap-local       # schema, the starter agent's facts and corpus
 make smoke-all             # health, a chat turn through the gateway, the gateway's own smoke test
 ```
 
+Afterwards, without rebuilding everything:
+
+```bash
+make start-local                         # start again from the existing images (no build)
+make rebuild-local SVC="ap-api ap-admin-api"   # rebuild + recreate only these (default ap-api)
+make restart-local SVC=ap-api            # restart as is
+make clean-local                         # delete the data; the downloaded models are kept (MODELS=1: those too)
+```
+
+The embedding models are downloaded once per host into the shared volume `pacod-hf-cache`; see
+[docs/RUNBOOK.md, Re-deploying and restarting](docs/RUNBOOK.md#re-deploying-and-restarting) for the
+server targets and the model cache.
+
 | URL | |
 |---|---|
 | http://localhost:8080 | the app (sign in or create an account) |
