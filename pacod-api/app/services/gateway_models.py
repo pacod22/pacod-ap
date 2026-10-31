@@ -6,8 +6,13 @@ each model's life cycle; what this service's key may call is what ``GET /v1/mode
 dropdown and every "is this a model?" check in the admin API — the same contract the old
 local catalogue had, without its restart flow.
 
-Entries whose id starts with ``@`` are the workspace's gateway templates; the app's own LLM
-templates and per-role settings pick models, not gateway templates, so those are left out.
+The list also holds the workspace's gateway templates (``@name``, ``gateway.kind ==
+"template"``): every picker offers them after the models, and a call names one as its model.
+What such a call may send is decided by the model the template uses (``gateway.model``,
+``capability_model``) — matched on ``@name`` itself, a template named ``@sonnet-5-fast`` that
+uses Gemini would get Claude's dialect. ``gateway.model`` is the template's first model; a
+template whose failover pool spans families gets the first one's dialect, and the gateway's
+capability filter drops what another one rejects.
 
 ``RETIRED_MODELS``/``remap_model`` stay for the agent editor: an immutable agent version may
 name an id that has since been retired in the app. The gateway resolves successors of models
@@ -39,32 +44,69 @@ async def _fetch() -> list[dict]:
         )
         resp.raise_for_status()
         data = resp.json()
-    return [m for m in data.get("data", []) if m.get("id") and not str(m["id"]).startswith("@")]
+    return [m for m in data.get("data", []) if m.get("id")]
+
+
+def _row(m: dict) -> dict:
+    """One entry of ``GET /v1/models`` → ``{"id", "owned_by", "kind", "model"}``: ``kind`` is
+    ``model`` or ``template``, ``model`` the model a template uses (None for a model)."""
+    gw = m.get("gateway") if isinstance(m.get("gateway"), dict) else {}
+    kind = gw.get("kind") or ("template" if str(m["id"]).startswith("@") else "model")
+    return {
+        "id": m["id"],
+        "owned_by": m.get("owned_by"),
+        "kind": kind,
+        "model": gw.get("model") if kind == "template" else None,
+    }
 
 
 async def gateway_model_list() -> tuple[list[dict], bool]:
-    """``([{"id", "owned_by"}, …], reachable)``, cached for ``CACHE_SECONDS``. On a
-    gateway outage: the last good answer if there is one, else ``[]``; never raises."""
+    """``([{"id", "owned_by", "kind", "model"}, …], reachable)``, the models then the
+    templates, each by id; cached for ``CACHE_SECONDS``. On a gateway outage: the last good
+    answer if there is one, else ``[]``; never raises."""
     global _cache
     now = time.monotonic()
     if _cache is not None and now - _cache[0] < CACHE_SECONDS:
         return _cache[1], True
     try:
-        rows = [{"id": m["id"], "owned_by": m.get("owned_by")} for m in await _fetch()]
+        rows = [_row(m) for m in await _fetch()]
     except Exception as e:
         log.warning("gateway_models_list_failed", error=str(e))
         return (_cache[1] if _cache is not None else []), False
-    rows.sort(key=lambda m: m["id"])
+    rows.sort(key=lambda m: (m["kind"] != "model", m["id"]))
     _cache = (now, rows)
     return rows, True
 
 
 async def available_models() -> list[str]:
     """The model ids offered anywhere in the admin UI (and validated against): what the
-    gateway lets this platform call. Empty when the gateway is unreachable and nothing
-    is cached — callers treat an empty list as "skip the check", as before."""
+    gateway lets this platform call — its granted models, then its templates. Empty when
+    the gateway is unreachable and nothing is cached — callers treat an empty list as
+    "skip the check", as before."""
     rows, _ = await gateway_model_list()
     return [m["id"] for m in rows]
+
+
+def picker_order(model_id: str) -> tuple[bool, str]:
+    """Sort key for a set of ids: the models by id, then the templates (``@name``) by id —
+    the order of ``available_models()`` (a plain sort would put ``@`` first)."""
+    return (model_id.startswith("@"), model_id)
+
+
+async def template_models() -> dict[str, str]:
+    """``{"@name": the model it uses}`` for the gateway's templates in the list."""
+    rows, _ = await gateway_model_list()
+    return {m["id"]: m["model"] for m in rows if m["kind"] == "template" and m["model"]}
+
+
+async def capability_model(model: str) -> str:
+    """The model whose parameters a call on ``model`` follows: for a gateway template the
+    model it uses, else ``model`` itself. Only an ``@`` id reads the list, so a call on a
+    model never waits for it; a template the list does not know is returned as is (the
+    gateway refuses a call on it)."""
+    if not model or not model.startswith("@"):
+        return model
+    return (await template_models()).get(model, model)
 
 
 def reset_cache() -> None:

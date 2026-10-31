@@ -11,7 +11,7 @@ settings, the agent editor's overlay).
 | Concern | Where |
 |---|---|
 | Transport, attribution, retries, cost | `pacod-api/app/services/llm_client.py` |
-| The model list the admin pickers offer | `pacod-api/app/services/gateway_models.py` (`GET /v1/models`, cached 60 s, `@` entries dropped; `[]` while the gateway is away) |
+| The model list the admin pickers offer | `pacod-api/app/services/gateway_models.py` (`GET /v1/models`, cached 60 s: the granted models, then the gateway's `@` templates; `[]` while the gateway is away) |
 | The users' token budget | `pacod-api/app/services/gateway_quota.py` (read), `admin_api/services/gateway_admin.py` (the admin quota pages write) |
 | Usage, cost and analytics pages | `admin_api/services/gateway_reports.py` (the reports facade) |
 | The gateway's objects | `deploy/pacod-gw/platform-config.{dev,live}.json`, imported by `scripts/gw_bootstrap.py` (`make gw-bootstrap`) |
@@ -131,7 +131,10 @@ Rules of the facade:
 
 The model ids the app uses are the platform's, unchanged: `anthropic/claude-sonnet-5-5`,
 `gemini-3.1-pro-preview`, …. The gateway grants them to the workspace. The admin model pickers
-offer exactly what `GET /v1/models` lists. The LLM models page is read-only and links to the
+offer exactly what `GET /v1/models` lists: the granted models, then the workspace's templates
+(`@name`). A role or an app LLM template may name a gateway template; the call then sends `@name`,
+and the app shapes its parameters (thinking dialect, sampling, native web search) for the model
+the template uses (`gateway.model` in the list; for a failover pool, its first model). The LLM models page is read-only and links to the
 console, where models, prices and provider credentials are edited. To make such an edit
 permanent, re-author `platform-config.*.json` (see the runbook).
 

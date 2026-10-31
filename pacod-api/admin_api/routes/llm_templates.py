@@ -28,20 +28,22 @@ from admin_api.schemas import (
 from app.core.logging import get_logger
 from app.guards.auth import AuthenticatedUser
 from app.services import llm_templates as svc
-from app.services.gateway_models import available_models
+from app.services.gateway_models import available_models, template_models
 from app.services.llm_capabilities import ignored_params, model_capabilities
 
 router = APIRouter(prefix="/api/v1/llm-config/templates", tags=["llm-templates"])
 log = get_logger(__name__)
 
 
-def _out(row: dict, usages: list[dict]) -> LLMTemplateOut:
+def _out(row: dict, usages: list[dict], uses: dict[str, str]) -> LLMTemplateOut:
+    """``uses`` = ``template_models()``: a template on a gateway template is checked
+    against the model that one uses."""
     return LLMTemplateOut(
         **{k: v for k, v in row.items() if k in LLMTemplateOut.model_fields},
         usages=[
             LLMTemplateUsage(**{k: u[k] for k in ("profile_id", "group", "role")}) for u in usages
         ],
-        ignored_params=ignored_params(row["model"], row),
+        ignored_params=ignored_params(uses.get(row["model"], row["model"]), row),
     )
 
 
@@ -81,9 +83,13 @@ async def list_llm_templates(_: AuthenticatedUser = Depends(require_admin)):
     for u in usages:
         by_tpl.setdefault(u["template_id"], []).append(u)
     models = await available_models()
-    caps = {m: model_capabilities(m).to_dict() for m in {*models, *(r["model"] for r in rows)}}
+    uses = await template_models()
+    caps = {
+        m: model_capabilities(uses.get(m, m)).to_dict()
+        for m in {*models, *(r["model"] for r in rows)}
+    }
     return LLMTemplatesRead(
-        templates=[_out(r, by_tpl.get(r["id"], [])) for r in rows],
+        templates=[_out(r, by_tpl.get(r["id"], []), uses) for r in rows],
         available_models=models,
         capabilities=caps,
     )
@@ -117,7 +123,7 @@ async def create_llm_template(
             detail={"code": "template_exists", "message": f"Template {template_id!r} exists"},
         ) from None
     log.info("admin_llm_template_created", template_id=template_id, caller=caller.user_id)
-    return _out(row, [])
+    return _out(row, [], await template_models())
 
 
 @router.patch("/{template_id}", response_model=LLMTemplateOut)
@@ -148,7 +154,7 @@ async def update_llm_template(
         fields=sorted(changes),
         caller=caller.user_id,
     )
-    return _out(row, await svc.template_usages(template_id))
+    return _out(row, await svc.template_usages(template_id), await template_models())
 
 
 @router.delete("/{template_id}", status_code=204)

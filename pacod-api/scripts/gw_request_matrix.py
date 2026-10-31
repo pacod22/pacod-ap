@@ -2,10 +2,11 @@
 
     docker compose … exec api python -m scripts.gw_request_matrix      (make -C pacod-api gw-matrix-local)
 
-For each model in ``available_models()`` and each combination of extended thinking (off /
-the agent's budget), the prompt cache (off / ``cache_control`` on the system prefix) and, for
-Anthropic models, the native web-search tool, one non-streaming call and one stream go
-through the real ``LLMClient`` — the exact parameters the agent builds, dialects included.
+For each model and gateway template in ``available_models()`` and each combination of
+extended thinking (off / the agent's budget), the prompt cache (off / ``cache_control`` on the
+system prefix) and, for Anthropic models (a template: by the model it uses), the native
+web-search tool, one non-streaming call and one stream go through the real ``LLMClient`` —
+the exact parameters the agent builds, dialects included.
 A gateway that refuses one of them (any 4xx) is a mismatch between the app's requests and
 the gateway's capability profiles: the run lists it and exits 1.
 
@@ -20,7 +21,7 @@ import itertools
 import sys
 
 from app.core.exceptions import UpstreamError, UpstreamRequestError
-from app.services.gateway_models import available_models
+from app.services.gateway_models import available_models, capability_model
 from app.services.llm_capabilities import _is_anthropic
 from app.services.llm_client import LLMClient, build_cached_system
 from app.services.web_search_native import build_native_search_tools, native_search_support
@@ -37,7 +38,8 @@ async def main() -> int:
     for model, thinking, cache in itertools.product(models, (0, 2048), (False, True)):
         system = build_cached_system("You answer briefly.", " Today is a test.", enabled=cache)
         search = [None]
-        support = native_search_support(model) if _is_anthropic(model) else None
+        uses = await capability_model(model)
+        support = native_search_support(uses) if _is_anthropic(uses) else None
         if support is not None:
             search.append(build_native_search_tools(support, ["example.com"]))
         for tools in search:

@@ -1745,8 +1745,9 @@ pre-synthesis tool set and the search happens inside the synthesis call.
 `llm_templates` (a global table) holds named, reusable LLM call-parameter sets: `model`,
 `max_output_tokens`, `temperature` (NULL = omit), `thinking_budget_tokens`, `reasoning_effort`
 (NULL = the client default), `top_p`, `frequency_penalty`, `presence_penalty`, `timeout_seconds`
-(1–600, kept at or under the gateway's 600 s provider timeouts). These are the *app's* templates —
-the gateway's own `@…` templates are filtered out of the model list and never picked here. **Every
+(1–600, kept at or under the gateway's 600 s provider timeouts). These are the *app's* templates;
+the gateway's own templates (`@name`) are entries of the model list, so a role's model or an app
+template's model may be one (see **Models** below). **Every
 LLM role picks one** through an `app_settings` `*_template` row (`TEMPLATE_SETTING_KEYS` in
 `app/services/llm_templates.py`): agent `synthesizer|verifier|planner|classifier|suggestions|
 history_summary|newsletter`, loop `triage|analysis_a|analysis_b|judge|remediation`, and the global
@@ -1785,7 +1786,9 @@ history_summary|newsletter`, loop `triage|analysis_a|analysis_b|judge|remediatio
   `"high"`. Re-check the family table against the gateway's capability profiles when adding a
   provider. Effort is sent only when thinking is on (budget > 0, the synthesizer still gates that on
   `is_complex`). `_sampling_params` strips what a model rejects; the API returns `available_models`,
-  `capabilities` per model and `ignored_params` per template so the UI shows only valid knobs.
+  `capabilities` per model and `ignored_params` per template so the UI shows only valid knobs. A
+  gateway template is judged by the model it uses (`capability_model`), in the client's request as
+  in the API's `capabilities["@name"]` / `ignored_params`.
 - Admin API (`admin_api/routes/llm_templates.py`, mounted before `llm_config` because its prefix nests
   under it): `GET/POST /api/v1/llm-config/templates`, `PATCH|DELETE /…/{id}` (409 `template_in_use` +
   usages), `GET /…/{id}/usages`; writes answer 422 `unknown_model` / `invalid_template_id`, 409
@@ -1806,18 +1809,38 @@ repository, prices, credentials and each model's life cycle; what this platform 
 key's `GET /v1/models` returns (the workspace's grants).
 
 `app/services/gateway_models.py`: `gateway_model_list()` calls `GET {GATEWAY_URL}/v1/models` with the
-service's key, drops ids starting with `@` (the workspace's gateway templates — the app's roles pick
-models, not gateway templates), sorts, and caches the answer **in-process for 60 s**; on an outage it
-returns the last good list, else `[]`, flagged `reachable=False`, and never raises.
-`available_models()` (the ids) is the **one resolver behind every model dropdown and every "is this a
-model?" check** — `llm_config` (and through it loop-config and newsletter), `llm_templates`, the agent
-editor's `known_models` and its assistant-config route. An empty list means "skip the check", so a
-gateway outage never blocks a config save. `RETIRED_MODELS` / `remap_model` stay for the agent editor:
+service's key and caches the answer **in-process for 60 s**; on an outage it returns the last good
+list, else `[]`, flagged `reachable=False`, and never raises. Each row is `{id, owned_by, kind,
+model}`: the granted models (`kind=model`) by id, then the workspace's **gateway templates**
+(`kind=template`, id `@name`, `model` = the model it uses, from the gateway's `gateway.model`) by id.
+`available_models()` (the ids, in that order) is the **one resolver behind every model dropdown and
+every "is this a model?" check** — `llm_config` (and through it loop-config and newsletter),
+`llm_templates`, the agent editor's `known_models` and its assistant-config route (which sort the set
+with `picker_order`, since a plain sort puts `@` first). An empty list means "skip the check", so a
+gateway outage never blocks a config save.
+
+**A gateway template is a model id like any other**: a role or an app template stores `@name` and
+the call sends it as is, the gateway filling in its model and parameters. The app still sends the
+role's own parameters, and at the gateway (`pacod-gw` `params.rs`) a caller's value overrides a
+template's *default*; only its *locked* values, its "omit" and the token ceiling (the minimum of
+template, grant and model) win over the app's. What the call may send is
+the model's it uses: `capability_model(id)` (an `@` id → `template_models()[id]`, else unchanged;
+only an `@` id reads the list) feeds `LLMClient._chat_once` / `chat_stream`'s thinking and sampling
+dialect, the native-web-search decision (`execute_tools_node` → `_resolve_native_web_search(rc,
+model)`), the templates API's `capabilities` / `ignored_params` and `gw_request_matrix`. Judged by its
+name, `@sonnet-5-fast` on Gemini would get Claude's dialect (the families match substrings). Limits:
+`gateway.model` is the template's **first** model, so a failover pool spanning families gets the first
+one's dialect (the gateway's capability filter drops what another rejects); a template the list does
+not know (deleted, gateway away with nothing cached) is judged by its own id, "other", and the gateway
+refuses the call; `LoopConfig.resolve_panel()` compares raw ids, so analysis A on `@x` and B on the
+model `@x` uses count as independent. The service keys carry no `allowed_templates`
+(`gw_bootstrap.py` creates them with a name only), so admin-api's list is what every service may call;
+the platform configs define no template. `RETIRED_MODELS` / `remap_model` stay for the agent editor:
 an immutable version may name an id that has since been retired; nothing rewrites stored settings,
 because the gateway resolves successors of the models it retires itself (`follow_successor` grants).
 
 Admin API: `GET /api/v1/llm-models` (admin, read-only) → `{models: [{id, owned_by}], console_url,
-reachable}`. Adding, disabling or pricing a model happens in the gateway console (`console_url` from
+reachable}` — the models only, not the templates. Adding, disabling or pricing a model happens in the gateway console (`console_url` from
 `GATEWAY_CONSOLE_URL`) or in its platform config (`../deploy/pacod-gw/platform-config.{dev,live}.json`,
 imported by `make gw-bootstrap`). Frontend: `(app)/llm-models` (nav **Agent → LLM models**), read-only.
 

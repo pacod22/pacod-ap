@@ -6,8 +6,9 @@ mock provider by scripts/record_gw_fixtures.py) and is replayed through the real
 
 * the classifier: one case per row of ``_classify_error``'s table, with how often the call
   was sent (a timeout, a 402 and a 4xx exactly once; a 429 and a 5xx up to three times);
-* what the client sends: the gateway URL and the service's key, ``x-gw-retries: 1``, and the
-  ``gateway`` attribution object next to ``thinking``/``reasoning_effort``;
+* what the client sends: the gateway URL and the service's key, ``x-gw-retries: 1``, the
+  ``gateway`` attribution object next to ``thinking``/``reasoning_effort``, and a gateway
+  template (``@name``) as named, in the dialect of the model it uses;
 * what it reads: the gateway's cost, cached tokens, reasoning deltas, the ``length`` finish.
 """
 
@@ -30,6 +31,7 @@ from app.core.exceptions import (
     UpstreamTimeoutError,
 )
 from app.core.request_context import RequestContext, _request_ctx
+from app.services import gateway_models
 from app.services.debug_audit import debug_scope
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "gw"
@@ -302,3 +304,64 @@ async def test_a_worker_call_names_no_end_user(gateway):
     assert "end_user" not in block
     assert block["tags"] == {"purpose": "p", "site": "internal", "profile": "starter"}
     assert block["trace_id"] == "run_1"
+
+
+# ---- a gateway template ----------------------------------------------------------------------
+
+
+@pytest.fixture
+def templates(monkeypatch):
+    """The gateway's list holds two templates; nothing else in this file reads it."""
+
+    async def fetch():
+        return [
+            {"id": "anthropic/claude-sonnet-5-5", "gateway": {"kind": "model"}},
+            {
+                "id": "@careful",
+                "gateway": {"kind": "template", "model": "anthropic/claude-sonnet-5-5"},
+            },
+            # Named like an adaptive Claude model, but uses Gemini.
+            {"id": "@sonnet-5-fast", "gateway": {"kind": "template", "model": "gemini-3.8-flash"}},
+        ]
+
+    gateway_models.reset_cache()
+    monkeypatch.setattr(gateway_models, "_fetch", fetch)
+    yield
+    gateway_models.reset_cache()
+
+
+async def test_a_template_is_sent_as_named_in_the_dialect_of_its_model(gateway, templates):
+    client = gateway.answer("ok_chat_cost_cached")
+    await client.chat(
+        model="@careful",
+        system="s",
+        user="u",
+        purpose="p",
+        temperature=0.2,
+        thinking_budget_tokens=2048,
+        top_p=0.9,
+    )
+    body = gateway.body()
+    assert body["model"] == "@careful"
+    # Adaptive Claude: adaptive thinking, and neither temperature nor top_p.
+    assert body["thinking"] == {"type": "adaptive", "display": "summarized"}
+    assert "temperature" not in body and "top_p" not in body
+
+
+async def test_a_streamed_template_follows_its_model_not_its_name(gateway, templates):
+    client = gateway.answer("ok_stream_thinking")
+    async for _ in client.chat_stream(
+        model="@sonnet-5-fast",
+        system="s",
+        user="u",
+        purpose="synthesizer",
+        temperature=0.2,
+        thinking_budget_tokens=2048,
+    ):
+        pass
+    body = gateway.body()
+    assert body["model"] == "@sonnet-5-fast"
+    # Gemini: the portable reasoning_effort and the temperature, no Anthropic thinking dict.
+    assert "thinking" not in body
+    assert body["reasoning_effort"] == "high"
+    assert body["temperature"] == 0.2

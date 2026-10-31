@@ -231,7 +231,8 @@ class LLMTemplateOut(BaseModel):
 class LLMTemplatesRead(BaseModel):
     templates: list[LLMTemplateOut]
     available_models: list[str]
-    # {model: ModelCapabilities} for every available model and template model.
+    # {model: ModelCapabilities} for every available model and template model; a gateway
+    # template (`@name`) has the capabilities of the model it uses.
     capabilities: dict[str, dict]
 
 

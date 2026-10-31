@@ -31,6 +31,7 @@ from app.core.models import Citation, Language, RetrievalResult
 from app.services.agent_runtime_config import AgentRuntimeConfig, env_runtime_config
 from app.services.conversation_memory import CompactedHistory
 from app.services.debug_audit import debug_active, record_debug_interaction
+from app.services.gateway_models import capability_model
 from app.services.llm_client import LLMClient, build_cached_system, parse_llm_json
 from app.services.profiles import ProfileContext, env_profile_context
 from app.services.web_search import WebSearch
@@ -303,17 +304,19 @@ async def _execute_one_tool(call: dict, state: AgentState, deps: AgentDeps) -> d
         return {"name": name, "args": args, "result": {"error": str(e)}}
 
 
-def _resolve_native_web_search(rc: AgentRuntimeConfig) -> dict | None:
+def _resolve_native_web_search(rc: AgentRuntimeConfig, model: str | None = None) -> dict | None:
     """Decide whether a planned web_search runs on the native backend this turn.
 
     Native only when web search is enabled, mode is "native", the active synthesis
     model supports native search, and (unless require_allowlist is off) it can
     enforce the domain allowlist. Returns {"tools": [...]} for the synthesis call,
-    or None to fall back to the external Tavily/Google backend.
+    or None to fall back to the external Tavily/Google backend. ``model`` is the
+    synthesis model to judge by (for a gateway template, the model it uses); None
+    takes the synthesizer's own.
     """
     if not rc.web_search_enabled or rc.web_search_mode != "native":
         return None
-    caps = native_search_support(rc.call("synthesizer").model)
+    caps = native_search_support(model or rc.call("synthesizer").model)
     if caps is None:
         return None
     if rc.web_search_native_require_allowlist and not caps.enforces_allowlist:
@@ -336,7 +339,11 @@ async def execute_tools_node(state: AgentState, deps: AgentDeps) -> AgentState:
     # searches itself) and stash the tool spec for stream_synthesis to attach.
     rc = state.get("runtime") or env_runtime_config()
     wants_web = any(c.get("name") == "web_search" for c in calls)
-    native = _resolve_native_web_search(rc) if wants_web else None
+    native = (
+        _resolve_native_web_search(rc, await capability_model(rc.call("synthesizer").model))
+        if wants_web
+        else None
+    )
     state["native_web_search"] = native
     exec_calls = [c for c in calls if c.get("name") != "web_search"] if native else calls
 

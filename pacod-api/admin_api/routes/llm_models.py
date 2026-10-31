@@ -5,7 +5,8 @@ GET /api/v1/llm-models — the models the gateway offers this platform, and the 
 The gateway (pacod-gw) owns the model repository, the prices, the provider credentials and the
 models' life cycle; the platform's workspace grants decide what the app may call. Adding,
 disabling or pricing a model happens in the gateway console, not here, and takes effect there
-at once — there is no export file and no restart any more.
+at once — there is no export file and no restart any more. The gateway's templates, which
+the pickers offer after the models, are not listed here.
 """
 
 from __future__ import annotations
@@ -25,7 +26,11 @@ router = APIRouter(prefix="/api/v1/llm-models", tags=["llm-models"])
 async def list_llm_models(_: AuthenticatedUser = Depends(require_admin)) -> LlmModelsResponse:
     rows, reachable = await gateway_model_list()
     return LlmModelsResponse(
-        models=[LlmModelRead(id=r["id"], owned_by=r.get("owned_by")) for r in rows],
+        models=[
+            LlmModelRead(id=r["id"], owned_by=r.get("owned_by"))
+            for r in rows
+            if r["kind"] == "model"
+        ],
         console_url=get_settings().gateway_console_url or None,
         reachable=reachable,
     )

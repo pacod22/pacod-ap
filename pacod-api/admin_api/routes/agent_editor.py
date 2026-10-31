@@ -48,7 +48,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.guards.auth import AuthenticatedUser
 from app.services.agent_prompts import PROMPT_SPECS
-from app.services.gateway_models import RETIRED_MODELS, remap_model
+from app.services.gateway_models import RETIRED_MODELS, picker_order, remap_model
 from app.services.llm_client import LLMClient
 from app.services.profiles import collection_names_for_slug, get_profile
 
@@ -79,7 +79,7 @@ async def get_registry(_: Superuser):
         }
         for s in PROMPT_SPECS
     }
-    payload["models"] = sorted(await service.known_models())
+    payload["models"] = sorted(await service.known_models(), key=picker_order)
     payload["retired_models"] = RETIRED_MODELS
     return payload
 
@@ -321,7 +321,7 @@ async def _assistant_state(redis) -> dict:
         "call_params": cfg.call().to_dict(),
         # What a blank model means: the platform's primary model.
         "platform_default_model": remap_model(get_settings().agent_primary_model),
-        "available_models": sorted(await service.known_models()),
+        "available_models": sorted(await service.known_models(), key=picker_order),
     }
 
 

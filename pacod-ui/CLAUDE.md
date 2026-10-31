@@ -438,8 +438,10 @@ own console. The frontend never talks to the gateway directly.
   1st), not rolling windows. The chart buckets by hour/day/week/month with provider/model/profile
   filters.
 - **LLM models** (`(app)/llm-models`) is **read-only**: `GET /api/v1/llm-models` →
-  `{ models, console_url, reachable }`, the ids every model dropdown offers. `reachable: false` = the
-  gateway could not be asked. Editing models or prices happens in the gateway console.
+  `{ models, console_url, reachable }`, the granted models. The model dropdowns read the config
+  responses' `available_models` instead, which also hold the gateway's templates (`@name`, after the
+  models). `reachable: false` = the gateway could not be asked. Editing models, templates or prices
+  happens in the gateway console.
 - **LLM & Search** keeps runtime config (models per role, params, web search) and only the
   web-search keys (Tavily/Google); LLM provider credentials are the gateway's.
 - **Metrics** has the gateway's Grafana dashboards as tabs (see _Server-side metrics_).
@@ -983,7 +985,7 @@ Read the actual logs and trace the code path before proposing a root cause — d
   template list lives in the **Templates** tab of `(app)/llm-config`; every LLM role picks one with
   `TemplateSelect` ("" = Legacy) on the Configuration tab, `review-process` and
   `AssistantSettingsForm`. The dialog shows only the knobs `capabilities[model]` allows (same backend
-  function the request builder uses). A template write invalidates every config query; a role-assignment
+  function the request builder uses; a gateway template `@name` has its model's). A template write invalidates every config query; a role-assignment
   save invalidates `templateKeys.all` (usages changed). Dialogs use `--color-surface`.
 - **LLM figures can be 0 because the gateway was unreachable** — render `GatewayErrorNotice` next to
   any new LLM figure that comes with `gateway_error`.

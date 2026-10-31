@@ -57,6 +57,7 @@ from app.services.debug_audit import (
     debug_active,
     record_debug_interaction,
 )
+from app.services.gateway_models import capability_model
 
 # Model-family predicates live in llm_capabilities (shared with the admin
 # LLM-templates API); re-exported here so existing imports keep working.
@@ -732,10 +733,12 @@ class LLMClient:
         built request is byte-identical to the text-only path.
         """
         turn: str | list[dict] = user_content if user_content is not None else user
+        # A gateway template (`@name`) is sent as is, with the dialect of the model it uses.
+        caps_model = await capability_model(model)
         # Some models reject the `temperature` param entirely — the helper omits
         # it for them regardless of what the caller passed (the loop hardcodes 0.0).
         extra_body, temperature, max_tokens = _thinking_request_params(
-            model, temperature, max_tokens, thinking_budget_tokens, reasoning_effort
+            caps_model, temperature, max_tokens, thinking_budget_tokens, reasoning_effort
         )
         kwargs: dict = {
             "model": model,
@@ -746,7 +749,7 @@ class LLMClient:
             kwargs["temperature"] = temperature
         kwargs.update(
             _sampling_params(
-                model,
+                caps_model,
                 thinking_on=thinking_budget_tokens > 0,
                 top_p=top_p,
                 frequency_penalty=frequency_penalty,
@@ -1029,12 +1032,15 @@ class LLMClient:
         `timeout` overrides the client's per-request timeout for this stream (an
         LLM template's timeout); a timed-out open is never retried. The other
         keyword-only knobs are the LLM-template extras, see ``_chat_once``.
+
+        A gateway template (``@name``) is sent as is, with the dialect of the model it uses.
         """
+        caps_model = await capability_model(model)
         extra_body, actual_temperature, actual_max_tokens = _thinking_request_params(
-            model, temperature, max_tokens, thinking_budget_tokens, reasoning_effort
+            caps_model, temperature, max_tokens, thinking_budget_tokens, reasoning_effort
         )
         sampling = _sampling_params(
-            model,
+            caps_model,
             thinking_on=thinking_budget_tokens > 0,
             top_p=top_p,
             frequency_penalty=frequency_penalty,
