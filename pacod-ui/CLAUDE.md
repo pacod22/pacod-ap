@@ -127,7 +127,7 @@ pacod-ui/
             ├── reference-facts/                                         # reference data
             ├── agent-editor/  agent-editor/[id]/  agent-editor/assistant/
             ├── directives/  review-process/  newsletter/  kb-candidates/
-            ├── agent-prompts/  llm-config/  llm-models/  response-cache/  # agent config (admin)
+            ├── agent-prompts/  llm-config/  llm-models/  broker/  response-cache/  # agent config (admin)
             ├── conversations/  debug-console/  debug-console/[turn_id]/  metrics/
             ├── analytics/  analytics/users/[id]/  crawlers/            # monitoring (admin)
             └── profiles/  users/  redis/                               # administration (admin)
@@ -143,7 +143,7 @@ this tree: `@pacod/id-sveltekit`'s handle answers them inside `hooks.server.ts`.
 | —              | **Dashboard** · one chat entry per agent from `my-profiles` (`/chat?agent=<id>`), or a single **Chat** when there are none                                                                                               |
 | Knowledge base | **Collections** · **Points** · **Documents** · **Curated knowledge** (admin)                                                                                                                                             |
 | Reference data | **Reference facts** (admin)                                                                                                                                                                                              |
-| Agent          | **Agent editor** (superuser) · **Directives** · **Review process** · **Newsletter** · **Review** (kb-candidates) · **Prompts** · **LLM & Search** · **LLM models** · **Response cache** (admin)                          |
+| Agent          | **Agent editor** (superuser) · **Directives** · **Review process** · **Newsletter** · **Review** (kb-candidates) · **Prompts** · **LLM & Search** · **LLM models** · **Broker** · **Response cache** (admin)                      |
 | Monitoring     | **Conversations** · **Debug console** · **Metrics** · **Analytics** · **Crawlers** (admin)                                                                                                                               |
 | Administration | **Profiles** · **Users** · **Redis** (admin)                                                                                                                                                                             |
 
@@ -193,7 +193,7 @@ SvelteKit (there is no Caddyfile admin matcher), so this list is the only routin
 Current admin prefixes (all `/api/v1/…`): `users`, `profiles`, `reference-facts`, `usage-events`,
 `audit-log`, `crawler-visits`, `vector-store`, `redis`, `ingested-sources`, `directives`,
 `quota-config`, `conversations`, `debug-config`, `debug-interactions`, `llm-config`, `llm-models`,
-`response-cache-config`, `response-feedback`, `agent-prompts`, `agent-editor`, `kb-candidates`,
+`broker`, `response-cache-config`, `response-feedback`, `agent-prompts`, `agent-editor`, `kb-candidates`,
 `golden-tests`, `loop-config`, `loop-runs`, `loop-run-requests`, `loop-findings`, `loop-clusters`,
 `loop-fix-checks`, `newsletter-config`, `newsletter-sources`, `newsletter-items`,
 `newsletter-issues`, `newsletter-subscribers`, `dashboard`, `analytics`. **Note:** the _public_
@@ -442,6 +442,11 @@ own console. The frontend never talks to the gateway directly.
   responses' `available_models` instead, which also hold the gateway's templates (`@name`, after the
   models). `reachable: false` = the gateway could not be asked. Editing models, templates or prices
   happens in the gateway console.
+- **Broker** (`(app)/broker`, `features/broker/`) is **read-only**: `GET /api/v1/broker` → the agents
+  offered on pacod-broker and what was announced, and the reputation and price now of the gateway
+  models linked to broker resources; `GET /api/v1/broker/search` searches the catalogue. Interface
+  addresses are other providers' words: shown as text, never as links. An agent is offered from the
+  agent editor's Agent tab (`meta.broker`, "pacod-broker"), on its published version.
 - **LLM & Search** keeps runtime config (models per role, params, web search) and only the
   web-search keys (Tavily/Google); LLM provider credentials are the gateway's.
 - **Metrics** has the gateway's Grafana dashboards as tabs (see _Server-side metrics_).

@@ -7,6 +7,7 @@
 		Database,
 		Boxes,
 		Bot,
+		Store,
 		Radar,
 		ChartColumn,
 		Users,
@@ -149,6 +150,7 @@
 				},
 				{ href: '/llm-config', label: m.nav_llm_search(), icon: Cpu, requires: 'admin' as const },
 				{ href: '/llm-models', label: m.nav_llm_models(), icon: Bot, requires: 'admin' as const },
+				{ href: '/broker', label: m.nav_broker(), icon: Store, requires: 'admin' as const },
 				{
 					href: '/response-cache',
 					label: m.nav_response_cache(),

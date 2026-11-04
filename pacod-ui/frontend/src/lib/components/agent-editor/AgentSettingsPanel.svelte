@@ -21,6 +21,12 @@
 
 	const meta = $derived(graph.meta as Record<string, unknown>);
 	const shortNames = $derived((meta.short_names ?? {}) as Record<string, string>);
+	// pacod-broker: whether the published version offers the agent there, and to whom.
+	const broker = $derived((meta.broker ?? {}) as { offer?: string | null; summary?: string });
+	function setBroker(patch: { offer?: string | null; summary?: string }) {
+		const next = { offer: broker.offer ?? null, summary: broker.summary ?? '', ...patch };
+		onmeta({ broker: next.offer ? next : null });
+	}
 	const graphIssues = $derived(
 		issues.filter((i) => !i.node_id && !i.path.startsWith('/meta/marketing'))
 	);
@@ -98,4 +104,40 @@
 		/>
 	</label>
 	<p class="text-[11px]" style="color: var(--color-text-faint);">{m.agent_editor_meta_note()}</p>
+
+	<fieldset class="space-y-2 border-t pt-3" style="border-color: var(--color-border);">
+		<legend class="field-label">{m.agent_editor_broker_title()}</legend>
+		<label class="block">
+			<span class="text-[10px]" style="color: var(--color-text-faint);"
+				>{m.agent_editor_broker_offer()}</span
+			>
+			<select
+				class="field-input w-full text-xs"
+				disabled={readonly}
+				value={broker.offer ?? ''}
+				onchange={(e) => setBroker({ offer: e.currentTarget.value || null })}
+			>
+				<option value="">{m.agent_editor_broker_offer_none()}</option>
+				<option value="platform">{m.agent_editor_broker_offer_platform()}</option>
+				<option value="public">{m.agent_editor_broker_offer_public()}</option>
+			</select>
+		</label>
+		{#if broker.offer}
+			<label class="block">
+				<span class="text-[10px]" style="color: var(--color-text-faint);"
+					>{m.agent_editor_broker_summary()}</span
+				>
+				<input
+					class="field-input w-full text-xs"
+					maxlength="300"
+					disabled={readonly}
+					value={broker.summary ?? ''}
+					oninput={(e) => setBroker({ summary: e.currentTarget.value })}
+				/>
+			</label>
+		{/if}
+		<p class="text-[11px]" style="color: var(--color-text-faint);">
+			{m.agent_editor_broker_note()}
+		</p>
+	</fieldset>
 </div>

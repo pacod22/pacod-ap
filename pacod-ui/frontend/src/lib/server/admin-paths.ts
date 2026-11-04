@@ -26,6 +26,8 @@ export const ADMIN_PATH_PREFIXES: readonly string[] = [
 	'/api/v1/llm-config',
 	// Distinct from /llm-config — that prefix does NOT match this path.
 	'/api/v1/llm-models',
+	// pacod-broker (read-only page + search).
+	'/api/v1/broker',
 	'/api/v1/response-cache-config',
 	'/api/v1/response-feedback',
 	'/api/v1/agent-prompts',
