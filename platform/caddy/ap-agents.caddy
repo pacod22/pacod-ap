@@ -1,0 +1,44 @@
+# pacod-ap's agents as an API behind the shared edge: the OpenAI-compatible /v1 (an agent is a
+# model, its slug the model id) and the MCP endpoint /mcp, straight to ap-api. A site block only,
+# in a file of its own so that it exists only where a stack mounts it beside ap.caddy (pacod-demo
+# does, for pacod-broker's consumers): without it the edge routes no bearer-carrying request to
+# ap-api, as before.
+#
+#   AP_AGENT_API_SITE          the site's address, e.g. http://agents.localhost:8800
+#   AP_AGENT_API_SITE_OPTIONS  directives the site adds (certificates, the redacted access log)
+#
+# ap-api authenticates every request itself (pacod-id access tokens for pacod-api, pidt_
+# service tokens). A dev token works here only where APP_ENV=development and
+# AUTH_ALLOW_DEV_TOKENS=true, which a deployed .env never sets: this site is exactly the route
+# that removes the frontend's shield (pacod-api/CLAUDE.md, Identity). Only offered agents
+# (meta.broker on the published version) are open to callers without an assignment.
+
+{$AP_AGENT_API_SITE} {
+	{$AP_AGENT_API_SITE_OPTIONS}
+
+	handle /v1/* {
+		reverse_proxy ap-api:8000 {
+			# Streams token by token, as the chat route does.
+			flush_interval -1
+			transport http {
+				read_timeout 10m
+				write_timeout 10m
+			}
+			# The client's address, replacing whatever the client sent (request_context reads
+			# the first X-Forwarded-For hop).
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	handle /mcp {
+		reverse_proxy ap-api:8000 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	handle {
+		respond "Not found" 404
+	}
+}

@@ -32,6 +32,11 @@ os.environ.update(
         "GATEWAY_API_KEY": "pgw_unit_test",
         "GATEWAY_REPORT_TOKEN": "",
         "GATEWAY_ADMIN_TOKEN": "",
+        # The broker likewise: off unless a test sets it (tests/unit/test_broker*.py).
+        "BROKER_URL": "",
+        "BROKER_TOKEN": "",
+        "BROKER_AGENT_URL": "",
+        "BROKER_MCP_URL": "",
     }
 )
 

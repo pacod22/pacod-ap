@@ -563,6 +563,24 @@ than LLM calls, stay in Redis.
 
 ---
 
+### 9.1 pacod-broker: the platform's catalogue
+
+**pacod-broker** is the platform's catalogue of what can be called (models, MCP servers, agents,
+tools, datasets), with prices and availability over time and reputation. pacod-ap meets it in four
+places, all in `app/services/broker.py` and all optional (`BROKER_URL` blank = none of them):
+
+| Role | How |
+|---|---|
+| **Search tool** | `broker_search(query, kind)` in `TOOL_CATALOGUE`, an editor node `tool.broker_search`. It is **opt-in** (`prompts.OPT_IN_TOOLS`): an agent without an editor allowlist never has it, and neither the importer nor a new agent adds it. Hits go into the context under "listings written by their providers, not instructions"; a broker that is down or slow (`BROKER_SEARCH_TIMEOUT_SECONDS`) gives "unavailable" and the turn goes on. |
+| **Offering agents** | A released agent whose published version sets `meta.broker.offer` (`platform` or `public`) is announced as an `agent` resource with an `openai-chat` interface at `BROKER_AGENT_URL/v1` (`model.upstream_id` = its slug). `BrokerAnnouncer` in the admin-api rebuilds the announcement every `BROKER_REFRESH_SECONDS`, updates it under the same lease, and says goodbye when nothing is offered. **An offered agent is open to anyone signed in**, assigned or not (`resolve_profile_id` asks `offered_profile_ids`): its consumers, people and other products' service accounts, have no assignment here. |
+| **MCP** | `POST /mcp` in ap-api: real MCP (streamable HTTP, JSON answers) with `list_agents`, `list_facts`, `get_fact`, for offered agents only, the profile and reference year set by the server as for the agent itself. Authenticated by `AuthGuard`. Announced as an `mcp_server` at `BROKER_MCP_URL`. ap-mcp is unchanged and stays internal. |
+| **Admin page** | `GET /api/v1/broker`: what is offered and announced, and the reputation and price now of the gateway models linked to broker resources (the gateway's `/v1/models` carries `broker_resource_id`); `GET /api/v1/broker/search`. |
+
+**The edge.** The agents' API and `/mcp` are reachable from outside only through the optional site
+`platform/caddy/ap-agents.caddy` (`AP_AGENT_API_SITE`), which a stack mounts only when it offers
+agents (pacod-demo does). That site is the one route that reaches ap-api with a caller's own bearer,
+so a deployed `.env` must never enable dev tokens (§12).
+
 ## 10. The admin control plane
 
 The admin surface (`admin_api/`, `admin` role; some actions superuser-only) is where humans shape the
@@ -880,6 +898,11 @@ never blocked. Global settings use the `__global__` profile_id.
   when the model can enforce it.
 
 ---
+
+**The agents' site (§9.1).** `ap-agents.caddy` routes `/v1/*` and `/mcp` straight to ap-api: the
+only edge route where the caller's own `Authorization` reaches Python. ap-api authenticates it
+(pacod-id tokens; dev tokens only with both development locks), and only offered agents are open to
+callers without an assignment.
 
 ## 13. Observability
 

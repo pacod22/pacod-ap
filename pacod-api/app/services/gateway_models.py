@@ -48,8 +48,9 @@ async def _fetch() -> list[dict]:
 
 
 def _row(m: dict) -> dict:
-    """One entry of ``GET /v1/models`` → ``{"id", "owned_by", "kind", "model"}``: ``kind`` is
-    ``model`` or ``template``, ``model`` the model a template uses (None for a model)."""
+    """One entry of ``GET /v1/models`` → ``{"id", "owned_by", "kind", "model",
+    "broker_resource_id"}``: ``kind`` is ``model`` or ``template``, ``model`` the model a template
+    uses (None for a model)."""
     gw = m.get("gateway") if isinstance(m.get("gateway"), dict) else {}
     kind = gw.get("kind") or ("template" if str(m["id"]).startswith("@") else "model")
     return {
@@ -57,6 +58,9 @@ def _row(m: dict) -> dict:
         "owned_by": m.get("owned_by"),
         "kind": kind,
         "model": gw.get("model") if kind == "template" else None,
+        # The pacod-broker resource the gateway links the model to (a newer gateway only), for
+        # its reputation and price on the broker (admin Broker page).
+        "broker_resource_id": gw.get("broker_resource_id") if kind == "model" else None,
     }
 
 

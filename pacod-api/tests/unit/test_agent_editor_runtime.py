@@ -87,6 +87,27 @@ class TestResolveProfileVariant:
         # Admins can still reach it (to test it).
         assert (await profiles_mod.resolve_profile_id("g", user_id="a", is_admin=True)).id == "g"
 
+    async def test_an_agent_offered_on_the_broker_is_open_to_anyone_signed_in(self, monkeypatch):
+        import app.services.broker as broker_mod
+
+        self._patch(monkeypatch, {"g": _ctx("g"), "h": _ctx("h")}, {})
+
+        async def offered(redis=None):
+            return frozenset({"g"})
+
+        monkeypatch.setattr(broker_mod, "offered_profile_ids", offered)
+        # A broker consumer (here a service account with no assignment) may call the offered one…
+        assert (
+            await profiles_mod.resolve_profile_id("g", user_id="svc_x", is_admin=False)
+        ).id == "g"
+        # …and nothing else, nor its dev variant.
+        with pytest.raises(ProfileAccessError):
+            await profiles_mod.resolve_profile_id("h", user_id="svc_x", is_admin=False)
+        with pytest.raises(ProfileAccessError):
+            await profiles_mod.resolve_profile_id(
+                "g", user_id="svc_x", is_admin=False, variant="dev"
+            )
+
 
 # --------------------------------------------------------------------------- #
 # Effective resolution
@@ -199,7 +220,16 @@ def test_default_planner_lists_only_the_allowed_tools():
     only_kb = planner_prompt("", tools=frozenset({"kb_search"}))
     assert "kb_search(" in only_kb and "get_fact(" not in only_kb
     assert "get_fact(" in planner_prompt("") and "[[TOOLS]]" not in planner_prompt("")
-    assert set(TOOL_CATALOGUE) == {"kb_search", "get_fact", "list_facts", "web_search"}
+    assert set(TOOL_CATALOGUE) == {
+        "kb_search",
+        "get_fact",
+        "list_facts",
+        "web_search",
+        "broker_search",
+    }
+    # broker_search is opt-in: an agent without an allowlist is never offered it.
+    assert "broker_search(" not in planner_prompt("")
+    assert "broker_search(" in planner_prompt("", tools=frozenset({"broker_search"}))
 
 
 # --------------------------------------------------------------------------- #

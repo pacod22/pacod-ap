@@ -63,6 +63,18 @@ class Marketing(BaseModel):
     page: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
+class BrokerOffer(BaseModel):
+    """The agent on pacod-broker (``app/services/broker.py``): offered to everyone signed in to
+    the platform's pacod-id (``platform``) or to everyone the broker serves (``public``), with
+    one line for consumers. Only a released agent's PUBLISHED version is announced, and an
+    offered agent may be called by any authenticated caller, assigned or not."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    offer: Literal["platform", "public"] | None = None
+    summary: str = ""
+
+
 class GraphMeta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -71,6 +83,7 @@ class GraphMeta(BaseModel):
     short_names: dict[str, str] = Field(default_factory=dict)  # locale → label
     legal_year: int | None = None
     marketing: Marketing | None = None
+    broker: BrokerOffer | None = None
 
 
 class AgentGraph(BaseModel):

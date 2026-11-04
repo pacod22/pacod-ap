@@ -301,6 +301,15 @@ _NODE_LIST: tuple[NodeType, ...] = (
         tool_names=("web_search",),
     ),
     NodeType(
+        "tool.broker_search",
+        "tool",
+        "chat",
+        "Platform catalogue",
+        "Searches pacod-broker for models, MCP servers, agents, tools and datasets, with their "
+        "price and reputation. Answers nothing when no broker is configured.",
+        tool_names=("broker_search",),
+    ),
+    NodeType(
         "generate.synthesizer",
         "generate",
         "chat",
@@ -386,7 +395,7 @@ TEMPLATES: dict[str, Template] = {
             Slot("planner", ("plan.planner",), False),
             Slot(
                 "tools",
-                ("tool.kb_search", "tool.reference_facts", "tool.web_search"),
+                ("tool.kb_search", "tool.reference_facts", "tool.web_search", "tool.broker_search"),
                 False,
                 multi=True,
             ),

@@ -446,7 +446,12 @@ async def resolve_profile_id(
                 raise ProfileAccessError(f"profile '{requested}' is not released")
             assigned = await get_user_profile_ids(user_id)
             if requested not in assigned:
-                raise ProfileAccessError(f"user not assigned to profile '{requested}'")
+                # An agent offered on pacod-broker is open to anyone signed in: its consumers
+                # (people and other products' service accounts) have no assignment here.
+                from app.services.broker import offered_profile_ids
+
+                if requested not in await offered_profile_ids(redis):
+                    raise ProfileAccessError(f"user not assigned to profile '{requested}'")
         return profile
 
     # No explicit profile requested.

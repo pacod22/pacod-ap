@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from app.api.routes_auth import router as auth_router
 from app.api.routes_chat import router as chat_router
+from app.api.routes_mcp import router as mcp_router
 from app.api.routes_newsletter import (
     public_router as newsletter_public_router,
 )
@@ -247,6 +248,7 @@ app.add_middleware(RequestContextMiddleware)
 app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(openai_compat_router)
+app.include_router(mcp_router)
 app.include_router(newsletter_router)
 app.include_router(newsletter_public_router)
 app.include_router(public_agents_router)

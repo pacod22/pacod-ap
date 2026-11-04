@@ -257,6 +257,30 @@ and `LOOP_LLM_TIMEOUT_SECONDS` (600): the configs carry 600 s.
   base teal and gold, with the wordmark "pacod-gw · AI Gateway". pacod-id has no brand for the
   platform itself.
 
+## pacod-broker
+
+pacod-broker is the platform's catalogue of models, MCP servers, agents, tools and datasets. All of
+this is off until `BROKER_URL` is set (`pacod-api/ARCHITECTURE.md` §9.1).
+
+1. **The connection.** `BROKER_URL` (e.g. `http://pacod-broker:8060` on `pacod-net`) and
+   `BROKER_TOKEN` in `pacod-api/.env.gateway`: a pacod-id service account's `pidt_` token holding
+   `broker.consumer` and `broker.provider` at the platform (pacod-id's admin pages, or the full
+   stack's bootstrap). Recreate `ap-api` and `ap-admin-api`.
+2. **The search tool.** Add the node "Platform catalogue" to an agent in the agent editor and
+   publish: its planner can then call `broker_search`. Agents without it never search the broker.
+3. **Offering an agent.** In the agent editor's Agent tab, under "pacod-broker", choose to whom it is
+   offered and publish. A released agent is then announced (admin **Broker** page), and **anyone
+   signed in to the platform's pacod-id may call it**, assigned or not.
+4. **The agents' public address.** Offered agents are announced only with `BROKER_AGENT_URL` set, and
+   the MCP server only with `BROKER_MCP_URL`. Both point at the optional edge site
+   `platform/caddy/ap-agents.caddy`: mount it beside `ap.caddy` and set `AP_AGENT_API_SITE` (and
+   `AP_AGENT_API_SITE_OPTIONS` for certificates and the redacted log). That site reaches `ap-api`
+   with the caller's own bearer, so `AUTH_ALLOW_DEV_TOKENS` must never be set where it is mounted.
+5. **When something fails.** The Broker page shows the broker's error and the announcer's last one;
+   ap-admin-api logs `broker_announce_failed` and `broker_lease`. A turn whose search failed says the
+   catalogue was unavailable and goes on. To update the client:
+   `scripts/vendor-pacod-broker.sh [../pacod-broker]`, then rebuild the api and admin-api images.
+
 ## Monitoring
 
 `make monitor-up` (needs `monitoring/.env`, from `.env.example`; `make up-all` runs it when the file

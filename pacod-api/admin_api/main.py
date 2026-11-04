@@ -29,6 +29,7 @@ from admin_api.routes.agent_editor import router as agent_editor_router
 from admin_api.routes.agent_prompts import router as agent_prompts_router
 from admin_api.routes.analytics import router as analytics_router
 from admin_api.routes.audit_log import router as audit_log_router
+from admin_api.routes.broker import router as broker_router
 from admin_api.routes.conversations import router as conversations_router
 from admin_api.routes.crawler_visits import router as crawler_visits_router
 from admin_api.routes.dashboard import router as dashboard_router
@@ -102,7 +103,12 @@ async def lifespan(app: FastAPI):
     from app.services.identity import start_identity, stop_identity
 
     await start_identity(push_catalog=False, erase_deletions=False)
+    # pacod-broker: announces the agents offered there (nothing without BROKER_URL).
+    from app.services.broker import start_announcer, stop_announcer
+
+    await start_announcer()
     yield
+    await stop_announcer()
     await stop_identity()
     log.info("admin_api_shutdown")
 
@@ -175,6 +181,7 @@ app.include_router(debug_interactions_router)
 app.include_router(llm_templates_router)
 app.include_router(llm_config_router)
 app.include_router(llm_models_router)
+app.include_router(broker_router)
 app.include_router(response_cache_config_router)
 app.include_router(response_feedback_router)
 app.include_router(agent_prompts_router)

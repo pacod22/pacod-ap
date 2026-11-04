@@ -175,6 +175,11 @@ services:
       ID_INTERNAL_URL: http://pacod-id-internal:8071
       ID_CLIENT_SECRET: ${PACOD_API_CLIENT_SECRET:-}
       MCP_SERVER_URL: http://ap-mcp:8000
+      # pacod-broker (pacod-broker:8060 on pacod-net in the full stack): the agents'
+      # broker_search tool. Blank = no broker. The token (broker.consumer + broker.provider)
+      # comes from .env.gateway, like the gateway's keys.
+      BROKER_URL: ${BROKER_URL:-}
+      BROKER_TOKEN: ${BROKER_TOKEN:-}
       APP_LOG_DIR: ${APP_LOG_DIR:-/srv/logs}
       PYTHONUNBUFFERED: "1"
     volumes:
@@ -230,6 +235,12 @@ services:
       GATEWAY_WORKSPACE_ID: ${GATEWAY_WORKSPACE_ID:-}
       GATEWAY_REPORT_TOKEN: ${GATEWAY_REPORT_TOKEN:-}
       GATEWAY_ADMIN_TOKEN: ${GATEWAY_ADMIN_TOKEN:-}
+      # pacod-broker: the admin Broker page and the announcer of offered agents, at the public
+      # addresses the agents' site serves (ap.caddy, AP_AGENT_API_SITE). Blank = nothing announced.
+      BROKER_URL: ${BROKER_URL:-}
+      BROKER_TOKEN: ${BROKER_TOKEN:-}
+      BROKER_AGENT_URL: ${BROKER_AGENT_URL:-}
+      BROKER_MCP_URL: ${BROKER_MCP_URL:-}
       # pacod-id (pacod-id-internal, on pacod-admin-net): token checks and its feed, as the
       # client pacod-api. The client secret is copied into .env.gateway (interpolation only)
       # by make secrets-init.

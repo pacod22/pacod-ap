@@ -245,6 +245,7 @@ dev-install:
 	python3 -m venv .venv
 	.venv/bin/pip install -r requirements-base.txt -r requirements-dev.txt
 	.venv/bin/pip install --no-deps --no-index vendor/wheels/pacod_id-*.whl
+	.venv/bin/pip install --no-deps --no-index vendor/wheels/pacod_broker_client-*.whl
 
 # Lint + format gate (ruff owns both). Run via uv so it works whether or not the
 # local .venv has ruff installed; the version is pinned in requirements-dev.txt.

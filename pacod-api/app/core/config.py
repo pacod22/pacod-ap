@@ -88,6 +88,24 @@ class Settings(BaseSettings):
     # one; the gateway's provider timeouts (600 s, platform-config) sit above it.
     # The improvement loop uses `loop_llm_timeout_seconds` instead.
     llm_timeout_seconds: float = 180.0
+    # ---------- The discovery broker (pacod-broker) ----------
+    # Blank URL = no broker: the broker_search tool answers "unavailable", nothing is
+    # announced and the admin page says so. The token is a pacod-id service token holding
+    # broker.consumer (search) and broker.provider (announce) at the platform; compose passes
+    # it from .env.gateway, beside the gateway's keys. Offered agents are announced at the
+    # public base of the agents' API (BROKER_AGENT_URL, the site ap.caddy serves when
+    # AP_AGENT_API_SITE is set; blank = no agent is announced) and the MCP server at
+    # BROKER_MCP_URL (blank = not announced). The admin-api announces; it rereads the offered
+    # agents every BROKER_REFRESH_SECONDS, and the broker drops them within BROKER_TTL_SECONDS
+    # of the admin-api stopping without a goodbye.
+    broker_url: str = ""
+    broker_token: str = ""
+    broker_agent_url: str = ""
+    broker_mcp_url: str = ""
+    broker_refresh_seconds: float = 60.0
+    broker_ttl_seconds: int = 60
+    # A turn waits this long for the broker_search tool, then goes on without it.
+    broker_search_timeout_seconds: float = 5.0
     mcp_server_url: str = "http://ap-mcp:8000"
     # Shared secret the agent presents to the MCP server (X-MCP-Token). FAILS
     # CLOSED on the server: blank → every tool call 503s, because the server

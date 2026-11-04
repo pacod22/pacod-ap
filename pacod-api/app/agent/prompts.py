@@ -63,12 +63,21 @@ TOOL_CATALOGUE: dict[str, str] = {
         "for the year; find the right fact_key first when unsure"
     ),
     "web_search": "- web_search(query: str)                       — search the web for recent information",
+    "broker_search": (
+        '- broker_search(query: str, kind: str = "")      — find models, MCP servers, agents, tools '
+        "or datasets on the platform's catalogue (pacod-broker), with price and reputation; "
+        "kind is one of model, mcp_server, agent, tool, dataset, or empty"
+    ),
 }
+
+# Tools an agent has only when its editor graph names them: an agent without an allowlist (not
+# managed by the editor) keeps exactly the tools it always had.
+OPT_IN_TOOLS: frozenset[str] = frozenset({"broker_search"})
 
 
 def tool_catalogue(tools=None) -> str:
     """The planner's tool list, restricted to ``tools`` (None → every tool)."""
-    names = [t for t in TOOL_CATALOGUE if tools is None or t in tools]
+    names = [t for t in TOOL_CATALOGUE if (t not in OPT_IN_TOOLS if tools is None else t in tools)]
     return (
         "\n".join(TOOL_CATALOGUE[t] for t in names)
         or "- (no tools — answer from the conversation only)"

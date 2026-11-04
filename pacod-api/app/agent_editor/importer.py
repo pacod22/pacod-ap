@@ -40,6 +40,15 @@ _NODE_IDS = {
 }
 
 
+def _opt_in(node_type: str) -> bool:
+    """A tool node an author adds by hand (``prompts.OPT_IN_TOOLS``): never put into an imported
+    or a new graph, so adoption stays behaviour-neutral and a new agent searches nothing new."""
+    from app.agent.prompts import OPT_IN_TOOLS
+
+    names = NODE_TYPES[node_type].tool_names
+    return bool(names) and set(names) <= OPT_IN_TOOLS
+
+
 def node_id_for(node_type: str) -> str:
     return _NODE_IDS.get(node_type, node_type.replace(".", "_"))
 
@@ -100,6 +109,8 @@ def blank_graph(template_id: str, *, name: str = "", legal_year: int | None = No
     nodes = []
     for slot in template.slots:
         for t in slot.allowed:
+            if _opt_in(t):
+                continue
             nodes.append(
                 {"id": node_id_for(t), "type": t, "enabled": True, "config": _generic_config(t)}
             )
@@ -164,6 +175,8 @@ async def build_graph_from_profile(profile: ProfileContext, description: str | N
     nodes = []
     for slot in template.slots:
         for t in slot.allowed:
+            if _opt_in(t):
+                continue
             nt = NODE_TYPES[t]
             config = {}
             for name, target in nt.field_targets().items():

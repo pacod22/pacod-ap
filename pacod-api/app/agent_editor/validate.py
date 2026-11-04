@@ -214,6 +214,7 @@ def validate_graph(
             )
 
     issues.extend(_check_marketing(graph, taken_marketing_slugs))
+    issues.extend(_check_broker(graph))
     return graph, issues
 
 
@@ -251,6 +252,21 @@ def _check_fields(
                     GraphIssue("unknown_model", f"Model {value!r} is not available", fpath, node_id)
                 )
     return out
+
+
+def _check_broker(graph: AgentGraph) -> list[GraphIssue]:
+    b = graph.meta.broker
+    if b is None or b.offer is None:
+        return []
+    if len(b.summary) > 300:
+        return [
+            GraphIssue(
+                "broker_summary_too_long",
+                "The broker summary is at most 300 characters",
+                "/meta/broker/summary",
+            )
+        ]
+    return []
 
 
 def _check_marketing(graph: AgentGraph, taken: set[str] | frozenset[str]) -> list[GraphIssue]:

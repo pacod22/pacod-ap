@@ -23,6 +23,9 @@ RUN pip install -r requirements-base.txt
 # through an index; its dependencies (httpx, PyJWT[crypto], PyYAML) are pinned above.
 COPY vendor/wheels ./vendor/wheels
 RUN pip install --no-deps --no-index vendor/wheels/pacod_id-*.whl
+# pacod-broker's Python client (scripts/vendor-pacod-broker.sh), the same way: discovery for
+# the agents' broker_search tool and the admin page, and the announcer of offered agents.
+RUN pip install --no-deps --no-index vendor/wheels/pacod_broker_client-*.whl
 
 COPY app ./app
 COPY admin_api ./admin_api
