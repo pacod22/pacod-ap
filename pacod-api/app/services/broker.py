@@ -12,6 +12,9 @@ Three uses, one client (the vendored ``pacod_broker`` wheel, ``scripts/vendor-pa
   ``agent`` resources (interface ``openai-chat`` at ``BROKER_AGENT_URL``), and the MCP endpoint
   as an ``mcp_server`` (``BROKER_MCP_URL``), by ``BrokerAnnouncer`` in the admin-api.
 
+The connection (the broker's address and token, the addresses announced, the timings) is
+``broker_config``'s: the deployment's ``BROKER_*`` unless the admin Broker page set it.
+
 Every answer from the broker is data written by other providers: it goes into a prompt marked as
 such, never as instructions, and nothing in it is followed as a link by the app itself.
 """
@@ -30,6 +33,8 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services import broker_config
+from app.services.broker_config import BrokerConnection
 
 log = get_logger(__name__)
 
@@ -45,22 +50,28 @@ OFFERS = ("platform", "public")
 PROVIDER_NAME = "pacod-ap"
 
 
+# The longest a search may take whatever the console sets (broker_config.BOUNDS), so a turn can
+# bound the tool without reading the connection itself.
+SEARCH_TIMEOUT_MAX = broker_config.BOUNDS["search_timeout_seconds"][1] + 1
+
+
 class BrokerUnavailable(Exception):
     """No broker configured, unreachable, or it refused: the caller degrades, never fails."""
 
 
-def configured() -> bool:
-    return bool(get_settings().broker_url)
+async def configured() -> bool:
+    return (await broker_config.get_connection()).configured
 
 
-def _client(timeout: float | None = None) -> AsyncBrokerClient:
-    s = get_settings()
-    if not s.broker_url:
-        raise BrokerUnavailable("no broker is configured (BROKER_URL)")
+def _client(conn: BrokerConnection, timeout: float | None = None) -> AsyncBrokerClient:
+    if not conn.configured:
+        raise BrokerUnavailable("no broker is configured")
     return AsyncBrokerClient(
-        s.broker_url,
-        # Blank token: a broker in open mode; the client then names itself.
-        token=s.broker_token or None,
+        conn.url,
+        # Always a string: given None, the client would read BROKER_TOKEN from the environment
+        # and send the deployment's token to an address the console set. Blank: open mode, and
+        # the client then names itself.
+        token=conn.token or "",
         client_name=PROVIDER_NAME,
         timeout=timeout or 10.0,
     )
@@ -124,9 +135,13 @@ async def search(query: str, kind: str | None = None, limit: int = SEARCH_LIMIT)
     q: dict[str, Any] = {"q": (query or "").strip()[:200], "limit": max(1, min(int(limit), 20))}
     if kind in KINDS:
         q["kind"] = kind
-    client = _client(get_settings().broker_search_timeout_seconds)
+    conn = await broker_config.get_connection()
+    client = _client(conn, conn.search_timeout_seconds)
     try:
-        answer = await client.discover(q)
+        # httpx's timeout is per phase; this bounds the whole call.
+        answer = await asyncio.wait_for(client.discover(q), conn.search_timeout_seconds + 1)
+    except TimeoutError as e:
+        raise BrokerUnavailable(f"no answer within {conn.search_timeout_seconds:g} s") from e
     except (BrokerError, httpx.HTTPError) as e:
         raise BrokerUnavailable(str(e)) from e
     finally:
@@ -135,14 +150,20 @@ async def search(query: str, kind: str | None = None, limit: int = SEARCH_LIMIT)
 
 
 _facts: dict[str, tuple[float, dict | None]] = {}
+_facts_from: str = ""  # the broker the cached facts came from
 
 
 async def resource_facts(ids: list[str]) -> dict[str, dict | None]:
     """``{id: compact resource | None}`` for broker resource ids, each read at most once a
     minute; an id the broker does not know (or a failed read) is ``None``. Raises
     ``BrokerUnavailable`` only when no broker is configured."""
-    if not configured():
-        raise BrokerUnavailable("no broker is configured (BROKER_URL)")
+    global _facts_from
+    conn = await broker_config.get_connection()
+    if not conn.configured:
+        raise BrokerUnavailable("no broker is configured")
+    if conn.url != _facts_from:
+        _facts.clear()  # another broker's ids say nothing about this one's
+        _facts_from = conn.url
     now = time.monotonic()
     out: dict[str, dict | None] = {}
     missing = []
@@ -153,7 +174,7 @@ async def resource_facts(ids: list[str]) -> dict[str, dict | None]:
         else:
             missing.append(rid)
     if missing:
-        client = _client()
+        client = _client(conn)
         try:
 
             async def one(rid: str) -> tuple[str, dict | None]:
@@ -173,6 +194,45 @@ async def resource_facts(ids: list[str]) -> dict[str, dict | None]:
 
 def reset_cache() -> None:
     _facts.clear()
+    broker_config.invalidate()
+
+
+async def probe() -> dict:
+    """Whether the broker in force answers (``/readyz``) and takes pacod-ap's token (``GET
+    /v1/reputation/me``, the check pacod-demo's bootstrap makes of a stored token)."""
+    conn = await broker_config.get_connection()
+    out: dict[str, Any] = {
+        "configured": conn.configured,
+        "url": conn.url or None,
+        "token": conn.sources.get("token", broker_config.NONE),
+        "reachable": False,
+        "accepted": None,
+        "client": None,
+        "provider_id": None,
+        "error": None,
+    }
+    if not conn.configured:
+        out["error"] = "no broker is configured"
+        return out
+    client = _client(conn, 5.0)
+    try:
+        if not await client.ready():
+            out["error"] = "the broker did not answer /readyz"
+            return out
+        out["reachable"] = True
+        me = await client.me()
+        out["accepted"] = True
+        if isinstance(me, dict):
+            out["client"] = str(me.get("client") or "") or None
+            out["provider_id"] = str(me.get("provider_id") or "") or None
+    except BrokerError as e:
+        out["accepted"] = False if e.status in (401, 403) else None
+        out["error"] = str(e)
+    except httpx.HTTPError as e:
+        out["error"] = f"{type(e).__name__}: {e}"
+    finally:
+        await client.aclose()
+    return out
 
 
 # ---------- offering ----------
@@ -252,14 +312,13 @@ async def invalidate_offered(redis) -> None:
         log.warning("broker_offered_cache_bust_failed", error=str(e))
 
 
-def build_announcement(agents: list[dict]) -> dict | None:
+def build_announcement(agents: list[dict], conn: BrokerConnection) -> dict | None:
     """The announcement of what pacod-ap offers now, or None when there is nothing to offer
-    (no agent offered with ``BROKER_AGENT_URL`` set, and no ``BROKER_MCP_URL``)."""
-    s = get_settings()
-    obtain = s.app_public_base_url.rstrip("/") + "/"
+    (no agent offered with the agents' address set, and no MCP address)."""
+    obtain = get_settings().app_public_base_url.rstrip("/") + "/"
     resources: list[dict] = []
-    if s.broker_agent_url:
-        base = s.broker_agent_url.rstrip("/")
+    if conn.agent_url:
+        base = conn.agent_url.rstrip("/")
         for a in agents:
             resources.append(
                 {
@@ -281,7 +340,7 @@ def build_announcement(agents: list[dict]) -> dict | None:
                     "access": {"visibility": a["offer"]},
                 }
             )
-    if s.broker_mcp_url and agents:
+    if conn.mcp_url and agents:
         resources.append(
             {
                 "key": "mcp",
@@ -293,7 +352,7 @@ def build_announcement(agents: list[dict]) -> dict | None:
                 "interfaces": [
                     {
                         "protocol": "mcp-streamable-http",
-                        "url": s.broker_mcp_url,
+                        "url": conn.mcp_url,
                         "auth": {"scheme": "bearer", "obtain_url": obtain},
                     }
                 ],
@@ -308,7 +367,7 @@ def build_announcement(agents: list[dict]) -> dict | None:
     if not resources:
         return None
     return {
-        "ttl_s": s.broker_ttl_seconds,
+        "ttl_s": conn.ttl_seconds,
         "provider": {
             "name": PROVIDER_NAME,
             "title": "pacod agents",
@@ -320,50 +379,83 @@ def build_announcement(agents: list[dict]) -> dict | None:
 
 
 class BrokerAnnouncer:
-    """Keeps pacod-ap's announcement on the broker in step with the offered agents: started in
-    the admin-api's lifespan, it rebuilds the announcement every ``BROKER_REFRESH_SECONDS``
-    and updates it under the same lease when it changed; it says goodbye on shutdown. A broker
-    that is down costs the offering, never the admin-api."""
+    """Keeps pacod-ap's announcement on the broker in step with the offered agents and with the
+    connection: started in the admin-api's lifespan whether or not a broker is configured, it
+    rebuilds the announcement every ``refresh_seconds`` (or at once when the console changed the
+    connection: ``kick``) and updates it under the same lease when it changed. Another broker
+    address or token ends the lease where it was made and announces afresh; no broker, or nothing
+    to offer, says goodbye. A broker that is down costs the offering, never the admin-api."""
 
     def __init__(self) -> None:
         self._provider: AsyncProvider | None = None
         self._client: AsyncBrokerClient | None = None
         self._last: dict | None = None
+        # (address, token) the lease was made with; None while no broker is configured.
+        self._conn_key: tuple[str, str] | None = None
         self._task: asyncio.Task[None] | None = None
+        self._wake = asyncio.Event()
         self.last_error: str | None = None
         self.announced: dict | None = None
+        self.broker_url: str | None = None
 
     def start(self) -> None:
-        if configured():
-            self._task = asyncio.create_task(self._run(), name="broker-announcer")
+        self._task = asyncio.create_task(self._run(), name="broker-announcer")
+
+    def kick(self) -> None:
+        """Run a round now rather than at the next refresh."""
+        self._wake.set()
 
     async def _run(self) -> None:
         while True:
+            refresh = 60.0
             try:
-                await self.round()
+                conn = await broker_config.get_connection()
+                refresh = conn.refresh_seconds
+                await self.round(conn)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 self.last_error = str(e)
                 log.warning("broker_announce_failed", error=str(e))
-            await asyncio.sleep(get_settings().broker_refresh_seconds)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._wake.wait(), timeout=refresh)
+            self._wake.clear()
 
-    async def round(self) -> None:
-        """One pass: announce, update, or say goodbye, as the offered agents now say."""
-        announcement = build_announcement(await offered_agents())
-        if announcement == self._last and self._provider is not None:
+    async def round(self, conn: BrokerConnection | None = None) -> None:
+        """One pass: announce, update, or say goodbye, as the connection and the offered agents
+        now say."""
+        conn = conn or await broker_config.get_connection()
+        key = (conn.url, conn.token) if conn.configured else None
+        if key != self._conn_key:
+            # Another broker or another token: the old lease ends at the broker that gave it.
+            await self._goodbye()
+            self._conn_key = key
+            self.last_error = None
+        if key is None:
             return
+        announcement = build_announcement(await offered_agents(), conn)
         if announcement is None:
             await self._goodbye()
-        elif self._provider is None:
-            self._client = _client()
-            self._provider = AsyncProvider(self._client, announcement, on_event=self._event)
-            self.announced = await self._provider.start()
-        else:
+            self.last_error = None
+            return
+        if self._provider is None:
+            client = _client(conn)
+            provider = AsyncProvider(client, announcement, on_event=self._event)
+            try:
+                self.announced = await provider.start()
+            except BaseException:
+                # No lease was made: the next round starts afresh rather than updating nothing.
+                await client.aclose()
+                raise
+            self._client, self._provider = client, provider
+            self.broker_url = conn.url
+        elif announcement != self._last:
             self.announced = await self._provider.update(announcement)
+        else:
+            return
         self._last = announcement
         self.last_error = None
-        log.info("broker_announced", resources=len((announcement or {}).get("resources", [])))
+        log.info("broker_announced", resources=len(announcement["resources"]))
 
     def _event(self, kind: str, value: Any) -> None:
         if kind == "retrying":
@@ -371,25 +463,25 @@ class BrokerAnnouncer:
         log.info("broker_lease", what=kind)
 
     async def _goodbye(self) -> None:
-        if self._provider is not None:
-            try:
-                await self._provider.stop()
-            finally:
-                self._provider = None
-                self.announced = None
-                if self._client is not None:
-                    await self._client.aclose()
-                    self._client = None
+        """End the lease (best effort: a broker that is gone drops it after its TTL)."""
+        provider, client = self._provider, self._client
+        self._provider = self._client = None
+        self._last = self.announced = self.broker_url = None
+        try:
+            if provider is not None:
+                await provider.stop()
+        except Exception as e:
+            log.warning("broker_goodbye_failed", error=str(e))
+        finally:
+            if client is not None:
+                await client.aclose()
 
     async def stop(self) -> None:
         if self._task is not None:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-        try:
-            await self._goodbye()
-        except Exception as e:
-            log.warning("broker_goodbye_failed", error=str(e))
+        await self._goodbye()
 
 
 _announcer: BrokerAnnouncer | None = None
@@ -399,11 +491,10 @@ def get_announcer() -> BrokerAnnouncer | None:
     return _announcer
 
 
-async def start_announcer() -> BrokerAnnouncer | None:
+async def start_announcer() -> BrokerAnnouncer:
+    """Always started: it idles while no broker is configured, so a connection the console
+    makes later is announced without a restart."""
     global _announcer
-    if not configured():
-        log.info("broker_not_configured")
-        return None
     _announcer = BrokerAnnouncer()
     _announcer.start()
     return _announcer

@@ -8,10 +8,12 @@
 	} from '$lib/features/broker/queries';
 	import { m } from '$lib/paraglide/messages';
 	import Button from '$lib/components/ui/Button.svelte';
+	import BrokerConnection from '$lib/components/broker/BrokerConnection.svelte';
 
 	let { data } = $props();
 
-	// Read-only: an agent is offered from its published version in the agent editor.
+	// An agent is offered from its published version in the agent editor; the connection to the
+	// broker is the panel below (superusers change it).
 	const statusQuery = createBrokerStatusQuery();
 	const status = $derived($statusQuery.data ?? data.initial);
 
@@ -67,6 +69,8 @@
 			<p>{m.broker_unreachable({ error: status.broker_error ?? status.announce_error ?? '' })}</p>
 		</div>
 	{/if}
+
+	<BrokerConnection initial={data.config} canEdit={data.canEdit} />
 
 	<section class="rounded-xl border p-5" style="border-color: var(--color-border);">
 		<div class="mb-2 flex items-center gap-2">

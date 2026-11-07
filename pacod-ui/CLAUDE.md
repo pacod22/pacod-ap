@@ -442,11 +442,17 @@ own console. The frontend never talks to the gateway directly.
   responses' `available_models` instead, which also hold the gateway's templates (`@name`, after the
   models). `reachable: false` = the gateway could not be asked. Editing models, templates or prices
   happens in the gateway console.
-- **Broker** (`(app)/broker`, `features/broker/`) is **read-only**: `GET /api/v1/broker` → the agents
-  offered on pacod-broker and what was announced, and the reputation and price now of the gateway
-  models linked to broker resources; `GET /api/v1/broker/search` searches the catalogue. Interface
-  addresses are other providers' words: shown as text, never as links. An agent is offered from the
-  agent editor's Agent tab (`meta.broker`, "pacod-broker"), on its published version.
+- **Broker** (`(app)/broker`, `features/broker/`): `GET /api/v1/broker` → the agents offered on
+  pacod-broker and what was announced, and the reputation and price now of the gateway models linked
+  to broker resources; `GET /api/v1/broker/search` searches the catalogue. Interface addresses are
+  other providers' words: shown as text, never as links. An agent is offered from the agent editor's
+  Agent tab (`meta.broker`, "pacod-broker"), on its published version. The **Connection** panel
+  (`components/broker/BrokerConnection.svelte`, `/api/v1/broker/config`) shows each setting's source
+  (`deployment` = `BROKER_*`, `console` = set here) and is editable by **superusers** only
+  (`canEdit` from the load; admins see it and may **Test connection**). The token is write-only
+  (only `last4` comes back); a save sends only the changed fields, `null` = back to the
+  deployment's, `token: ""` = open mode. The server refuses an address change without that
+  broker's token (`token_required`); `brokerErrorMessage` shows its `detail.message`.
 - **LLM & Search** keeps runtime config (models per role, params, web search) and only the
   web-search keys (Tavily/Google); LLM provider credentials are the gateway's.
 - **Metrics** has the gateway's Grafana dashboards as tabs (see _Server-side metrics_).

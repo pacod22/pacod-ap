@@ -27,10 +27,10 @@ from app.agent.prompts import (
     verifier_prompt,
 )
 from app.agent_editor.compile import PipelineFlags
-from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.models import Citation, Language, RetrievalResult
 from app.services.agent_runtime_config import AgentRuntimeConfig, env_runtime_config
+from app.services.broker import SEARCH_TIMEOUT_MAX as BROKER_SEARCH_TIMEOUT_MAX
 from app.services.broker import BrokerUnavailable
 from app.services.broker import search as broker_search
 from app.services.conversation_memory import CompactedHistory
@@ -304,14 +304,15 @@ async def _execute_one_tool(call: dict, state: AgentState, deps: AgentDeps) -> d
             return {"name": name, "args": args, "result": {"results": results}}
 
         if name == "broker_search":
-            # Never holds the turn up: past its own timeout, or with no broker, the agent
-            # answers without it.
+            # Never holds the turn up: past its own timeout (the connection's, which search
+            # enforces; this is the ceiling whatever the console sets), or with no broker, the
+            # agent answers without it.
             try:
                 hits = await asyncio.wait_for(
                     broker_search(
                         str(args.get("query") or state["user_message"]), str(args.get("kind") or "")
                     ),
-                    timeout=get_settings().broker_search_timeout_seconds + 1,
+                    timeout=BROKER_SEARCH_TIMEOUT_MAX + 1,
                 )
                 return {"name": name, "args": args, "result": {"hits": hits}}
             except (TimeoutError, BrokerUnavailable) as e:

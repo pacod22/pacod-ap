@@ -39,6 +39,13 @@ _KEYS: dict[str, dict] = {
 # Search keys (target 'live') mapped to the WebSearch lookups.
 SEARCH_KEY_NAMES = {name for name, meta in _KEYS.items() if meta["target"] == "live"}
 
+# Secrets another service owns, encrypted with the same key: written only through
+# `set_owned_secret` by their owner, which decides when they may be used — never listed by
+# `list_secret_status` nor writable through the keys endpoints.
+OWNED_KEYS = {
+    "BROKER_TOKEN",  # app/services/broker_config.py: sent only to the address it was saved for
+}
+
 
 def known_key(name: str) -> bool:
     return name in _KEYS
@@ -72,6 +79,17 @@ async def set_secret(name: str, value: str, *, updated_by: str | None = None) ->
     """Encrypt and persist a provider key. Raises ValueError if not editable/unknown."""
     if not known_key(name):
         raise ValueError(f"unknown provider key {name!r}")
+    await _store(name, value, _KEYS[name]["target"], updated_by)
+
+
+async def set_owned_secret(name: str, value: str, *, updated_by: str | None = None) -> None:
+    """Encrypt and persist a secret of ``OWNED_KEYS``. Raises ValueError if not editable."""
+    if name not in OWNED_KEYS:
+        raise ValueError(f"unknown owned secret {name!r}")
+    await _store(name, value, "live", updated_by)
+
+
+async def _store(name: str, value: str, target: str, updated_by: str | None) -> None:
     f = _fernet()
     if f is None:
         raise ValueError("secrets store is not configured (APP_SECRETS_KEY unset)")
@@ -83,7 +101,7 @@ async def set_secret(name: str, value: str, *, updated_by: str | None = None) ->
                 name=name,
                 value_encrypted=token,
                 last4=_mask(value),
-                target=_KEYS[name]["target"],
+                target=target,
                 updated_by=updated_by,
             )
             .on_conflict_do_update(
@@ -98,7 +116,7 @@ async def set_secret(name: str, value: str, *, updated_by: str | None = None) ->
         )
         await db.execute(stmt)
     _invalidate_db_keys_cache()
-    log.info("provider_secret_set", name=name, target=_KEYS[name]["target"], updated_by=updated_by)
+    log.info("provider_secret_set", name=name, target=target, updated_by=updated_by)
 
 
 async def delete_secret(name: str) -> None:

@@ -281,6 +281,25 @@ class ProviderKeyUpdate(BaseModel):
     value: str = Field(..., min_length=1)
 
 
+class BrokerConfigUpdate(BaseModel):
+    """The console's changes to the pacod-broker connection (app/services/broker_config.py).
+
+    A field left out stays as it is; ``null`` returns it to the deployment's value; ``""`` for
+    an address sets it to nothing (``url``: no broker; ``agent_url``/``mcp_url``: not
+    announced). ``token``: left out = kept, ``null`` = the deployment's, ``""`` = none (a broker
+    in open mode), else the token for the resulting address. Ranges are the service's."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str | None = Field(None, max_length=500)
+    agent_url: str | None = Field(None, max_length=500)
+    mcp_url: str | None = Field(None, max_length=500)
+    refresh_seconds: float | None = None
+    ttl_seconds: int | None = None
+    search_timeout_seconds: float | None = None
+    token: str | None = Field(None, max_length=4000)
+
+
 # ---------------------------------------------------------------------------
 # newsletter
 # ---------------------------------------------------------------------------

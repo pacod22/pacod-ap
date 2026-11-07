@@ -290,3 +290,94 @@ async def test_marketing_slugs_of_other_published_agents(env):
     assert await service.taken_marketing_slugs("g") == fallback
     # The fallback page of an agent stays available to that agent itself.
     assert "tax" not in await service.taken_marketing_slugs("taxes")
+
+
+async def test_a_broker_offer_releases_the_published_version_not_the_draft(env):
+    scope, redis = env["scope"], env["redis"]
+    await _create()
+    await service.publish("g", note="first", actor="su", redis=redis)
+    agent = await service.get_agent("g")
+    graph = agent["graph"]
+    graph["meta"]["name"] = "Unpublished work"
+    await service.save_draft("g", graph, agent["draft_revision"], actor="su")
+    await redis.set("public:agents:broker-offered", "[]")
+
+    r = await service.set_broker_offer(
+        "g", offer="platform", summary="Gardening answers", actor="cli", redis=redis
+    )
+    assert r["changed"] and r["release_state"] == "prod"
+    versions = await _versions(scope, "g")
+    released = json.loads(versions[-1].graph)
+    assert released["meta"]["broker"] == {"offer": "platform", "summary": "Gardening answers"}
+    assert released["meta"]["name"] != "Unpublished work", "the draft's work stays a draft"
+    assert (await _profile(scope, "g")).published_version_id == versions[-1].id
+    draft = (await service.get_agent("g"))["graph"]
+    assert draft["meta"]["broker"]["offer"] == "platform", "the next publish keeps the offer"
+    assert draft["meta"]["name"] == "Unpublished work"
+    assert await redis.get("public:agents:broker-offered") is None
+
+    again = await service.set_broker_offer(
+        "g", offer="platform", summary="Gardening answers", actor="cli", redis=redis
+    )
+    assert not again["changed"] and len(await _versions(scope, "g")) == len(versions)
+
+    off = await service.set_broker_offer("g", offer=None, actor="cli", redis=redis)
+    assert off["changed"]
+    assert "broker" not in json.loads((await _versions(scope, "g"))[-1].graph)["meta"]
+    assert not (await service.set_broker_offer("g", offer=None, actor="cli"))["changed"]
+
+
+async def test_a_broker_offer_checks_the_offer_not_the_published_models(env, monkeypatch):
+    # Published while the gateway had its model; the gateway has dropped it since. The offer
+    # changes nothing else, so it is not refused for that.
+    redis = env["redis"]
+    agent = await _create()
+    graph = agent["graph"]
+    synth = next(n for n in graph["nodes"] if n["type"] == "generate.synthesizer")
+    synth["config"]["primary_model"] = "vendor/dropped-since"
+    await service.save_draft("g", graph, agent["draft_revision"], actor="su")
+    await service.publish("g", note="first", actor="su", redis=redis)
+
+    async def todays_models():
+        return {"vendor/another-model"}
+
+    monkeypatch.setattr(service, "known_models", todays_models)
+    r = await service.set_broker_offer("g", offer="public", actor="cli", redis=redis)
+    assert r["changed"]
+    with pytest.raises(AgentEditorError) as e:
+        await service.set_broker_offer("g", offer="platform", summary="x" * 301, actor="cli")
+    assert e.value.code == "invalid_offer" and e.value.status == 422
+
+
+async def test_a_broker_offer_adopts_an_unmanaged_agent_first(env, monkeypatch):
+    scope = env["scope"]
+    async with scope() as db:
+        db.add(
+            Profile(
+                id="legacy",
+                slug="legacy",
+                name="Legacy",
+                topic_name="acme_helpdesk",
+                topic_description_en="Acme's help desk",
+                legal_year=2026,
+                languages="bg,en",
+                base_collection="pacod_legacy_kb",
+                curated_collection="pacod_legacy_curated",
+            )
+        )
+    from app.services import agent_runtime_config as rc
+
+    async def no_overrides(_pid):
+        return {}
+
+    monkeypatch.setattr(rc, "_load_overrides", no_overrides)
+    nothing = await service.set_broker_offer("legacy", offer=None, actor="cli")
+    assert not nothing["changed"] and await _versions(scope, "legacy") == []
+    r = await service.set_broker_offer("legacy", offer="public", actor="cli", redis=env["redis"])
+    assert r["changed"]
+    adopted, offered = await _versions(scope, "legacy")
+    assert adopted.note == "Adopted" and offered.note == "Offered on pacod-broker"
+    assert json.loads(offered.graph)["meta"]["broker"]["offer"] == "public"
+    with pytest.raises(AgentEditorError) as e:
+        await service.set_broker_offer("nobody", offer="public", actor="cli")
+    assert e.value.status == 404

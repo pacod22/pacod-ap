@@ -318,6 +318,7 @@ app/                    Main chat API (FastAPI)
                         loop_runtime_config, newsletter_{classify,crawl,email,runtime_config}, email (newsletter SMTP),
                         embeddings_client, vector_store, mcp_client, web_search, web_search_native,
                         broker (pacod-broker: search, facts, offered agents, the announcer),
+                        broker_config (its connection: deployment BROKER_* or the Broker page),
                         debug_audit, turn_evidence_config, retrieval_trace_config, analytics_queries,
                         web_request_sink, user_ip_sink, user_activity, curated_provenance
                         — most config services are per-profile (profile_id → app_settings + cache key);
@@ -338,7 +339,7 @@ admin_api/              Admin API — separate container (Postgres + Redis + Qdr
                         debug_interactions, directives, agent_prompts, agent_editor, llm_config (models/params/
                         web search + search keys), llm_templates, llm_models (read-only: the gateway's list),
                         quota_config, response_cache_config, response_feedback, ingested_sources, vector_store,
-                        broker (read-only: offers, linked models, search),
+                        broker (offers, linked models, search; the connection, superuser writes),
                         redis_store, loop_config (config + runs + run-requests + findings + clusters + fix checks),
                         kb_candidates (+ golden tests), newsletter
 
@@ -729,7 +730,9 @@ are compose `environment:` values (`GATEWAY_CONSOLE_URL` defaults to `https://co
 
 **pacod-broker:** `BROKER_URL` (blank = off), `BROKER_TOKEN` (from `.env.gateway`), `BROKER_AGENT_URL`
 / `BROKER_MCP_URL` (the agents' public site; blank = not announced), `BROKER_REFRESH_SECONDS` (60),
-`BROKER_TTL_SECONDS` (60), `BROKER_SEARCH_TIMEOUT_SECONDS` (5). See **pacod-broker**.
+`BROKER_TTL_SECONDS` (60), `BROKER_SEARCH_TIMEOUT_SECONDS` (5). These are the deployment's values: a
+superuser may set each one on the admin Broker page instead (`app/services/broker_config.py`). See
+**pacod-broker**.
 
 **LLM timeouts — a timed-out request is never retried.** `LLM_TIMEOUT_SECONDS` (180; the shared
 client's per-request timeout) and `LOOP_LLM_TIMEOUT_SECONDS` (600; the improvement loop's review
@@ -1178,8 +1181,23 @@ timeouts, an unreachable gateway): `llm_requests_total{outcome}` / `llm_retries_
 
 `app/services/broker.py`, on the vendored client `vendor/wheels/pacod_broker_client-*.whl`
 (`../scripts/vendor-pacod-broker.sh`, `vendor/PACOD_BROKER_VERSION`; installed `--no-index` in the
-api and admin-api images and by `make dev-install`). Everything is off while `BROKER_URL` is blank.
-ARCHITECTURE.md §9.1 has the design; the rules that bite:
+api and admin-api images and by `make dev-install`). Everything is off while no broker address is
+configured. ARCHITECTURE.md §9.1 has the design; the rules that bite:
+
+- **The connection is `broker_config.py`'s**, never `get_settings()` directly: the deployment's
+  `BROKER_*` until the admin Broker page sets a value (`app_settings` `broker.*` under `__global__`;
+  the token Fernet-encrypted in `provider_secrets` as `BROKER_TOKEN`, one of `OWNED_KEYS`, so the
+  LLM-config keys panel neither lists nor writes it). `GET|PUT|DELETE /api/v1/broker/config` (reads
+  admin, writes **superuser**: the connection decides where pacod-ap's token goes and the addresses
+  consumers send theirs to), `POST /config/test` probes `/readyz` + `GET /v1/reputation/me`. Each
+  process caches the connection 30 s (`CACHE_SECONDS`); a write invalidates admin-api's and kicks the
+  announcer, so ap-api's search follows within half a minute. A DB fault reads the deployment's.
+- **A token goes only to the address it was given for.** The deployment's token pairs with the
+  deployment's URL; a console token pairs with the URL it was saved with (`broker.token_url`). A URL
+  change without a token in the same request is refused (`token_required`, 422) when it would leave
+  a token behind; `token: ""` means open mode, `null` the deployment's. `_client` always passes the
+  token as a **string**: given `None`, the vendored client reads `BROKER_TOKEN` from the environment
+  and would send the deployment's token to a console-set address (`test_broker_config.py` pins it).
 
 - **`broker_search` is opt-in** (`prompts.OPT_IN_TOOLS`): `_tool_allowed` and `tool_catalogue` leave it
   out for an agent without an allowlist, and `importer._opt_in` keeps it out of imported and new
@@ -1193,16 +1211,29 @@ ARCHITECTURE.md §9.1 has the design; the rules that bite:
   under `public:agents:broker-offered`, inside `PUBLIC_AGENTS_CACHE_PREFIX`, so every pointer move
   busts it. **An offered agent is open to any authenticated caller** in `resolve_profile_id`, prod
   variant only.
-- **The announcer** (`BrokerAnnouncer`, started in the admin-api lifespan) sends an announcement
-  only when it changed, updates under the same lease (`AsyncProvider.update`), and deregisters when
-  nothing is left. structlog's first argument is the event: never pass `event=` as a field.
+- **The announcer** (`BrokerAnnouncer`, always started in the admin-api lifespan, idle while no broker
+  is configured) sends an announcement only when it changed, updates under the same lease
+  (`AsyncProvider.update`), and deregisters when nothing is left. Another broker address or token
+  (the console) ends the lease at the broker that gave it and announces afresh; a first announce that
+  fails leaves no half-made provider, so the next round starts again rather than updating nothing.
+  structlog's first argument is the event: never pass `event=` as a field.
+- **Offering from a script**: `python -m scripts.agent_editor offer <id> --offer platform|public|none
+  [--summary …]` (`service.set_broker_offer`) publishes a release that is the *published* version
+  with only `meta.broker` changed (the draft gets the same change, so the next editor publish keeps
+  it; unpublished draft work stays a draft), adopting an unmanaged agent first; idempotent.
+  pacod-demo's bootstrap offers the starter this way.
+- **Disconnecting does not close an offered agent**: `offered_profile_ids` reads the published
+  versions, not the connection, so an agent offered there stays open to every authenticated caller
+  until its offer is withdrawn.
 - **`POST /mcp`** (`app/api/routes_mcp.py`) is the public MCP face of the reference facts, for
   offered agents only; it calls ap-mcp through `ReferenceFactsTools`, so the profile and year are the
   server's. `tests/unit/test_mcp_public.py`.
 - **The model list keeps `broker_resource_id`** (`gateway_models._row`, from the gateway's
   `gateway` block); the admin page reads those resources' reputation and price, cached 60 s.
 - Tests: `tests/unit/test_broker.py` (a real discovery answer in `tests/fixtures/broker/`, the
-  announcer's cycle, the admin route), `test_agent_editor_runtime.py` (offered access).
+  announcer's cycle, the admin route), `test_broker_config.py` (sources, the token pairing, the
+  announcer moving between brokers, the probe, the routes' roles), `test_agent_editor_service.py`
+  (`set_broker_offer`), `test_agent_editor_runtime.py` (offered access).
 
 ## Request lifecycle (chat turn)
 

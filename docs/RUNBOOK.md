@@ -260,25 +260,33 @@ and `LOOP_LLM_TIMEOUT_SECONDS` (600): the configs carry 600 s.
 ## pacod-broker
 
 pacod-broker is the platform's catalogue of models, MCP servers, agents, tools and datasets. All of
-this is off until `BROKER_URL` is set (`pacod-api/ARCHITECTURE.md` §9.1).
+this is off until a broker address is configured (`pacod-api/ARCHITECTURE.md` §9.1).
 
-1. **The connection.** `BROKER_URL` (e.g. `http://pacod-broker:8060` on `pacod-net`) and
-   `BROKER_TOKEN` in `pacod-api/.env.gateway`: a pacod-id service account's `pidt_` token holding
-   `broker.consumer` and `broker.provider` at the platform (pacod-id's admin pages, or the full
-   stack's bootstrap). Recreate `ap-api` and `ap-admin-api`.
+1. **The connection.** Either in the deployment — `BROKER_URL` (e.g. `http://pacod-broker:8060` on
+   `pacod-net`) and `BROKER_TOKEN` in `pacod-api/.env.gateway`, then recreate `ap-api` and
+   `ap-admin-api` — or, as a superuser, on the admin **Broker** page (**Connection**), with no
+   restart. The token is a pacod-id service account's `pidt_` token holding `broker.consumer` and
+   `broker.provider` at the platform (pacod-id's admin pages, or the full stack's bootstrap). The page
+   shows where each setting comes from; **Test connection** asks the broker whether it answers and
+   takes the token. A token entered there is stored encrypted (it needs `APP_SECRETS_KEY`) and goes
+   only to the address it was saved with: changing the address asks for that broker's token (or
+   "no token" for a broker in open mode). **Reset all to the deployment** forgets what the page set.
 2. **The search tool.** Add the node "Platform catalogue" to an agent in the agent editor and
    publish: its planner can then call `broker_search`. Agents without it never search the broker.
 3. **Offering an agent.** In the agent editor's Agent tab, under "pacod-broker", choose to whom it is
    offered and publish. A released agent is then announced (admin **Broker** page), and **anyone
    signed in to the platform's pacod-id may call it**, assigned or not.
-4. **The agents' public address.** Offered agents are announced only with `BROKER_AGENT_URL` set, and
-   the MCP server only with `BROKER_MCP_URL`. Both point at the optional edge site
+4. **The agents' public address.** Offered agents are announced only with the agents' address set
+   (`BROKER_AGENT_URL`, or the Broker page), and the MCP server only with its address
+   (`BROKER_MCP_URL`). Both point at the optional edge site
    `platform/caddy/ap-agents.caddy`: mount it beside `ap.caddy` and set `AP_AGENT_API_SITE` (and
    `AP_AGENT_API_SITE_OPTIONS` for certificates and the redacted log). That site reaches `ap-api`
    with the caller's own bearer, so `AUTH_ALLOW_DEV_TOKENS` must never be set where it is mounted.
 5. **When something fails.** The Broker page shows the broker's error and the announcer's last one;
-   ap-admin-api logs `broker_announce_failed` and `broker_lease`. A turn whose search failed says the
-   catalogue was unavailable and goes on. To update the client:
+   ap-admin-api logs `broker_announce_failed`, `broker_lease` and `broker_config_set`. A turn whose
+   search failed says the catalogue was unavailable and goes on. Disconnecting (an empty address)
+   withdraws the announcement but does not close an offered agent: it stays open to every signed-in
+   caller until its offer is withdrawn in the agent editor. To update the client:
    `scripts/vendor-pacod-broker.sh [../pacod-broker]`, then rebuild the api and admin-api images.
 
 ## Monitoring

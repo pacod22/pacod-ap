@@ -103,7 +103,8 @@ async def lifespan(app: FastAPI):
     from app.services.identity import start_identity, stop_identity
 
     await start_identity(push_catalog=False, erase_deletions=False)
-    # pacod-broker: announces the agents offered there (nothing without BROKER_URL).
+    # pacod-broker: announces the agents offered there; idles while no broker is configured,
+    # and follows a connection the Broker page changes (app/services/broker_config.py).
     from app.services.broker import start_announcer, stop_announcer
 
     await start_announcer()
