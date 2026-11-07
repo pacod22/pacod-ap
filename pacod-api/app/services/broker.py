@@ -149,6 +149,63 @@ async def search(query: str, kind: str | None = None, limit: int = SEARCH_LIMIT)
     return [compact_hit(h) for h in answer.get("hits", []) if isinstance(h, dict)]
 
 
+# The catalogue's pages: the broker caps a page at 200 and names the next by a cursor; a listing
+# reads at most this many pages, so a broker with more than MAX_CATALOGUE_PAGES * 200 models of
+# one kind shows the first of them.
+CATALOGUE_PAGE = 200
+MAX_CATALOGUE_PAGES = 5
+CATALOGUE_KINDS = ("model", "embedding")
+
+
+def catalogue_hit(hit: dict) -> dict:
+    """``compact_hit`` plus what the catalogue needs to tell a gateway template from a model:
+    its tags, the name it is called by (``model.upstream_id``, ``@name`` for a gateway template),
+    and whether it is a gateway offering (tag ``gateway``)."""
+    out = compact_hit(hit)
+    res = hit.get("resource") if isinstance(hit.get("resource"), dict) else hit
+    tags = [str(t) for t in (res.get("tags") or []) if isinstance(t, str)][:16]
+    model = res.get("model") if isinstance(res.get("model"), dict) else {}
+    out["tags"] = tags
+    out["upstream_id"] = str(model.get("upstream_id") or "")
+    out["gateway"] = "gateway" in tags
+    return out
+
+
+async def list_models() -> list[dict]:
+    """Every model and embedding the broker lists, as ``catalogue_hit``s, read page by page with
+    the broker's own ranking. Raises ``BrokerUnavailable`` (no broker, unreachable, refused)."""
+    conn = await broker_config.get_connection()
+    client = _client(conn, conn.search_timeout_seconds)
+    seen: dict[str, dict] = {}
+    try:
+        for kind in CATALOGUE_KINDS:
+            cursor: str | None = None
+            for _ in range(MAX_CATALOGUE_PAGES):
+                q: dict[str, Any] = {"kind": kind, "limit": CATALOGUE_PAGE}
+                if cursor:
+                    q["cursor"] = cursor
+                try:
+                    answer = await asyncio.wait_for(
+                        client.discover(q), conn.search_timeout_seconds + 1
+                    )
+                except TimeoutError as e:
+                    raise BrokerUnavailable(
+                        f"no answer within {conn.search_timeout_seconds:g} s"
+                    ) from e
+                except (BrokerError, httpx.HTTPError) as e:
+                    raise BrokerUnavailable(str(e)) from e
+                for h in answer.get("hits", []):
+                    if isinstance(h, dict):
+                        item = catalogue_hit(h)
+                        seen.setdefault(item["id"], item)
+                cursor = answer.get("next_cursor") or None
+                if not cursor:
+                    break
+    finally:
+        await client.aclose()
+    return sorted(seen.values(), key=lambda m: (m["kind"], m["name"].lower()))
+
+
 _facts: dict[str, tuple[float, dict | None]] = {}
 _facts_from: str = ""  # the broker the cached facts came from
 

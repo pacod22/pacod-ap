@@ -289,6 +289,14 @@ this is off until a broker address is configured (`pacod-api/ARCHITECTURE.md` §
    caller until its offer is withdrawn in the agent editor. To update the client:
    `scripts/vendor-pacod-broker.sh [../pacod-broker]`, then rebuild the api and admin-api images.
 
+**Models and templates from the broker.** The Broker page lists every model and embedding the broker
+shows the platform's token, and every gateway template offered to it. A row is **usable now** when
+the gateway already offers it: it is then in every model picker, under the name shown. Otherwise it
+is **not in the gateway**: a platform admin accepts it in the gateway's model discovery (its link on
+the page), which creates the model as a draft; once it is priced and active it is usable. A template
+reaches consumers as the gateway offers it (`broker_offer` on the template; visibility `platform` or
+`public` for every signed-in client, `organisation` for that organisation's clients only).
+
 ## Monitoring
 
 `make monitor-up` (needs `monitoring/.env`, from `.env.example`; `make up-all` runs it when the file

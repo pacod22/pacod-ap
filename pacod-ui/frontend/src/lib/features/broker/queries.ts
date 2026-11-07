@@ -4,6 +4,7 @@
  *
  *   GET    /api/v1/broker              → status, offered agents, what is announced, linked models
  *   GET    /api/v1/broker/search       → { hits, broker_error }
+ *   GET    /api/v1/broker/catalogue    → models and embeddings the broker lists, with their usage
  *   GET    /api/v1/broker/config       → the connection: each setting with its source
  *   PUT    /api/v1/broker/config       → change it (superuser; the token is write-only)
  *   DELETE /api/v1/broker/config       → everything back to the deployment's values (superuser)
@@ -70,6 +71,34 @@ export const BrokerSearchSchema = z.object({
 	hits: z.array(BrokerHitSchema),
 	broker_error: z.string().nullable().default(null)
 });
+
+/** A model or embedding the broker lists, with how the gateway offers it (admin-api). */
+export const BrokerCatalogueItemSchema = BrokerHitSchema.extend({
+	tags: z.array(z.string()).default([]),
+	upstream_id: z.string().default(''),
+	gateway: z.boolean().default(false),
+	usage: z
+		.object({
+			state: z.enum(['usable', 'not_in_gateway']),
+			call: z.string().nullable().default(null)
+		})
+		.default({ state: 'not_in_gateway', call: null })
+});
+export type BrokerCatalogueItem = z.infer<typeof BrokerCatalogueItemSchema>;
+
+export const BrokerCatalogueSchema = z.object({
+	models: z.array(BrokerCatalogueItemSchema).default([]),
+	broker_error: z.string().nullable().default(null),
+	console_url: z.string().nullable().default(null)
+});
+export type BrokerCatalogue = z.infer<typeof BrokerCatalogueSchema>;
+
+export function createBrokerCatalogueQuery() {
+	return createQuery({
+		queryKey: ['broker', 'catalogue'] as const,
+		queryFn: async () => BrokerCatalogueSchema.parse(await api.get<unknown>('/v1/broker/catalogue'))
+	});
+}
 
 export const BROKER_KINDS = [
 	'model',
