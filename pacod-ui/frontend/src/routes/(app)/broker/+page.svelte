@@ -2,13 +2,16 @@
 	import { Radar, AlertTriangle, Search } from 'lucide-svelte';
 	import {
 		BROKER_KINDS,
+		createBrokerCatalogueQuery,
 		createBrokerStatusQuery,
 		searchBroker,
+		type BrokerCatalogueItem,
 		type BrokerHit
 	} from '$lib/features/broker/queries';
 	import { m } from '$lib/paraglide/messages';
 	import Button from '$lib/components/ui/Button.svelte';
 	import BrokerConnection from '$lib/components/broker/BrokerConnection.svelte';
+	import GatewayConsoleLink from '$lib/components/gateway/GatewayConsoleLink.svelte';
 
 	let { data } = $props();
 
@@ -16,6 +19,20 @@
 	// broker is the panel below (superusers change it).
 	const statusQuery = createBrokerStatusQuery();
 	const status = $derived($statusQuery.data ?? data.initial);
+
+	// Models and templates the broker lists, each with how the gateway offers it.
+	const catalogueQuery = createBrokerCatalogueQuery();
+	const catalogue = $derived($catalogueQuery.data);
+	let catalogueFilter = $state('');
+	let catalogueKind = $state('');
+	const catalogueRows = $derived.by(() => {
+		const needle = catalogueFilter.trim().toLowerCase();
+		return (catalogue?.models ?? []).filter(
+			(r: BrokerCatalogueItem) =>
+				(!catalogueKind || r.kind === catalogueKind) &&
+				(!needle || `${r.name} ${r.upstream_id} ${r.provider}`.toLowerCase().includes(needle))
+		);
+	});
 
 	let q = $state('');
 	let kind = $state('');
@@ -122,6 +139,83 @@
 			</table>
 		</div>
 	</section>
+
+	{#if status.configured}
+		<section class="rounded-xl border p-5" style="border-color: var(--color-border);">
+			<h2 class="mb-2 text-base font-semibold">{m.broker_catalogue_heading()}</h2>
+			<p class="mb-4 max-w-3xl text-sm text-[var(--color-text-muted)]">
+				{m.broker_catalogue_intro()}
+			</p>
+			<div class="mb-4 flex flex-wrap items-center gap-2">
+				<input
+					class="field-input min-w-64 flex-1"
+					bind:value={catalogueFilter}
+					placeholder={m.broker_catalogue_filter()}
+					aria-label={m.broker_catalogue_filter()}
+				/>
+				<select class="field-input" bind:value={catalogueKind} aria-label={m.broker_col_kind()}>
+					<option value="">{m.broker_kind_any()}</option>
+					<option value="model">model</option>
+					<option value="embedding">embedding</option>
+				</select>
+				<GatewayConsoleLink href={catalogue?.console_url} label={m.broker_catalogue_discovery()} />
+			</div>
+			{#if catalogue?.broker_error}
+				<p class="mb-3 text-sm" style="color: var(--color-danger);">
+					{m.broker_unreachable({ error: catalogue.broker_error })}
+				</p>
+			{/if}
+			<div class="overflow-x-auto rounded-lg" style="border: 1px solid var(--color-border);">
+				<table class="w-full text-sm">
+					<thead>
+						<tr
+							class="text-left text-[var(--color-text-muted)]"
+							style="background: var(--color-surface-2);"
+						>
+							<th class="px-3 py-2 font-medium">{m.broker_col_resource()}</th>
+							<th class="px-3 py-2 font-medium">{m.broker_col_provider()}</th>
+							<th class="px-3 py-2 font-medium">{m.broker_col_price()}</th>
+							<th class="px-3 py-2 font-medium">{m.broker_col_reputation()}</th>
+							<th class="px-3 py-2 font-medium">{m.broker_col_status()}</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each catalogueRows as r (r.id)}
+							<tr style="border-top: 1px solid var(--color-border);">
+								<td class="px-3 py-2">
+									<div class="font-mono text-xs">{r.name}</div>
+									<div class="text-xs text-[var(--color-text-muted)]">
+										{r.kind}{r.gateway ? ' · ' + m.broker_catalogue_template() : ''}
+									</div>
+								</td>
+								<td class="px-3 py-2 text-xs">{r.provider || '—'}</td>
+								<td class="px-3 py-2 text-xs">{r.price || '—'}</td>
+								<td class="px-3 py-2 text-xs">{reputation(r)}</td>
+								<td class="px-3 py-2 text-xs">
+									{#if r.usage.state === 'usable'}
+										<span style="color: var(--color-success);"
+											>{m.broker_catalogue_usable({ call: r.usage.call ?? '' })}</span
+										>
+									{:else}
+										<span class="text-[var(--color-text-muted)]"
+											>{m.broker_catalogue_not_in_gateway()}</span
+										>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+						{#if catalogueRows.length === 0}
+							<tr>
+								<td colspan="5" class="px-3 py-6 text-center text-sm text-[var(--color-text-muted)]"
+									>{catalogue ? m.broker_catalogue_none() : m.common_loading()}</td
+								>
+							</tr>
+						{/if}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
 
 	<section class="rounded-xl border p-5" style="border-color: var(--color-border);">
 		<h2 class="mb-2 text-base font-semibold">{m.broker_models_heading()}</h2>

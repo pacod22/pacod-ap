@@ -5,6 +5,9 @@ GET    /api/v1/broker              — the broker's state as pacod-ap sees it: c
                                      MCP server), and the reputation and price now of the gateway
                                      models the pickers offer
 GET    /api/v1/broker/search       — the catalogue, searched as the agents' broker_search tool does
+GET    /api/v1/broker/catalogue    — the models and embeddings the broker lists, each with how the
+                                     gateway offers it: usable (in the model pickers, under the name
+                                     in `call`) or not_in_gateway (a link to the gateway's discovery)
 GET    /api/v1/broker/config       — the connection: each setting, where it comes from (the
                                      deployment's BROKER_* or the console) and the deployment's
                                      value; of the token only whether there is one and its last four
@@ -27,6 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from admin_api.dependencies import require_admin, require_superuser
 from admin_api.schemas import BrokerConfigUpdate
+from admin_api.services.gateway_reports import console_url
 from app.core.logging import get_logger
 from app.guards.auth import AuthenticatedUser
 from app.services import broker, broker_config
@@ -96,6 +100,43 @@ async def broker_search(
         return {"hits": await broker.search(q, kind or None, limit=20), "broker_error": None}
     except broker.BrokerUnavailable as e:
         return {"hits": [], "broker_error": str(e)}
+
+
+@router.get("/catalogue")
+async def broker_catalogue(_: AuthenticatedUser = Depends(require_admin)) -> dict:
+    """What the broker lists, classified against the gateway's model list.
+
+    ``usable``: the gateway offers it, so every picker holds it. A model is matched by the
+    broker resource the gateway links it to (``broker_resource_id``); a gateway template the
+    broker lists (``@name``) by its name. ``not_in_gateway``: otherwise, e.g. another provider's
+    model the gateway has not accepted, or a template of another gateway. The token pacod-ap
+    holds sees only the offers made to the platform or the public; another organisation's
+    offers are not in this list at all."""
+    out: dict = {
+        "models": [],
+        "broker_error": None,
+        "console_url": console_url("platform/models/discovery"),
+    }
+    if not (await broker_config.get_connection()).configured:
+        out["broker_error"] = "no broker is configured"
+        return out
+    rows, _ = await gateway_model_list()
+    linked = {r["broker_resource_id"]: r["id"] for r in rows if r.get("broker_resource_id")}
+    templates = {r["id"] for r in rows if r["kind"] == "template"}
+    try:
+        hits = await broker.list_models()
+    except broker.BrokerUnavailable as e:
+        out["broker_error"] = str(e)
+        return out
+    for hit in hits:
+        call = None
+        if hit["id"] in linked:
+            call = linked[hit["id"]]
+        elif hit["gateway"] and hit["upstream_id"] in templates:
+            call = hit["upstream_id"]
+        hit["usage"] = {"state": "usable" if call else "not_in_gateway", "call": call}
+        out["models"].append(hit)
+    return out
 
 
 # ---------- the connection ----------

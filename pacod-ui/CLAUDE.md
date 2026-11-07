@@ -449,7 +449,10 @@ own console. The frontend never talks to the gateway directly.
   Agent tab (`meta.broker`, "pacod-broker"), on its published version. The **Connection** panel
   (`components/broker/BrokerConnection.svelte`, `/api/v1/broker/config`) shows each setting's source
   (`deployment` = `BROKER_*`, `console` = set here) and is editable by **superusers** only
-  (`canEdit` from the load; admins see it and may **Test connection**). The token is write-only
+  (`canEdit` from the load; admins see it and may **Test connection**).
+  The **Models and templates on the broker** section (`GET /api/v1/broker/catalogue`) lists what the
+  broker lists, with a usage badge: `Usable now as <call>` or `Not in the gateway` (with a link to the
+  gateway's model discovery via `GatewayConsoleLink`). The token is write-only
   (only `last4` comes back); a save sends only the changed fields, `null` = back to the
   deployment's, `token: ""` = open mode. The server refuses an address change without that
   broker's token (`token_required`); `brokerErrorMessage` shows its `detail.message`.

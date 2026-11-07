@@ -5,6 +5,7 @@ answer is a real one, recorded from a broker serving its example catalogue
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -316,3 +317,99 @@ async def test_the_announcer_announces_updates_and_says_goodbye(with_broker, mon
     assert "lease_id" not in bodies[0] and bodies[1]["lease_id"] == "lse_1"
     assert bodies[1]["resources"][0]["summary"] == "two"
     assert bye.call_count == 1 and a.announced is None
+
+
+def test_a_catalogue_hit_says_what_it_is_called_and_whether_it_is_an_offering():
+    h = broker.catalogue_hit(FIXTURE["hits"][0])
+    assert isinstance(h["upstream_id"], str) and h["gateway"] is False
+    assert set(h) >= set(broker.compact_hit(FIXTURE["hits"][0]))
+    offering = copy.deepcopy(FIXTURE["hits"][0])
+    offering["resource"]["tags"] = ["gateway", "template"]
+    offering["resource"]["model"] = {"upstream_id": "@sonnet-fast"}
+    h = broker.catalogue_hit(offering)
+    assert h["gateway"] is True and h["upstream_id"] == "@sonnet-fast"
+
+
+@pytest.mark.asyncio
+async def test_the_catalogue_reads_every_page_of_models_and_embeddings(with_broker):
+    base = FIXTURE["hits"][0]
+    second = copy.deepcopy(base)
+    second["id"] = "res_second"
+    second["resource"]["id"] = "res_second"
+
+    def answer(request):
+        body = json.loads(request.content)
+        if body["kind"] == "embedding":
+            return httpx.Response(200, json={"hits": [], "next_cursor": None})
+        if body.get("cursor") == "page-2":
+            return httpx.Response(200, json={"hits": [second], "next_cursor": None})
+        return httpx.Response(200, json={"hits": [base], "next_cursor": "page-2"})
+
+    with respx.mock(base_url=BROKER) as mock:
+        route = mock.post("/v1/discover").mock(side_effect=answer)
+        models = await broker.list_models()
+    sent = [json.loads(c.request.content) for c in route.calls]
+    assert [(b["kind"], b.get("cursor")) for b in sent] == [
+        ("model", None),
+        ("model", "page-2"),
+        ("embedding", None),
+    ]
+    assert all(b["limit"] == broker.CATALOGUE_PAGE for b in sent)
+    assert {m["id"] for m in models} == {base["id"], "res_second"}
+
+
+@pytest.mark.asyncio
+async def test_a_broker_listing_is_usable_when_the_gateway_offers_it(with_broker, monkeypatch):
+    model = copy.deepcopy(FIXTURE["hits"][0])
+    model["resource"]["tags"] = []
+    template = copy.deepcopy(FIXTURE["hits"][0])
+    template["id"] = "res_tpl"
+    template["resource"]["tags"] = ["gateway", "template"]
+    template["resource"]["model"] = {"upstream_id": "@sonnet-fast"}
+    foreign = copy.deepcopy(FIXTURE["hits"][0])
+    foreign["id"] = "res_foreign"
+    foreign["resource"]["tags"] = []
+    foreign["resource"]["model"] = {"upstream_id": "other-vendor/x"}
+
+    async def gateway_rows():
+        return [
+            {"id": "openai/gpt-x", "kind": "model", "broker_resource_id": model["id"]},
+            {"id": "@sonnet-fast", "kind": "template", "broker_resource_id": None},
+        ], True
+
+    from admin_api.routes import broker as route
+
+    c = _admin_client(monkeypatch, [])
+    monkeypatch.setattr(route, "gateway_model_list", gateway_rows)
+    with respx.mock(base_url=BROKER) as mock:
+        mock.post("/v1/discover").mock(
+            side_effect=lambda req: httpx.Response(
+                200,
+                json={
+                    "hits": [model, template, foreign]
+                    if json.loads(req.content)["kind"] == "model"
+                    else [],
+                    "next_cursor": None,
+                },
+            )
+        )
+        v = c.get("/api/v1/broker/catalogue").json()
+    by_id = {m["id"]: m for m in v["models"]}
+    assert v["broker_error"] is None
+    assert by_id[model["id"]]["usage"] == {"state": "usable", "call": "openai/gpt-x"}
+    assert by_id["res_tpl"]["usage"] == {"state": "usable", "call": "@sonnet-fast"}
+    assert by_id["res_foreign"]["usage"] == {"state": "not_in_gateway", "call": None}
+
+
+def test_the_catalogue_survives_a_broker_outage(with_broker, monkeypatch):
+    from admin_api.routes import broker as route
+
+    async def gateway_rows():
+        return [], True
+
+    monkeypatch.setattr(route, "gateway_model_list", gateway_rows)
+    c = _admin_client(monkeypatch, [])
+    with respx.mock(base_url=BROKER) as mock:
+        mock.post("/v1/discover").mock(side_effect=httpx.ConnectError("down"))
+        v = c.get("/api/v1/broker/catalogue").json()
+    assert v["models"] == [] and "down" in v["broker_error"]

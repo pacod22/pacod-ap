@@ -1222,6 +1222,13 @@ configured. ARCHITECTURE.md §9.1 has the design; the rules that bite:
   with only `meta.broker` changed (the draft gets the same change, so the next editor publish keeps
   it; unpublished draft work stays a draft), adopting an unmanaged agent first; idempotent.
   pacod-demo's bootstrap offers the starter this way.
+- **The catalogue** (`GET /api/v1/broker/catalogue`, `broker.list_models`, `catalogue_hit`): every
+  `model` and `embedding` the broker lists, paged by its cursor (≤5 pages of 200), each classified
+  by the gateway's list: `usable` (the gateway links it by `broker_resource_id`, or a gateway
+  template `@name` is in the list; `call` is the name the pickers use) or `not_in_gateway`. Templates
+  are listed as `kind` + tag `gateway`; a token without an organisation sees `platform` and `public`
+  offers only. Making a `not_in_gateway` model usable is the gateway's own discovery (accept, price,
+  activate): pacod-ap's token is workspace admin, and the gateway's accept/apply need platform admin.
 - **Disconnecting does not close an offered agent**: `offered_profile_ids` reads the published
   versions, not the connection, so an agent offered there stays open to every authenticated caller
   until its offer is withdrawn.
