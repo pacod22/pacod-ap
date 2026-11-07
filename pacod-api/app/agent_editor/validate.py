@@ -214,7 +214,7 @@ def validate_graph(
             )
 
     issues.extend(_check_marketing(graph, taken_marketing_slugs))
-    issues.extend(_check_broker(graph))
+    issues.extend(check_broker(graph))
     return graph, issues
 
 
@@ -254,7 +254,7 @@ def _check_fields(
     return out
 
 
-def _check_broker(graph: AgentGraph) -> list[GraphIssue]:
+def check_broker(graph: AgentGraph) -> list[GraphIssue]:
     b = graph.meta.broker
     if b is None or b.offer is None:
         return []

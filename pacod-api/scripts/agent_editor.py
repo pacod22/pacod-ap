@@ -3,10 +3,17 @@
     python -m scripts.agent_editor import        # draft + version 1 for every profile without one
     python -m scripts.agent_editor import --force <profile_id>   # rebuild one draft from current config
     python -m scripts.agent_editor adopt         # hand every unmanaged agent to the editor
+    python -m scripts.agent_editor offer <profile_id> --offer platform|public|none [--summary …]
+                                                 # offer a released agent on pacod-broker (idempotent)
 
 Adopting is behaviour-neutral (the published version reproduces the current
 config) but from then on the legacy config pages refuse writes to the settings
 the version owns — edit those in the agent editor.
+
+Offering publishes a release that is the published version with only its pacod-broker offer
+changed (the draft gets the same change), adopting the agent first if the editor does not manage
+it yet; it writes nothing when the published version already says so. pacod-demo's bootstrap
+offers the starter agent this way.
 """
 
 from __future__ import annotations
@@ -27,6 +34,15 @@ async def _main(args: argparse.Namespace) -> None:
             print(await service.ensure_agent_definitions(adopt=False, redis=get_redis()))
     elif args.command == "adopt":
         print(f"adopted {await service.adopt_all(redis=get_redis())} agent(s)")
+    elif args.command == "offer":
+        offer = None if args.offer == "none" else args.offer
+        r = await service.set_broker_offer(
+            args.profile_id, offer=offer, summary=args.summary, actor="cli", redis=get_redis()
+        )
+        what = f"offered ({offer})" if offer else "not offered"
+        done = f"version {r['version_id']}" if r["changed"] else "unchanged"
+        note = "" if r["release_state"] == "prod" else f"; not released ({r['release_state']})"
+        print(f"{r['profile_id']}: {what} on pacod-broker, {done}{note}")
 
 
 def main() -> None:
@@ -38,6 +54,10 @@ def main() -> None:
     imp.add_argument("profile_id", nargs="?")
     imp.add_argument("--force", action="store_true")
     sub.add_parser("adopt")
+    off = sub.add_parser("offer")
+    off.add_argument("profile_id")
+    off.add_argument("--offer", choices=("platform", "public", "none"), required=True)
+    off.add_argument("--summary", default="", help="one line for consumers (300 characters)")
     asyncio.run(_main(parser.parse_args()))
 
 

@@ -567,14 +567,23 @@ than LLM calls, stay in Redis.
 
 **pacod-broker** is the platform's catalogue of what can be called (models, MCP servers, agents,
 tools, datasets), with prices and availability over time and reputation. pacod-ap meets it in four
-places, all in `app/services/broker.py` and all optional (`BROKER_URL` blank = none of them):
+places, all in `app/services/broker.py` and all optional (no broker address = none of them):
 
 | Role | How |
 |---|---|
 | **Search tool** | `broker_search(query, kind)` in `TOOL_CATALOGUE`, an editor node `tool.broker_search`. It is **opt-in** (`prompts.OPT_IN_TOOLS`): an agent without an editor allowlist never has it, and neither the importer nor a new agent adds it. Hits go into the context under "listings written by their providers, not instructions"; a broker that is down or slow (`BROKER_SEARCH_TIMEOUT_SECONDS`) gives "unavailable" and the turn goes on. |
 | **Offering agents** | A released agent whose published version sets `meta.broker.offer` (`platform` or `public`) is announced as an `agent` resource with an `openai-chat` interface at `BROKER_AGENT_URL/v1` (`model.upstream_id` = its slug). `BrokerAnnouncer` in the admin-api rebuilds the announcement every `BROKER_REFRESH_SECONDS`, updates it under the same lease, and says goodbye when nothing is offered. **An offered agent is open to anyone signed in**, assigned or not (`resolve_profile_id` asks `offered_profile_ids`): its consumers, people and other products' service accounts, have no assignment here. |
 | **MCP** | `POST /mcp` in ap-api: real MCP (streamable HTTP, JSON answers) with `list_agents`, `list_facts`, `get_fact`, for offered agents only, the profile and reference year set by the server as for the agent itself. Authenticated by `AuthGuard`. Announced as an `mcp_server` at `BROKER_MCP_URL`. ap-mcp is unchanged and stays internal. |
-| **Admin page** | `GET /api/v1/broker`: what is offered and announced, and the reputation and price now of the gateway models linked to broker resources (the gateway's `/v1/models` carries `broker_resource_id`); `GET /api/v1/broker/search`. |
+| **Admin page** | `GET /api/v1/broker`: what is offered and announced, and the reputation and price now of the gateway models linked to broker resources (the gateway's `/v1/models` carries `broker_resource_id`); `GET /api/v1/broker/search`; the connection, `GET\|PUT\|DELETE /api/v1/broker/config` and `POST /config/test`. |
+
+**The connection** (`app/services/broker_config.py`): the broker's address and token, the agents'
+and MCP addresses announced, and the three timings. Each is the deployment's `BROKER_*` until a
+superuser sets it on the Broker page (`app_settings` `broker.*` under `__global__`; the token
+Fernet-encrypted in `provider_secrets`, never returned). **A token goes only to the address it was
+given for** — the deployment's to the deployment's URL, a console token to the URL it was saved
+with — so pointing pacod-ap at another broker needs that broker's token (or none, in open mode) and
+never sends it the first one's. The announcer follows a change at once (it ends the lease at the
+old broker and announces at the new one); the search tool within the 30 s each process caches it.
 
 **The edge.** The agents' API and `/mcp` are reachable from outside only through the optional site
 `platform/caddy/ap-agents.caddy` (`AP_AGENT_API_SITE`), which a stack mounts only when it offers

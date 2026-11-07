@@ -13,12 +13,30 @@ import pytest
 import respx
 
 from app.agent import graph as graph_mod
-from app.services import broker
+from app.services import broker, broker_config
 
 FIXTURE = json.loads(
     (Path(__file__).parent.parent / "fixtures" / "broker" / "discover.json").read_text()
 )
 BROKER = "http://broker.test"
+
+
+@pytest.fixture(autouse=True)
+def _no_console_settings(monkeypatch):
+    """The deployment's connection alone: nothing set on the Broker page (test_broker_config.py
+    covers what the console sets)."""
+
+    async def rows():
+        return {}
+
+    async def token():
+        return None
+
+    monkeypatch.setattr(broker_config, "_load_rows", rows)
+    monkeypatch.setattr(broker_config, "_load_token", token)
+    broker_config.invalidate()
+    yield
+    broker_config.invalidate()
 
 
 @pytest.fixture
@@ -81,6 +99,7 @@ async def test_no_broker_or_a_failing_one_is_unavailable(with_broker, monkeypatc
     from app.core import config
 
     config.get_settings.cache_clear()
+    broker.reset_cache()
     with pytest.raises(broker.BrokerUnavailable):
         await broker.search("x")
 
@@ -121,7 +140,7 @@ def test_the_announcement_offers_agents_at_the_agents_url(monkeypatch):
             "summary": "Answers Nimbus Notes questions",
         },
     ]
-    a = broker.build_announcement(agents)
+    a = broker.build_announcement(agents, broker_config.from_env())
     (r,) = a["resources"]
     assert r["kind"] == "agent" and r["key"] == "agent.starter"
     assert r["interfaces"][0] == {
@@ -133,16 +152,16 @@ def test_the_announcement_offers_agents_at_the_agents_url(monkeypatch):
     # The MCP endpoint joins when its address is set, at the widest offer made.
     monkeypatch.setenv("BROKER_MCP_URL", "https://agents.example/mcp")
     config.get_settings.cache_clear()
-    a = broker.build_announcement([{**agents[0], "offer": "public"}])
+    a = broker.build_announcement([{**agents[0], "offer": "public"}], broker_config.from_env())
     mcp = next(r for r in a["resources"] if r["kind"] == "mcp_server")
     assert mcp["interfaces"][0]["protocol"] == "mcp-streamable-http"
     assert mcp["access"]["visibility"] == "public"
     # Nothing offered, or nowhere to offer it: no announcement at all.
-    assert broker.build_announcement([]) is None
+    assert broker.build_announcement([], broker_config.from_env()) is None
     monkeypatch.setenv("BROKER_AGENT_URL", "")
     monkeypatch.setenv("BROKER_MCP_URL", "")
     config.get_settings.cache_clear()
-    assert broker.build_announcement(agents) is None
+    assert broker.build_announcement(agents, broker_config.from_env()) is None
 
 
 @pytest.mark.asyncio

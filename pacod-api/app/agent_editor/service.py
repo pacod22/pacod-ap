@@ -27,7 +27,7 @@ from app.agent_editor.graph import SCHEMA_VERSION, parse_graph
 from app.agent_editor.importer import blank_graph, build_graph_from_profile
 from app.agent_editor.layout import normalize_edges
 from app.agent_editor.registry import TEMPLATES
-from app.agent_editor.validate import GraphIssue, has_errors, validate_graph
+from app.agent_editor.validate import GraphIssue, check_broker, has_errors, validate_graph
 from app.core.db import session_scope
 from app.core.db_models import (
     AgentDefinition,
@@ -697,6 +697,105 @@ async def set_release_state(profile_id: str, state: str, *, actor: str | None, r
     return await get_agent(profile_id)
 
 
+def _with_broker_offer(graph_json: str, offer: dict | None) -> dict:
+    graph = json.loads(graph_json)
+    meta = graph.setdefault("meta", {})
+    if offer is None:
+        meta.pop("broker", None)
+    else:
+        meta["broker"] = offer
+    return graph
+
+
+async def set_broker_offer(
+    profile_id: str,
+    *,
+    offer: str | None,
+    summary: str = "",
+    actor: str | None,
+    redis=None,
+) -> dict:
+    """Offer a released agent on pacod-broker (``offer`` = platform | public) or withdraw it
+    (``None``) without going through the draft: a new release that is the published version
+    with only ``meta.broker`` changed, and the same change in the draft, so that the next
+    publish from the editor keeps it. An agent the editor does not manage yet is adopted first
+    (behaviour-neutral). Nothing is written when the published version already says so.
+
+    For scripts (pacod-demo's bootstrap: ``python -m scripts.agent_editor offer``); in the
+    console it is the agent editor's Agent tab, which publishes the draft."""
+    if offer not in (None, "platform", "public"):
+        raise AgentEditorError("invalid_offer", f"Unknown offer {offer!r}", 422)
+    wanted = None if offer is None else {"offer": offer, "summary": summary.strip()}
+    async with session_scope() as db:
+        row = (
+            await db.execute(
+                select(Profile.published_version_id, Profile.release_state).where(
+                    Profile.id == profile_id
+                )
+            )
+        ).first()
+    if row is None:
+        raise AgentEditorError("not_found", f"Agent {profile_id!r} not found", 404)
+    if row[0] is None:
+        if wanted is None:  # never published, so never offered: nothing to withdraw
+            return {
+                "changed": False,
+                "version_id": None,
+                "profile_id": profile_id,
+                "release_state": row[1],
+            }
+        await adopt_all(redis=redis, profile_ids=[profile_id])
+    async with session_scope() as db:
+        profile, definition = await _load(db, profile_id, lock=True)
+        published = await db.get(AgentVersion, profile.published_version_id)
+        if published is None:
+            raise AgentEditorError("never_published", "Publish a version first", 409)
+        current = (json.loads(published.graph).get("meta") or {}).get("broker")
+        if (current or None) == wanted or (wanted is None and not (current or {}).get("offer")):
+            return {"changed": False, "version_id": published.id, **_offer_state(profile)}
+        graph = _with_broker_offer(published.graph, wanted)
+        # Only the offer is checked: the rest is the published version, valid when it was
+        # published — a model the gateway has dropped since must not block an offer.
+        try:
+            issues = check_broker(parse_graph(graph))
+        except Exception as e:
+            raise AgentEditorError("invalid_graph", f"Unreadable graph: {e}", 422) from e
+        if has_errors(issues):
+            raise AgentEditorError("invalid_offer", "The offer is not valid", 422, issues)
+        version = await _snapshot(
+            db,
+            profile_id,
+            _dumps(graph),
+            "release",
+            revision=None,
+            note="Offered on pacod-broker" if wanted else "Withdrawn from pacod-broker",
+            actor=actor,
+        )
+        profile.published_version_id = version.id
+        _deployment(db, profile_id, "publish", "prod", version.id, actor)
+        definition.draft_graph = _dumps(_with_broker_offer(definition.draft_graph, wanted))
+        definition.draft_revision += 1
+        definition.updated_by = actor
+        definition.updated_at = _now()
+        version_id = version.id
+        state = _offer_state(profile)
+    # Under PUBLIC_AGENTS_CACHE_PREFIX: also the broker's offered-agents cache.
+    await _invalidate(profile_id, redis)
+    log.info(
+        "agent_editor_broker_offer",
+        profile_id=profile_id,
+        offer=offer,
+        version_id=version_id,
+        actor=actor,
+    )
+    return {"changed": True, "version_id": version_id, **state}
+
+
+def _offer_state(profile: Profile) -> dict:
+    """Whether the offer takes effect: only a released agent is announced."""
+    return {"profile_id": profile.id, "release_state": profile.release_state}
+
+
 # --------------------------------------------------------------------------- #
 # Boot backfill
 # --------------------------------------------------------------------------- #
@@ -751,17 +850,16 @@ async def ensure_agent_definitions(*, adopt: bool, redis=None) -> dict:
     return {"created": created, "adopted": adopted}
 
 
-async def adopt_all(*, redis=None) -> int:
-    """Make every unmanaged profile editor-managed with an IDENTICAL effective
-    config: re-import its current settings (not the boot-time version 1, which
-    may be stale by now), store that as a release and publish it. A draft nobody
-    has edited yet is refreshed to the same graph."""
+async def adopt_all(*, redis=None, profile_ids: list[str] | None = None) -> int:
+    """Make every unmanaged profile (or those of ``profile_ids``) editor-managed with an
+    IDENTICAL effective config: re-import its current settings (not the boot-time version 1,
+    which may be stale by now), store that as a release and publish it. A draft nobody has
+    edited yet is refreshed to the same graph."""
     async with session_scope() as db:
-        rows = (
-            (await db.execute(select(Profile).where(Profile.published_version_id.is_(None))))
-            .scalars()
-            .all()
-        )
+        stmt = select(Profile).where(Profile.published_version_id.is_(None))
+        if profile_ids is not None:
+            stmt = stmt.where(Profile.id.in_(profile_ids))
+        rows = (await db.execute(stmt)).scalars().all()
         todo = [(_row_to_context(r), r.description) for r in rows]
     adopted = 0
     for profile, description in todo:

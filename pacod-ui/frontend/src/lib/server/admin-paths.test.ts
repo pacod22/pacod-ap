@@ -26,6 +26,13 @@ describe('isAdminApiPath — prefix traps', () => {
 		expect(isAdminApiPath('/api/v1/llm-models')).toBe(true);
 	});
 
+	it('routes the broker page, its search and its connection to admin-api', () => {
+		expect(isAdminApiPath('/api/v1/broker')).toBe(true);
+		expect(isAdminApiPath('/api/v1/broker/search?q=gpu')).toBe(true);
+		expect(isAdminApiPath('/api/v1/broker/config')).toBe(true);
+		expect(isAdminApiPath('/api/v1/broker/config/test')).toBe(true);
+	});
+
 	it('keeps chat routes on the chat api', () => {
 		expect(isAdminApiPath('/api/v1/chat')).toBe(false);
 		expect(isAdminApiPath('/api/v1/my-profiles')).toBe(false);
