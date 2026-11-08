@@ -10,6 +10,10 @@
 #   - the SSE stream reaches `event: done`, with the planned tool call and streamed tokens;
 #   - the gateway recorded the turn under trace = the turn id, attributed to the user, the
 #     agent and the session, and its cost equals the `done` event's.
+# First it runs admin-api's sync of the profiles with the gateway's agents, so that `starter` is
+# a registered agent bound to the API's key: the turn's calls name it in x-gw-agent-id, and
+# `agent_id == "starter"` then proves the gateway stamped the agent it decided (the body carries
+# no agent_id any more).
 # Every run asks a slightly different question, so neither the topic cache nor the response
 # cache answers it without the scripted calls. Prints no key.
 set -euo pipefail
@@ -25,6 +29,9 @@ envval() { grep "^$1=" "$GATEWAY_ENV" | tail -1 | cut -d= -f2-; }
 
 [ -f "$GATEWAY_ENV" ] || fail "no pacod-api/.env.gateway: run make gw-bootstrap"
 docker inspect ap-api >/dev/null 2>&1 || fail "the app is not running: make up-local"
+# Waits for a round in progress and, when the state changed lately, for the services' copies.
+docker exec ap-admin-api python -m admin_api.services.gateway_agent_sync once \
+	|| fail "admin-api could not sync the profiles with the gateway's agents"
 
 classifier='{"is_relevant": true, "confidence": 0.95, "detected_language": "en", "reason": "a pricing question", "needs_clarification": false, "follow_ups": []}'
 planner='{"is_complex": false, "tool_calls": [{"name": "get_fact", "args": {"fact_key": "price", "variant": "plus"}}]}'

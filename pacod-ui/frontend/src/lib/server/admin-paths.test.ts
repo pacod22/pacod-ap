@@ -33,6 +33,10 @@ describe('isAdminApiPath — prefix traps', () => {
 		expect(isAdminApiPath('/api/v1/broker/config/test')).toBe(true);
 	});
 
+	it("routes the profiles' gateway agents to admin-api", () => {
+		expect(isAdminApiPath('/api/v1/gateway/agents')).toBe(true);
+	});
+
 	it('keeps chat routes on the chat api', () => {
 		expect(isAdminApiPath('/api/v1/chat')).toBe(false);
 		expect(isAdminApiPath('/api/v1/my-profiles')).toBe(false);

@@ -13,6 +13,10 @@ Failures are scripted through gw-mock's control port (POST /__mock/script queues
 behaviour of the next upstream requests); the 402 comes from a tiny spend cap on a scratch key
 that is deleted again. Standard library only. Prints case names, never a key.
 
+Not recorded here: error_403_agent_disabled*.json (the kill switch) are written by hand from
+pacod-gw's error envelope (dataplane/errors.rs), since recording them means switching off the
+agent the key speaks for; each says so in its note.
+
 These are the gateway's shapes against its mock. They are NOT the plan's Phase 3d baseline,
 which records LiteLLM's behaviour against real providers (tag pre-gateway, needs keys).
 """
@@ -34,6 +38,11 @@ ADMIN = "http://127.0.0.1:18081/api/v1"
 MOCK_CONTROL = "http://127.0.0.1:19000"
 # Response headers worth keeping: the ones the client reads, and the gateway's own.
 KEEP_HEADERS = ("content-type", "retry-after", "x-should-retry", "x-request-id")
+
+# The gateway agent GATEWAY_KEY_API speaks for outside a profile (gw_bootstrap.py's
+# FALLBACK_AGENT). Once admin-api has bound the profiles to the key too, it speaks for several
+# agents and every call must name one, the model list and the quota included.
+AGENT = {"x-gw-agent-id": "pacod-ap"}
 
 ANTHROPIC = "anthropic/claude-sonnet-5-5"
 OPENAI = "openai/gpt-5.6-luna"
@@ -122,14 +131,14 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     e = env()
     key, admin = e["GATEWAY_KEY_API"], e["GW_ADMIN_TOKEN"]
-    one_try = {"x-gw-retries": "1"}
+    one_try = {"x-gw-retries": "1", **AGENT}
 
     # --- outcomes the client classifies ---------------------------------------------------
     st, h, b = http("POST", f"{DATA}/v1/chat/completions", token="pgw_not_a_key", body=chat())
     save("error_401_invalid_key", chat(), st, h, b, "unknown API key")
 
     req = {"model": ANTHROPIC, "max_tokens": 64}
-    st, h, b = http("POST", f"{DATA}/v1/chat/completions", token=key, body=req)
+    st, h, b = http("POST", f"{DATA}/v1/chat/completions", token=key, headers=AGENT, body=req)
     save("error_400_invalid_request", req, st, h, b, "a request without messages")
 
     script("status=429,retry_after=7")
@@ -209,7 +218,7 @@ def main() -> None:
 
     # --- success shapes ---------------------------------------------------------------------
     script("cache_read=40,reasoning=12")
-    st, h, b = http("POST", f"{DATA}/v1/chat/completions", token=key, body=chat())
+    st, h, b = http("POST", f"{DATA}/v1/chat/completions", token=key, headers=AGENT, body=chat())
     save(
         "ok_chat_cost_cached",
         chat(),
@@ -226,22 +235,28 @@ def main() -> None:
         max_tokens=2048,
         thinking={"type": "adaptive", "display": "summarized"},
     )
-    st, h, b = http("POST", f"{DATA}/v1/chat/completions", token=key, body=req, stream=True)
+    st, h, b = http(
+        "POST", f"{DATA}/v1/chat/completions", token=key, headers=AGENT, body=req, stream=True
+    )
     save("ok_stream_thinking", req, st, h, b, "reasoning deltas, then text, then usage with cost")
 
     script("stop=max_tokens")
     req = chat(stream=True, stream_options={"include_usage": True})
-    st, h, b = http("POST", f"{DATA}/v1/chat/completions", token=key, body=req, stream=True)
+    st, h, b = http(
+        "POST", f"{DATA}/v1/chat/completions", token=key, headers=AGENT, body=req, stream=True
+    )
     save("ok_stream_length", req, st, h, b, "an Anthropic max_tokens stop, normalised")
 
     script("stop=length")
-    st, h, b = http("POST", f"{DATA}/v1/chat/completions", token=key, body=chat(model=OPENAI))
+    st, h, b = http(
+        "POST", f"{DATA}/v1/chat/completions", token=key, headers=AGENT, body=chat(model=OPENAI)
+    )
     save("ok_chat_length_openai", chat(model=OPENAI), st, h, b, "finish_reason length")
 
-    st, h, b = http("GET", f"{DATA}/v1/models", token=key)
+    st, h, b = http("GET", f"{DATA}/v1/models", token=key, headers=AGENT)
     save("ok_models", {}, st, h, b, "the workspace's model list")
 
-    st, h, b = http("GET", f"{DATA}/gw/v1/quota?end_user=usr_fixture", token=key)
+    st, h, b = http("GET", f"{DATA}/gw/v1/quota?end_user=usr_fixture", token=key, headers=AGENT)
     save(
         "ok_quota",
         {"end_user": "usr_fixture"},

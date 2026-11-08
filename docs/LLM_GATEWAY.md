@@ -13,6 +13,7 @@ settings, the agent editor's overlay).
 | Transport, attribution, retries, cost | `pacod-api/app/services/llm_client.py` |
 | The model list the admin pickers offer | `pacod-api/app/services/gateway_models.py` (`GET /v1/models`, cached 60 s: the granted models, then the gateway's `@` templates; `[]` while the gateway is away) |
 | The users' token budget | `pacod-api/app/services/gateway_quota.py` (read), `admin_api/services/gateway_admin.py` (the admin quota pages write) |
+| The agent a call speaks for (`x-gw-agent-id`) | `pacod-api/app/services/gateway_agents.py` (every process), `admin_api/services/gateway_agent_sync.py` (admin-api registers the profiles as agents), `GET /api/v1/gateway/agents` (the profiles page's badges) |
 | Usage, cost and analytics pages | `admin_api/services/gateway_reports.py` (the reports facade) |
 | The gateway's objects | `deploy/pacod-gw/platform-config.{dev,live}.json`, imported by `scripts/gw_bootstrap.py` (`make gw-bootstrap`) |
 | Metrics, dashboards, alerts | `monitoring/` (job `pacod-gw-core`, Grafana folder `pacod-gw`, `alerts/gw.rules.yml`) |
@@ -24,20 +25,26 @@ Each service that calls the gateway (`ap-api`, `ap-admin-api`, `ap-improvement-l
 `ap-newsletter-worker`) has its own key (`pgw_…`), interpolated into its compose
 environment from `pacod-api/.env.gateway`: `GATEWAY_KEY_API`, `GATEWAY_KEY_ADMIN_API`,
 `GATEWAY_KEY_LOOP` (improvement loop, daily spend cap 20 USD) and `GATEWAY_KEY_NEWSLETTER`
-(5 USD). A key belongs to the workspace `pacod` of the organisation `pacod`. admin-api also holds
+(5 USD). A key belongs to the workspace `pacod` of the organisation `pacod`, and speaks for the registered
+agent `pacod-ap` and for every profile's own agent (see **Registered agents**). admin-api also holds
 two management tokens: `GATEWAY_REPORT_TOKEN` (viewer: reports) and `GATEWAY_ADMIN_TOKEN`
-(workspace admin: the users' quota overrides).
+(workspace admin: the users' quota overrides, the profiles' agents).
 
 ## Attribution
 
 Every request carries a `gateway` object in its body (merged next to `thinking` /
-`reasoning_effort`, never replacing them):
+`reasoning_effort`, never replacing them) and the header `x-gw-agent-id`:
 
 ```json
 {"gateway": {"end_user": "<users.id>", "session_id": "<chat session>", "trace_id": "<turn id>",
-             "agent_id": "<profile id>", "task": "<purpose>",
+             "task": "<purpose>",
              "tags": {"purpose": "<purpose>", "site": "<site>", "profile": "<profile id>", "variant": "<prod|dev>"}}}
 ```
+
+- The agent is the header, not the body: the profile's own registered agent, else the fallback
+  `pacod-ap` (see **Registered agents**). The gateway writes the agent it decided into the record,
+  and refuses a body `agent_id` that differs from it. `tags.profile` names the profile in every case,
+  and the app's reports group by it.
 
 - `end_user` is sent only inside a person's request; workers (`site=internal`) send none, so the
   users' token limit counts people only. `users.id` is the person's pacod-id `sub`.
@@ -58,6 +65,7 @@ retry on its own: the app's tenacity policy is the only retry layer. One classif
 |---|---|---|
 | client timeout, HTTP 504, `upstream_timeout` | `UpstreamTimeoutError` | **never** — the provider may still finish and bill it |
 | 402 (`quota_exceeded`, `upstream_quota_exhausted`) | `UpstreamQuotaError` | never |
+| 403 `agent_disabled` (or `not_allowed` "the agent … is disabled"): the kill switch | `AgentDisabledError` (503 to the user, "switched off by the administrator") | never, nor as another agent |
 | other 4xx (bad key, model not granted, bad request) | `UpstreamRequestError` | never |
 | 429 | `UpstreamError` | yes, after `Retry-After` (capped at 10 s) |
 | 502/503, connection errors | `UpstreamError` | yes (a stream: only while opening) |
@@ -67,6 +75,55 @@ Every provider timeout configured in the gateway (600 s in both configs) must be
 The app still counts every logical call's outcome itself (`llm_requests_total{outcome}`,
 `llm_retries_total`, the `llm_call_errors` table): those see what the gateway cannot — client
 timeouts and an unreachable gateway.
+
+## Registered agents
+
+pacod-gw registers agents per workspace and binds them to keys (its runbook §21.3). A key bound to
+one agent makes every call that agent's; a key bound to several must name one in `x-gw-agent-id` on
+**every** call, `/v1/models` and `/gw/v1/quota` included; a key bound to none may not name a
+registered agent. A registered agent can be switched off in the console (`status: disabled`, the
+kill switch): every new call of its keys for it is refused within a second.
+
+- **The fallback agent `pacod-ap`** (`GATEWAY_FALLBACK_AGENT`) is registered by `make gw-bootstrap`,
+  which binds the four keys to it. Calls outside a profile (the model list, the quota outside a
+  turn) and profiles that are no agent of their own speak for it.
+- **Each profile is an agent of its own**, named by its id. admin-api's reconciler
+  (`admin_api/services/gateway_agent_sync.py`) creates the missing ones (description "pacod-ap
+  profile <slug> (managed by pacod-ap's admin-api)") and adds them to every key bound to `pacod-ap`,
+  at start, every `GATEWAY_AGENT_SYNC_SECONDS` (60; 0 = off), after a profile is created or deleted
+  and after the agent editor creates, imports or adopts agents. Writes made elsewhere (seeds,
+  pacod-demo's bootstrap) run `python -m admin_api.services.gateway_agent_sync once` in ap-admin-api
+  (`make -C pacod-api gw-agent-sync[-local]`; `make gw-bootstrap` and `seed-profile` do).
+  - It only ever adds: it never changes an existing agent (status, allowed models, tool bundles) and
+    never unbinds or deletes one. A deleted profile's agent stays (shown as orphaned).
+  - An agent of a profile's name that it did not make is a **conflict**: the profile stays on the
+    fallback.
+  - A profile id that is not a gateway name (at most 63 lower-case letters, digits and hyphens) or is
+    reserved (`pacod-ap`, the prefix `pacod-`, which pacod-kb, pacod-cms and pacod-aggregator use in
+    the same workspace) stays on the fallback. New ids are refused there: the agent editor, its create
+    schema and `seed_profile` check them.
+- **The published state** (`app_settings` `gateway.agents` under `__global__`; not Redis, which the
+  workers may not have): `registered` with the profile agents bound to every one of pacod-ap's keys,
+  or `labels` (a gateway without agents, or no `pacod-ap` yet). Each process keeps it 15 s, and its last
+  copy when the database does not answer. The header is the profile's id when it is bound, else
+  `pacod-ap`; in `labels`, the profile's id as a label (none outside a profile); never published,
+  `pacod-ap`.
+- **To stop a profile, disable its agent** in the console. Every LLM call it makes is then refused,
+  and a chat that needs one answers 503 "switched off by the administrator", never retried nor sent
+  as the fallback. A repeated first-turn question can still be answered from the app's own caches
+  (the topic classification and the response cache) without a gateway call, until those entries
+  expire or the profile's response cache is cleared (admin **Response cache → Clear cache**). The
+  quota check of a disabled agent's turn is refused too and fails open (logged
+  `gateway_quota_unavailable`). Unbinding instead does not stick: the next round binds it again.
+- **Rollout order: the app's services before the bootstrap.** An app older than this names its
+  profile in the body (`gateway.agent_id`) with no header; once a key is bound to `[pacod-ap]` the
+  gateway refuses that as a conflict (403) — every profile turn, the loop's and the newsletter's
+  included. Deploy the new ap images first, then run `make gw-bootstrap` (live, pacod-demo alike).
+
+**Tools and A2A.** pacod-ap's own agents call no gateway `/mcp` tools and no A2A agents. ap-api's
+`POST /mcp` is real MCP and is registered as a gateway tool server in pacod-demo (its bootstrap),
+not in pacod-ap's own stack; ap-mcp (the internal REST facts server) is not MCP and is never
+registered. No family service is an A2A agent this round.
 
 ## Plugins
 
@@ -117,7 +174,8 @@ Rules of the facade:
 
 - **Tokens:** the users' daily token budget is the gateway's advisory end-user limit
   `user-daily-tokens` (100 000 tokens/day in both configs).
-  - The quota guard reads the user's standing (`GET /gw/v1/quota?end_user=`, cached 5 s).
+  - The quota guard reads the user's standing (`GET /gw/v1/quota?end_user=`, cached 5 s per user and
+    agent), asked as the turn's agent (`x-gw-agent-id`).
   - Over budget, the guard refuses the next turn with HTTP 429. A turn already running is never
     cut off.
   - If the gateway does not answer, the check fails open (and is logged).

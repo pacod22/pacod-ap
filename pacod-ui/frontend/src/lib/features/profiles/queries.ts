@@ -7,6 +7,9 @@
  *   PATCH  /api/v1/profiles/{id}         → ProfileRead   (superuser)
  *   DELETE /api/v1/profiles/{id}         → 204           (superuser)
  *
+ * The profiles as the gateway's registered agents (admin, read only):
+ *   GET    /api/v1/gateway/agents        → GatewayAgents
+ *
  * Assignment (mirrors user_roles):
  *   GET    /api/v1/users/{id}/profiles          → list[UserProfileRead]
  *   POST   /api/v1/users/{id}/profiles          → UserProfileRead
@@ -127,10 +130,94 @@ export const UserProfileSchema = z.object({
 export const UserProfileListSchema = z.array(UserProfileSchema);
 export type UserProfile = z.infer<typeof UserProfileSchema>;
 
+// ----- The gateway's agents (mirrors admin_api/routes/gateway.py) --------
+// Where each profile stands at pacod-gw: its own registered agent bound to pacod-ap's keys
+// (`bound`), or on the fallback agent (`pending`, `name_unfit`, `conflict`); `orphaned` is an
+// agent pacod-ap made for a profile since deleted. `gw_status` is the agent's status there
+// (`disabled` = the console's kill switch).
+export const GatewayAgentStateSchema = z.enum([
+	'bound',
+	'pending',
+	'name_unfit',
+	'conflict',
+	'orphaned'
+]);
+export type GatewayAgentState = z.infer<typeof GatewayAgentStateSchema>;
+
+export const GatewayAgentSchema = z.object({
+	profile_id: z.string(),
+	slug: z.string().nullable(),
+	name: z.string(),
+	state: GatewayAgentStateSchema,
+	gw_status: z.string().nullable()
+});
+export type GatewayAgent = z.infer<typeof GatewayAgentSchema>;
+
+export const GatewayAgentsSchema = z.object({
+	// registered | labels | null (never published: every call names the fallback)
+	mode: z.enum(['registered', 'labels']).nullable(),
+	fallback: z.string(),
+	published_at: z.string().nullable(),
+	last_error: z.string().nullable(),
+	gateway_error: z.string().nullable(),
+	agents: z.array(GatewayAgentSchema)
+});
+export type GatewayAgents = z.infer<typeof GatewayAgentsSchema>;
+
+export type GatewayBadge = {
+	kind: 'ok' | 'muted' | 'warn' | 'danger';
+	label: string;
+	title: string;
+};
+
+type GatewayBadgeMessages = {
+	bound: string;
+	pending: string;
+	nameUnfit: string;
+	conflict: string;
+	disabled: string;
+	label: string;
+	boundTitle: string;
+	pendingTitle: string;
+	nameUnfitTitle: string;
+	conflictTitle: string;
+	disabledTitle: string;
+	labelTitle: string;
+};
+
+/**
+ * The badge a profile gets on the profiles page, or null when the gateway's view is not known
+ * (the route did not answer). A switched-off agent shows as such whatever its binding; in
+ * `labels` mode (no registered agents for pacod-ap yet) every profile is a label.
+ */
+export function gatewayBadge(
+	view: GatewayAgents | undefined,
+	profileId: string,
+	t: GatewayBadgeMessages
+): GatewayBadge | null {
+	if (!view) return null;
+	const a = view.agents.find((x) => x.profile_id === profileId);
+	if (a?.gw_status === 'disabled') {
+		return { kind: 'danger', label: t.disabled, title: t.disabledTitle };
+	}
+	if (view.mode === 'labels') return { kind: 'muted', label: t.label, title: t.labelTitle };
+	switch (a?.state) {
+		case 'bound':
+			return { kind: 'ok', label: t.bound, title: t.boundTitle };
+		case 'name_unfit':
+			return { kind: 'muted', label: t.nameUnfit, title: t.nameUnfitTitle };
+		case 'conflict':
+			return { kind: 'warn', label: t.conflict, title: t.conflictTitle };
+		default:
+			return { kind: 'muted', label: t.pending, title: t.pendingTitle };
+	}
+}
+
 // ----- Cache keys --------------------------------------------------------
 export const profileKeys = {
 	all: ['profiles'] as const,
 	lists: () => [...profileKeys.all, 'list'] as const,
+	gatewayAgents: () => [...profileKeys.all, 'gateway-agents'] as const,
 	assignments: (userId: string) => ['user-profiles', userId] as const
 };
 
@@ -140,6 +227,16 @@ export function profilesQuery(enabled = true) {
 		queryKey: profileKeys.lists(),
 		queryFn: async () => ProfileListSchema.parse(await api.get<unknown>('/v1/profiles')),
 		enabled
+	});
+}
+
+export function gatewayAgentsQuery(enabled = true) {
+	return createQuery({
+		queryKey: profileKeys.gatewayAgents(),
+		queryFn: async () => GatewayAgentsSchema.parse(await api.get<unknown>('/v1/gateway/agents')),
+		enabled,
+		// Display only: a gateway that is away leaves the badges out, never the page.
+		retry: false
 	});
 }
 
@@ -157,7 +254,7 @@ export function createProfileMutation() {
 	return createMutation({
 		mutationFn: async (input: ProfileCreateInput) =>
 			ProfileSchema.parse(await api.post<unknown>('/v1/profiles', input)),
-		onSuccess: () => qc.invalidateQueries({ queryKey: profileKeys.lists() })
+		onSuccess: () => qc.invalidateQueries({ queryKey: profileKeys.all })
 	});
 }
 

@@ -204,7 +204,11 @@ two files imported by `scripts/gw_bootstrap.py` (`POST /system/config-import`, d
 
 `make gw-bootstrap` is idempotent: objects keep their ids (an import updates in place and never
 deletes), stored keys are probed and reissued only when they stop working, and the services that
-read `.env.gateway` are recreated when it changed. Models, prices and limits may also be edited
+read `.env.gateway` are recreated when it changed. It also registers the gateway agent `pacod-ap`,
+binds the four keys to it, and has admin-api register each profile as an agent of its own
+(`docs/LLM_GATEWAY.md`, **Registered agents**). **Upgrade the app's services before running a
+bootstrap that binds the keys:** an older app names its profile in the request body, which a bound
+key refuses (403) on every profile turn. Models, prices and limits may also be edited
 in the console; to keep such a change, re-author the files (`python3 -I scripts/gw_bootstrap.py
 --env dev --author` / `--author-live`, which converge the development gateway and write the
 files) and commit them.
@@ -336,6 +340,9 @@ pacod-gw's tooling, not here.
 |---|---|
 | Admin pages answer 503 `identity_unavailable` | The copy of pacod-id's feed is older than 60 s (`ID_MAX_STALENESS`): pacod-id is down or unreachable. Chat keeps working on the last copy. |
 | Every LLM call 401s | The service's gateway key is blank or revoked: compose was run without `--env-file .env.gateway`, or run `make gw-bootstrap`. |
+| Every profile turn answers 403 from the gateway ("this call is the agent pacod-ap's, not …") | The keys are bound to agents, but the running app is older than the bootstrap: deploy the app's services from the same commit (they name the agent in `x-gw-agent-id`). |
+| One agent's chats answer "switched off by the administrator" | Its gateway agent is disabled in the console (Workspace → Agents): the kill switch. Enable it there; unbinding it from a key does not stick. A repeated first-turn question may still be answered from the app's caches while it is off (no LLM call): clear the profile's response cache to stop that too. |
+| A profile's calls are the agent `pacod-ap`'s, not its own | The profiles page shows why (Gateway agent column): pending (admin-api's next round, or `make -C pacod-api gw-agent-sync[-local]`), an id that is no gateway name, or a name another agent already has. |
 | The gateway's management API answers 503 | Its copy of pacod-id's feed is stale (`identity_unavailable`); it recovers by itself. Only 401/403 mean a refused credential. |
 | A local chat answers "echo: …" or is off-topic | The mock echoes. Script the classifier/planner replies first (`POST 127.0.0.1:19000/__mock/script`, see `scripts/smoke_gateway_turn.sh`). A repeated question is served by the response cache. |
 | Admin LLM figures are 0 with a "gateway did not answer" note | admin-api could not read the gateway's reports (`GATEWAY_REPORT_TOKEN`, the workspace ids in `.env.gateway`, or the gateway is down). |

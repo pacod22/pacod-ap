@@ -48,6 +48,7 @@ from app.api.turn_pipeline import (
     run_topic_gate,
 )
 from app.core.exceptions import (
+    AgentDisabledError,
     AgentError,
     AuthenticationError,
     ForbiddenRequestError,
@@ -79,6 +80,13 @@ from app.services.profiles import (
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
 log = get_logger(__name__)
+
+
+def _failure_code(e: BaseException) -> str:
+    """The user message of a failed turn: the gateway's kill switch says so (its agent is
+    switched off), anything else is the generic temporary failure."""
+    return AgentDisabledError.code if isinstance(e, AgentDisabledError) else "upstream_error"
+
 
 _http_bearer = HTTPBearer(auto_error=False)
 # Legacy single-agent model id; still accepted and mapped to the caller's
@@ -313,7 +321,7 @@ async def _run_guards(
         raise _GuardError(user_message_md("unsupported_language")) from None
 
     try:
-        await quota_guard.check_and_reserve(user.user_id)
+        await quota_guard.check_and_reserve(user.user_id, profile_id=profile_id)
     except QuotaExceededError:
         record_guard_rejection("quota")
         raise _GuardError(user_message_md("quota_exceeded", language)) from None
@@ -359,8 +367,8 @@ async def _run_guards(
                 classifier_usage.total().input_tokens + classifier_usage.total().output_tokens,
             )
             raise _GuardError(user_message_md("off_topic", language, profile)) from None
-        except AgentError:
-            raise _GuardError(user_message_md("upstream_error", language)) from None
+        except AgentError as e:
+            raise _GuardError(user_message_md(_failure_code(e), language)) from None
 
     # Persist classifier tokens as usage_events on the accepted path too (the
     # rejection branches above already do). Without it the per-turn breakdown
@@ -631,7 +639,7 @@ async def _stream_sse(
 
         except Exception as e:
             log.exception("openai_compat_stream_error", error=str(e))
-            yield _chunk_json(cmpl_id, content=user_message_md("upstream_error", language))
+            yield _chunk_json(cmpl_id, content=user_message_md(_failure_code(e), language))
             yield _chunk_json(
                 cmpl_id,
                 finish_reason="stop",
@@ -772,7 +780,7 @@ async def _collect(
                     )
         except Exception as e:
             log.exception("openai_compat_collect_error", error=str(e))
-            return _error_collect(cmpl_id, user_message_md("upstream_error", language))
+            return _error_collect(cmpl_id, user_message_md(_failure_code(e), language))
 
     answer = "".join(parts) + _citations_md(citations) + _suggestions_md(suggestions, language)
     content = answer

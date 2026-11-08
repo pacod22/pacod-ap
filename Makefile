@@ -81,7 +81,7 @@ help:
 	@echo ""
 	@echo "  --- The gateway (pacod-gw at GW_DIR=$(GW_DIR); GW_ENV=dev|live) ---"
 	@echo "  make gw-up           Start it, signed in through this platform's pacod-id"
-	@echo "  make gw-bootstrap    Import the platform configuration; write keys to pacod-api/.env.gateway"
+	@echo "  make gw-bootstrap    Import the platform configuration; agents; write keys to pacod-api/.env.gateway"
 	@echo "  make gw-smoke        pacod-gw's smoke test against the mock provider (leaves smoke-* objects)"
 	@echo "  make gw-down / gw-ps / gw-logs"
 	@echo "  make up-all          pacod-net, app + pacod-id (+ pacod-gw's database), gateway, then the URLs"
@@ -209,7 +209,12 @@ gw-config:
 # deploy/secrets/providers.env, and writes the services' gateway keys and tokens to
 # pacod-api/.env.gateway (0600). Idempotent. Prints names, never values.
 # The app's services read their key when their container is created: when the file changed
-# and the app is running, they are recreated (a restart would keep the old keys).
+# and the app is running, they are recreated (a restart would keep the old keys). Then
+# admin-api registers the profiles as the gateway's agents and binds them to the four keys
+# (make -C pacod-api gw-agent-sync[-local]).
+# ROLLOUT ORDER: the app's services from the same commit go out BEFORE this runs. It binds the
+# keys to the agent pacod-ap, and an older app names its profile in the body with no
+# x-gw-agent-id header, which a bound key refuses (403) on every profile turn.
 GW_BOOTSTRAP_IMAGE ?= python:3.13-slim
 GW_BOOTSTRAP_dev = python3 -I $(CURDIR)/scripts/gw_bootstrap.py
 GW_BOOTSTRAP_live = docker run --rm --user $(shell id -u):$(shell id -g) \
@@ -221,6 +226,12 @@ gw-bootstrap:
 	if [ "$$before" != "$$(shasum $(API_DIR)/.env.gateway 2>/dev/null)" ] && docker inspect ap-api >/dev/null 2>&1; then \
 		echo "gw-bootstrap: the gateway credentials changed; recreating the services that use them"; \
 		$(MAKE) --no-print-directory -C $(API_DIR) $(if $(filter dev,$(GW_ENV)),recreate-gateway-clients-local,recreate-gateway-clients); \
+	fi; \
+	if docker inspect -f '{{.State.Running}}' ap-admin-api 2>/dev/null | grep -q true; then \
+		echo "gw-bootstrap: the profiles as the gateway's agents (admin-api)"; \
+		$(MAKE) --no-print-directory -C $(API_DIR) $(if $(filter dev,$(GW_ENV)),gw-agent-sync-local,gw-agent-sync) || exit 1; \
+	else \
+		echo "gw-bootstrap: ap-admin-api is not running; it registers the profiles' agents when it starts"; \
 	fi
 
 # pacod-gw's own smoke test, against the mock provider, signed in through pacod-id as the

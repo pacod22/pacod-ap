@@ -77,11 +77,13 @@ class FakeGateway:
         self.exempt: set[str] = set()
         self.down = False
         self.window = "day"
+        self.asked_for: list[str | None] = []  # the profile each question was asked as
 
     def spend(self, user: str, tokens: int) -> None:  # a turn's calls, as the gateway counts them
         self.used[user] = self.used.get(user, 0) + tokens
 
-    async def standing(self, user: str, *, fresh: bool = False):
+    async def standing(self, user: str, *, fresh: bool = False, profile_id: str | None = None):
+        self.asked_for.append(profile_id)
         if self.down or user in self.exempt:
             return None
         limit = self.limit_for.get(user, 1000)
@@ -115,6 +117,12 @@ class TestTokenQuota:
         assert state.daily_tokens_used == 0
         assert state.requests_this_minute == 1
         assert state.token_enabled is True
+
+    async def test_a_turns_check_asks_as_its_profile(self, redis_client, gateway):
+        # The gateway is asked as the turn's agent (its x-gw-agent-id): passed, because the
+        # turn's context is not open yet when the guard runs.
+        await QuotaGuard(redis=redis_client).check_and_reserve("user1", profile_id="starter")
+        assert gateway.asked_for == ["starter"]
 
     async def test_state_after_a_turn_is_the_gateways_count(self, redis_client, gateway):
         guard = QuotaGuard(redis=redis_client)

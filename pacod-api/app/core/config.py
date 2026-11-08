@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     # reports, and one that may change the workspace's limits (quota overrides).
     gateway_report_token: str = ""
     gateway_admin_token: str = ""
+    # The gateway's registered agent every call speaks for when it is no profile's own
+    # (x-gw-agent-id; app/services/gateway_agents.py). gw_bootstrap.py registers it and binds
+    # the four keys to it; admin-api then registers each profile as an agent and binds it to
+    # those keys too, every GATEWAY_AGENT_SYNC_SECONDS (0 turns that off).
+    gateway_fallback_agent: str = "pacod-ap"
+    gateway_agent_sync_seconds: float = 60.0
     # Client-side timeout for ONE LLM request (seconds). A request that times
     # out is NEVER retried: the provider keeps generating after the client hangs
     # up and bills the result, so a retry pays twice for one answer. Size it for

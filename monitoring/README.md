@@ -138,8 +138,8 @@ connects to Postgres directly, not via PgBouncer).
   - Tokens and cost are **not** app series any more: they are the gateway's (next item).
 - **The LLM gateway** (job `pacod-gw-core`, `pacod-gw:9100` on `pacod-net`): the
   gateway's own `gw_*` series — requests, errors, tokens, cost (`gw_cost_micros_total`), latency,
-  limits, prices, plugins, the audit spool. `instance="core"` (the core's `PGW_INSTANCE_ID`), as its own
-  Prometheus has it. Its dashboards are vendored unchanged into `grafana/dashboards-gw/` (Grafana
+  limits, prices, plugins, the audit spool, tool calls and the response cache. `instance="core"`
+  (the core's `PGW_INSTANCE_ID`), as its own Prometheus has it. Its dashboards are vendored unchanged into `grafana/dashboards-gw/` (Grafana
   folder **pacod-gw**: Overview, Providers and models, Workspaces, Gateway internals) and its alert
   rules into `prometheus/alerts/gw.rules.yml` — evaluated here and routed by this Alertmanager, the
   platform's only one (the gateway stack's own is disabled by the platform override). To refresh

@@ -14,6 +14,7 @@ Routes (all under /api/v1/):
   ingested-sources  — ingested_sources read + delete (written by ingestion pipeline)
   vector-store      — Qdrant collection inspection and management
   redis             — Redis quota management and topic-cache control
+  gateway           — the profiles as pacod-gw's registered agents (read only)
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from admin_api.routes.dashboard import router as dashboard_router
 from admin_api.routes.debug_config import router as debug_config_router
 from admin_api.routes.debug_interactions import router as debug_interactions_router
 from admin_api.routes.directives import router as directives_router
+from admin_api.routes.gateway import router as gateway_router
 from admin_api.routes.ingested_sources import router as ingested_sources_router
 from admin_api.routes.kb_candidates import golden_router
 from admin_api.routes.kb_candidates import router as kb_candidates_router
@@ -108,7 +110,13 @@ async def lifespan(app: FastAPI):
     from app.services.broker import start_announcer, stop_announcer
 
     await start_announcer()
+    # pacod-gw: the profiles as the workspace's registered agents, bound to pacod-ap's keys
+    # (GATEWAY_AGENT_SYNC_SECONDS; 0 = off). admin-api alone holds the token that may do it.
+    from admin_api.services.gateway_agent_sync import start_sync, stop_sync
+
+    await start_sync()
     yield
+    await stop_sync()
     await stop_announcer()
     await stop_identity()
     log.info("admin_api_shutdown")
@@ -201,6 +209,7 @@ app.include_router(newsletter_items_router)
 app.include_router(newsletter_issues_router)
 app.include_router(newsletter_subscribers_router)
 app.include_router(dashboard_router)
+app.include_router(gateway_router)
 
 
 @app.get("/health")

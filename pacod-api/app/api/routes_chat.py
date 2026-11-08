@@ -236,7 +236,7 @@ async def chat(
         ) from e
 
     try:
-        await quota_guard.check_and_reserve(user.user_id)
+        await quota_guard.check_and_reserve(user.user_id, profile_id=profile_id)
     except (QuotaExceededError, RateLimitError) as e:
         record_guard_rejection("rate_limit" if isinstance(e, RateLimitError) else "quota")
         await record_audit(

@@ -2,13 +2,18 @@
 
 Every response here is one pacod-gw really sent (tests/fixtures/gw/, recorded against its
 mock provider by scripts/record_gw_fixtures.py) and is replayed through the real
-``LLMClient`` — only the HTTP transport underneath is swapped. Pins:
+``LLMClient`` — only the HTTP transport underneath is swapped. The exception is the kill
+switch, ``error_403_agent_disabled*.json``: written by hand from the gateway's error envelope
+(their notes say so). Pins:
 
 * the classifier: one case per row of ``_classify_error``'s table, with how often the call
-  was sent (a timeout, a 402 and a 4xx exactly once; a 429 and a 5xx up to three times);
+  was sent (a timeout, a 402, a disabled agent and a 4xx exactly once; a 429 and a 5xx up to
+  three times);
 * what the client sends: the gateway URL and the service's key, ``x-gw-retries: 1``, the
-  ``gateway`` attribution object next to ``thinking``/``reasoning_effort``, and a gateway
-  template (``@name``) as named, in the dialect of the model it uses;
+  ``gateway`` attribution object next to ``thinking``/``reasoning_effort`` (no ``agent_id``:
+  the agent is the ``x-gw-agent-id`` header, the profile's or the fallback's as the published
+  agent state says), and a gateway template (``@name``) as named, in the dialect of the model
+  it uses;
 * what it reads: the gateway's cost, cached tokens, reasoning deltas, the ``length`` finish.
 """
 
@@ -25,14 +30,17 @@ import app.services.llm_client as lc
 import app.services.llm_errors as llm_errors
 from app.core.config import get_settings
 from app.core.exceptions import (
+    AgentDisabledError,
     UpstreamError,
     UpstreamQuotaError,
     UpstreamRequestError,
     UpstreamTimeoutError,
+    user_message_md,
 )
 from app.core.request_context import RequestContext, _request_ctx
-from app.services import gateway_models
+from app.services import gateway_agents, gateway_models
 from app.services.debug_audit import debug_scope
+from app.services.gateway_agents import AgentState
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "gw"
 
@@ -66,6 +74,8 @@ def gateway(monkeypatch):
         errors.append(kw)
 
     monkeypatch.setattr(llm_errors, "record_llm_error", fake_record)
+    # The agent state was never published (no database here): calls name the fallback.
+    gateway_agents.set_cached_state(None)
 
     class Gateway:
         def __init__(self) -> None:
@@ -88,7 +98,8 @@ def gateway(monkeypatch):
         def body(self, i: int = 0) -> dict:
             return json.loads(self.requests[i].content)
 
-    return Gateway()
+    yield Gateway()
+    gateway_agents.reset_cache()
 
 
 async def _chat(client, **kw):
@@ -107,6 +118,8 @@ async def _chat(client, **kw):
         ("error_402_quota_exceeded", UpstreamQuotaError, 1),
         ("error_401_invalid_key", UpstreamRequestError, 1),
         ("error_400_invalid_request", UpstreamRequestError, 1),
+        ("error_403_agent_disabled", AgentDisabledError, 1),
+        ("error_403_agent_disabled_not_allowed", AgentDisabledError, 1),
         ("error_429_upstream_rate_limited", UpstreamError, 3),
         ("error_502_upstream_error", UpstreamError, 3),
     ],
@@ -124,6 +137,34 @@ async def test_each_gateway_outcome_is_classified_and_retried_or_not(gateway, ca
     assert gateway.errors[0]["error_type"] == (
         "timeout" if raised is UpstreamTimeoutError else "upstream"
     )
+
+
+async def test_a_disabled_agent_is_its_own_error_and_says_so(gateway):
+    client = gateway.answer("error_403_agent_disabled_not_allowed")
+    with pytest.raises(AgentDisabledError) as e:
+        await _chat(client)
+    # Never retried, and never sent again as another agent (the fallback).
+    assert len(gateway.requests) == 1
+    assert (e.value.code, e.value.http_status, e.value.retryable) == ("agent_disabled", 503, False)
+    assert "switched off by the administrator" in user_message_md("agent_disabled", "en")
+
+
+async def test_another_refusal_of_not_allowed_is_a_request_error(gateway, monkeypatch):
+    f = fixture("error_403_agent_disabled_not_allowed")
+    f["body"]["error"]["message"] = "this key does not speak for the agent starter"
+    monkeypatch.setattr("tests.unit.test_gateway_client.fixture", lambda case: f)
+    client = gateway.answer("error_403_agent_disabled_not_allowed")
+    with pytest.raises(UpstreamRequestError) as e:
+        await _chat(client)
+    assert type(e.value) is UpstreamRequestError
+
+
+async def test_a_disabled_agents_stream_does_not_open_and_is_not_retried(gateway):
+    client = gateway.answer("error_403_agent_disabled")
+    with pytest.raises(AgentDisabledError):
+        async for _ in client.chat_stream(model="m", system="s", user="u", purpose="p"):
+            pass
+    assert len(gateway.requests) == 1
 
 
 async def test_429_carries_retry_after_and_the_wait_honours_it(gateway):
@@ -283,17 +324,57 @@ async def test_attribution_inside_a_users_turn(gateway):
     finally:
         _request_ctx.reset(token)
     body = gateway.body()
+    # No agent_id in the body: the agent is the header, and a body that names another agent
+    # than the one the key speaks for is refused.
     assert body["gateway"] == {
         "task": "synthesizer",
         "tags": {"purpose": "synthesizer", "site": "pacod", "profile": "starter", "variant": "dev"},
         "end_user": "usr_1",
         "session_id": "sess_1",
         "trace_id": "turn_1",
-        "agent_id": "starter",
     }
+    # Never published: the fallback agent.
+    assert gateway.requests[0].headers["x-gw-agent-id"] == "pacod-ap"
     # Merged next to the thinking request, not in place of it.
     assert body["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert body["stream_options"] == {"include_usage": True}
+
+
+REGISTERED = AgentState(
+    mode="registered",
+    fallback="pacod-ap",
+    bound=frozenset({"starter"}),
+    registered=frozenset({"pacod-ap", "starter", "taxes", "pacod-kb"}),
+)
+
+
+@pytest.mark.parametrize(
+    ("state", "profile", "header"),
+    [
+        (None, "starter", "pacod-ap"),  # never published
+        (REGISTERED, "starter", "starter"),  # bound: its own agent
+        (REGISTERED, "taxes", "pacod-ap"),  # registered, not (yet) bound: the fallback
+        (REGISTERED, None, "pacod-ap"),  # no profile: the service's
+        (AgentState(mode="labels", fallback="pacod-ap"), "starter", "starter"),  # a label
+        # A label may not be a registered agent's name, and the service names none.
+        (
+            AgentState(mode="labels", fallback="pacod-ap", registered=frozenset({"starter"})),
+            "starter",
+            None,
+        ),
+        (AgentState(mode="labels", fallback="pacod-ap"), None, None),
+    ],
+)
+async def test_the_agent_header_follows_the_published_state(gateway, state, profile, header):
+    gateway_agents.set_cached_state(state)
+    client = gateway.answer("ok_chat_cost_cached", "ok_stream_length")
+    with debug_scope("turn_1", "usr_1", "sess_1", enabled=False, profile_id=profile):
+        await _chat(client)
+        async for _ in client.chat_stream(model="m", system="s", user="u", purpose="p"):
+            pass
+    for req in gateway.requests:
+        assert req.headers.get("x-gw-agent-id") == header
+    assert all("agent_id" not in gateway.body(i)["gateway"] for i in range(2))
 
 
 async def test_a_worker_call_names_no_end_user(gateway):
@@ -365,3 +446,11 @@ async def test_a_streamed_template_follows_its_model_not_its_name(gateway, templ
     assert "thinking" not in body
     assert body["reasoning_effort"] == "high"
     assert body["temperature"] == 0.2
+
+
+def test_the_openai_compatible_path_says_the_agent_is_switched_off():
+    from app.api.routes_openai_compat import _failure_code
+
+    assert _failure_code(AgentDisabledError("x")) == "agent_disabled"
+    assert _failure_code(UpstreamRequestError("x")) == "upstream_error"
+    assert _failure_code(RuntimeError("x")) == "upstream_error"

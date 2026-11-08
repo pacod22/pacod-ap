@@ -23,6 +23,7 @@ from admin_api.dependencies import (
     require_superuser,
 )
 from admin_api.schemas import ProfileCreate, ProfileRead, ProfileUpdate
+from admin_api.services import gateway_agent_sync
 from app.core.db import get_session
 from app.core.db_models import DEFAULT_PROFILE_ID, Profile
 from app.core.logging import get_logger
@@ -145,6 +146,8 @@ async def create_profile(
     log.info(
         "admin_profile_created", profile_id=profile.id, slug=profile.slug, caller=caller.user_id
     )
+    # Its gateway agent, now rather than at the next round.
+    gateway_agent_sync.kick()
     return ProfileRead.model_validate(profile)
 
 
@@ -231,3 +234,5 @@ async def delete_profile(
     log.info(
         "admin_profile_deleted", profile_id=profile_id, slug=profile.slug, caller=caller.user_id
     )
+    # Its gateway agent stays (never deleted nor unbound here): shown as orphaned.
+    gateway_agent_sync.kick()

@@ -26,6 +26,7 @@ from admin_api.schemas import (
     AgentVersionRef,
     AssistantConfigUpdate,
 )
+from admin_api.services import gateway_agent_sync
 from app.agent_editor import service
 from app.agent_editor.assistant import AssistantError, suggest
 from app.agent_editor.assistant_config import (
@@ -107,17 +108,22 @@ async def create_agent(body: AgentCreate, caller: Superuser):
                 detail={"code": "qdrant_unavailable", "message": "Could not provision collections"},
             ) from e
     try:
-        return await service.create_agent(
+        made = await service.create_agent(
             slug=body.slug, name=body.name, template_id=body.template, actor=caller.user_id
         )
     except AgentEditorError as e:
         _raise(e)
+    # Its gateway agent, now rather than at the next round.
+    gateway_agent_sync.kick()
+    return made
 
 
 @router.post("/import-all")
 async def import_all(caller: Superuser):
     """Import every profile that has no definition yet (never overwrites)."""
-    return await service.ensure_agent_definitions(adopt=False, redis=get_redis())
+    out = await service.ensure_agent_definitions(adopt=False, redis=get_redis())
+    gateway_agent_sync.kick()
+    return out
 
 
 @router.post("/adopt-all")
@@ -125,6 +131,7 @@ async def adopt_all(caller: Superuser):
     """Hand every not-yet-managed agent to the editor (behaviour-neutral)."""
     count = await service.adopt_all(redis=get_redis())
     log.info("agent_editor_adopt_all", count=count, caller=caller.user_id)
+    gateway_agent_sync.kick()
     return {"adopted": count}
 
 
@@ -139,9 +146,11 @@ async def get_agent(profile_id: str, _: Superuser):
 @router.post("/agents/{profile_id}/import")
 async def import_agent(profile_id: str, body: AgentImport, caller: Superuser):
     try:
-        return await service.import_agent(profile_id, force=body.force, actor=caller.user_id)
+        out = await service.import_agent(profile_id, force=body.force, actor=caller.user_id)
     except AgentEditorError as e:
         _raise(e)
+    gateway_agent_sync.kick()
+    return out
 
 
 @router.put("/agents/{profile_id}/draft")

@@ -28,12 +28,28 @@ What it does, in order:
    each provider's key from deploy/secrets/providers.env (OPENAI_API_KEY, ANTHROPIC_API_KEY,
    GEMINI_API_KEY, DEEPSEEK_API_KEY, GLM_API_KEY). A provider that already has a current
    credential keeps it unless --rotate-credentials.
-4. One gateway key (`pgw_…`) per service that calls the gateway, in the workspace pacod/pacod,
-   checked with GET /v1/models and issued again when it no longer works. The workers' keys get
-   a daily spend cap (a workspace limit on the key). Written to pacod-api/.env.gateway.
-5. admin-api's management tokens, admin tokens with one role on the platform workspace:
+4. The registered agents of AGENTS (runbook §21.3): the fallback agent pacod-ap, which every
+   call of pacod-ap's services names (x-gw-agent-id) when it is no profile's own. A missing one
+   is created; one that exists is never changed (an operator's kill switch and narrowing stay).
+   A gateway without agents (before pacod-gw's tools and agents) skips this, and the keys stay
+   unbound. admin-api registers the profiles as agents and binds them to the same keys
+   (python -m admin_api.services.gateway_agent_sync once, which make gw-bootstrap runs next).
+5. One gateway key (`pgw_…`) per service that calls the gateway, in the workspace pacod/pacod,
+   checked with GET /v1/models (as its first agent of KEY_AGENTS, x-gw-agent-id) and issued
+   again when it is refused (401; a 403 is an answer about the agent, not the key). Each is
+   bound to its KEY_AGENTS and KEY_BUNDLES, added to what it has (a read, then a replace at the
+   version read): nothing is ever unbound. A key issued again keeps the settings of the one it
+   replaces, or a sibling's agents, so the profiles' bindings survive. The workers' keys get a
+   daily spend cap (a workspace limit on the key). Written to pacod-api/.env.gateway.
+6. admin-api's management tokens, admin tokens with one role on the platform workspace:
    GATEWAY_REPORT_TOKEN (viewer: usage reports) and GATEWAY_ADMIN_TOKEN (workspace_admin:
-   per-user quota overrides); and the workspace's ids, GATEWAY_ORG_ID / GATEWAY_WORKSPACE_ID.
+   per-user quota overrides, the profiles' agents); and the workspace's ids, GATEWAY_ORG_ID /
+   GATEWAY_WORKSPACE_ID.
+
+ROLLOUT ORDER: deploy pacod-ap's services from the same commit BEFORE running this. Once a key
+is bound to [pacod-ap], a call that names another agent is refused (403), and an older
+pacod-ap names its profile in the body (gateway.agent_id) with no header: every profile turn,
+the loop's and the newsletter's included, would fail until the new services run.
 
 --author converges the development gateway on the platform's objects through the API (one
 mock provider per family, made from the family's preset; pacod's model ids with their live
@@ -93,6 +109,40 @@ SERVICES = [
     ("pacod-loop", "GATEWAY_KEY_LOOP", 20.0),
     ("pacod-newsletter", "GATEWAY_KEY_NEWSLETTER", 5.0),
 ]
+
+# The registered agent pacod-ap's services speak for outside a profile, and for a profile that
+# is no agent of its own (yet): GATEWAY_FALLBACK_AGENT in pacod-api's settings. The profiles'
+# own agents are admin-api's (admin_api/services/gateway_agent_sync.py), never this script's.
+FALLBACK_AGENT = "pacod-ap"
+# The agents this script registers: (name, display name, description).
+AGENTS = [
+    (
+        FALLBACK_AGENT,
+        "pacod-ap",
+        "pacod-ap's services: calls outside a profile, and profiles that are no agent of their "
+        "own (gw_bootstrap.py)",
+    ),
+]
+# Key name -> the registered agents it speaks for (added, never removed). A key with agents is
+# probed as the first of them.
+KEY_AGENTS: dict[str, list[str]] = {name: [FALLBACK_AGENT] for name, _var, _cap in SERVICES}
+# Key name -> the workspace's tool bundles it may call on /mcp (added, never removed).
+KEY_BUNDLES: dict[str, list[str]] = {}
+# What a key issued again copies from the one it replaces. Not expires_at (a key that expired
+# would be issued dead) nor status.
+KEY_SETTINGS = (
+    "allowed_modes",
+    "allowed_models",
+    "allowed_templates",
+    "require_template",
+    "usage_policy",
+    "rate_class",
+    "inspect",
+    "max_concurrency",
+    "tool_bundles",
+    "agents",
+)
+AGENT_HEADER = "x-gw-agent-id"
 
 # Provider name -> where its credential comes from. The mock accepts any secret.
 MOCK_SECRET = "mock-provider-development-secret"
@@ -227,15 +277,34 @@ class Api:
     def find(self, path: str, name: str) -> dict | None:
         return next((o for o in self.items(path) if o.get("name") == name), None)
 
+    def all(self, path: str) -> list[dict] | None:
+        """Every object of a list, following its pages (`next_cursor`); None on a 404."""
+        out: list[dict] = []
+        cursor = None
+        while True:
+            sep = "&" if "?" in path else "?"
+            page = f"{path}{sep}limit=500" + (
+                f"&cursor={urllib.parse.quote(cursor)}" if cursor else ""
+            )
+            status, data = self.try_call("GET", page)
+            if status == 404:
+                return None
+            if status != 200:
+                fail(f"GET {path} answered {status}: {short(data)}")
+            out += data.get("items", []) if isinstance(data, dict) else (data or [])
+            cursor = data.get("next_cursor") if isinstance(data, dict) else None
+            if not cursor:
+                return out
 
-def probe(method: str, url: str, token: str) -> int:
+
+def probe(method: str, url: str, token: str, headers: dict | None = None) -> int:
     """The status a credential gets, waiting out the gateway's 503 (identity_unavailable: its copy
     of pacod-id's feed is stale, e.g. while pacod-id or its database restarts) for up to a minute.
-    Only 401 and 403 mean the credential itself is refused."""
+    Only 401 and 403 mean the credential itself is refused (a gateway key: only 401, key_alive)."""
     import time
 
     for _ in range(30):
-        status, _, _ = request(method, url, token=token)
+        status, _, _ = request(method, url, token=token, headers=headers)
         if status not in (502, 503, 504):
             return status
         time.sleep(2)
@@ -248,6 +317,17 @@ def refused(status: int) -> bool:
     if status != 200:
         fail(f"unexpected answer {status} while checking a stored credential; nothing changed")
     return False
+
+
+def key_alive(status: int) -> bool:
+    """A gateway key's probe: only 401 means the key is dead. 200 is an answer, and so is 403,
+    which is about the agent the probe named (registered and not yet bound to the key, or
+    disabled), not about the key. refused() stays for the management tokens."""
+    if status == 401:
+        return False
+    if status not in (200, 403):
+        fail(f"unexpected answer {status} while checking a stored key; nothing changed")
+    return True
 
 
 def short(data) -> str:
@@ -624,12 +704,15 @@ def export(api: Api, path: Path, keep_providers: set[str] | None = None) -> None
             if o["id"] not in keep and o.get("parent") in keep:
                 keep.add(o["id"])
                 changed = True
-    # The workers' spend caps name this installation's key ids: gw-bootstrap makes them.
+    # The workers' spend caps name this installation's key ids, and the agents (the fallback,
+    # admin-api's profile agents) and tool bundles are the installation's too: gw-bootstrap,
+    # admin-api and pacod-demo make them.
     out = [
         o
         for o in objs
         if o["id"] in keep
         and not (o["kind"] == "limit" and str(o.get("name", "")).startswith("cap-"))
+        and o["kind"] not in ("agent", "tool_bundle")
     ]
     if keep_providers is not None:
         out = [o for o in out if o["kind"] != "provider" or o.get("name") in keep_providers]
@@ -693,28 +776,146 @@ def platform_ids(api: Api) -> tuple[str, str]:
     return org["id"], ws["id"]
 
 
-def ensure_keys(api: Api, data_url: str) -> None:
+def agent_names(api: Api, base: str) -> set[str] | None:
+    """The workspace's registered agents; None for a gateway without agents (404)."""
+    agents = api.all(f"{base}/agents")
+    return None if agents is None else {str(a.get("name")) for a in agents}
+
+
+def ensure_agents(api: Api) -> bool:
+    """Register the agents of AGENTS that are missing; never change one that exists. False when
+    the gateway has no agents (an older pacod-gw)."""
+    org, ws = platform_ids(api)
+    base = f"/orgs/{org}/workspaces/{ws}"
+    have = agent_names(api, base)
+    if have is None:
+        say("agents: this gateway has no registered agents (an older pacod-gw); keys stay unbound")
+        return False
+    for name, display, description in AGENTS:
+        if name in have:
+            say(f"agents: {name} is registered")
+            continue
+        api.call(
+            "POST",
+            f"{base}/agents",
+            {"name": name, "display_name": display, "description": description, "status": "active"},
+        )
+        say(f"agents: {name} registered")
+    return True
+
+
+def _union(have: list | None, add: list[str]) -> list[str]:
+    have = list(have or [])
+    return have + [x for x in add if x not in have]
+
+
+def _merge_key(api: Api, base: str, key_id: str, name: str, agents: list[str], bundles: list[str]):
+    """Add agents and tool bundles to a key: read it, replace it at the version read (gw's item
+    is flat: the settings and `version` at the top level; the rest is ignored on input), and
+    read it again on a conflict (409)."""
+    for _ in range(3):
+        item = api.call("GET", f"{base}/keys/{key_id}")
+        want_a = _union(item.get("agents"), agents)
+        want_b = _union(item.get("tool_bundles"), bundles)
+        if want_a == list(item.get("agents") or []) and want_b == list(
+            item.get("tool_bundles") or []
+        ):
+            return
+        status, data = api.try_call(
+            "PUT", f"{base}/keys/{key_id}", {**item, "agents": want_a, "tool_bundles": want_b}
+        )
+        if status == 409:
+            continue
+        if status not in (200, 201):
+            fail(f"PUT key {name} answered {status}: {short(data)}")
+        say(
+            f"keys: {name} speaks for {', '.join(want_a) or 'no agent'}"
+            + (f", bundles {', '.join(want_b)}" if want_b else "")
+        )
+        return
+    fail(f"keys: {name} kept changing while it was bound (409 three times)")
+
+
+def _reissue_body(
+    api: Api,
+    base: str,
+    name: str,
+    old: dict | None,
+    keys: dict,
+    agents: list[str],
+    bundles: list[str],
+) -> dict:
+    """The new key's settings: the old key's (read before it is deleted), or, for a key of
+    pacod-ap's own, a sibling's agents, so the profiles bound by admin-api survive; then
+    KEY_AGENTS and KEY_BUNDLES on top."""
+    body: dict = {}
+    if old is not None:
+        item = api.call("GET", f"{base}/keys/{old['id']}")
+        body = {k: item[k] for k in KEY_SETTINGS if item.get(k) is not None}
+    elif FALLBACK_AGENT in agents:
+        sibling = next(
+            (
+                k
+                for n, k in sorted(keys.items())
+                if n != name and FALLBACK_AGENT in (k.get("agents") or [])
+            ),
+            None,
+        )
+        if sibling is not None:
+            body["agents"] = list(sibling["agents"])
+    for field, add in (("agents", agents), ("tool_bundles", bundles)):
+        merged = _union(body.get(field), add)
+        if merged:
+            body[field] = merged
+        else:
+            body.pop(field, None)
+    return body
+
+
+def ensure_keys(
+    api: Api,
+    data_url: str,
+    agents_ok: bool = True,
+    services: list[tuple[str, str, float | None]] | None = None,
+) -> None:
+    """The keys of SERVICES (or only `services`): probed, bound, issued again when dead.
+    `agents_ok` False (ensure_agents found no agents) binds no agent; with it True only agents
+    the gateway has are bound, so a caller that did not run ensure_agents still works."""
     org, ws = platform_ids(api)
     base = f"/orgs/{org}/workspaces/{ws}"
     stored = read_env(GATEWAY_ENV)
+    registered = agent_names(api, base) if agents_ok else None
+    keys = {str(k.get("name")): k for k in api.all(f"{base}/keys") or []}
     updates = {}
-    for name, var, cap in SERVICES:
+    for name, var, cap in SERVICES if services is None else services:
+        wanted = list(KEY_AGENTS.get(name) or [])
+        agents = [a for a in wanted if registered is not None and a in registered]
+        if registered is not None and len(agents) < len(wanted):
+            missing = ", ".join(a for a in wanted if a not in agents)
+            say(f"keys: {name}: {missing} not registered (ensure_agents first); not bound")
+        bundles = list(KEY_BUNDLES.get(name) or [])
+        old = keys.get(name)
         secret = stored.get(var)
         if secret:
-            status = probe("GET", f"{data_url.rstrip('/')}/v1/models", secret)
-            if not refused(status):
+            headers = {AGENT_HEADER: wanted[0]} if wanted else None
+            status = probe("GET", f"{data_url.rstrip('/')}/v1/models", secret, headers=headers)
+            if key_alive(status):
                 say(f"keys: {name} works ({var})")
-                key = api.find(f"{base}/keys", name)
-                if key and cap is not None:
-                    ensure_cap(api, base, name, key["id"], cap)
+                if old:
+                    if agents or bundles:
+                        _merge_key(api, base, old["id"], name, agents, bundles)
+                    if cap is not None:
+                        ensure_cap(api, base, name, old["id"], cap)
                 continue
             say(f"keys: {name} is refused ({status}); issuing a new one")
-        old = api.find(f"{base}/keys", name)
+        body = {"name": name, **_reissue_body(api, base, name, old, keys, agents, bundles)}
         if old:
             api.call("DELETE", f"{base}/keys/{old['id']}")
-        made = api.call("POST", f"{base}/keys", {"name": name})
+        made = api.call("POST", f"{base}/keys", body)
+        keys[name] = made
         updates[var] = made["secret"]
-        say(f"keys: {name} issued ({var})")
+        bound = f", speaks for {', '.join(body['agents'])}" if body.get("agents") else ""
+        say(f"keys: {name} issued ({var}{bound})")
         if cap is not None:
             ensure_cap(api, base, name, made["id"], cap)
     if updates:
@@ -826,7 +1027,8 @@ def main(argv: list[str] | None = None) -> None:
         return
     import_config(api, path)
     ensure_credentials(api, a.rotate_credentials)
-    ensure_keys(api, data_url)
+    agents_ok = ensure_agents(api)
+    ensure_keys(api, data_url, agents_ok)
     ensure_admin_api_tokens(api)
     say(f"done; the services' credentials are in {GATEWAY_ENV.relative_to(ROOT)} (0600)")
 

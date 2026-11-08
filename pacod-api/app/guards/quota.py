@@ -130,11 +130,13 @@ class QuotaGuard:
             requests_per_minute_limit=eff.minute_limit,
         )
 
-    async def check_and_reserve(self, user_id: str) -> QuotaState:
+    async def check_and_reserve(self, user_id: str, *, profile_id: str | None = None) -> QuotaState:
         """Check the throttle + every enabled quota and reserve one request.
 
         Token usage is *not* reserved here; it is added by record_token_usage. The
         request-based quota reserves one slot per turn. Returns the current QuotaState.
+        ``profile_id`` is the turn's profile: the gateway is asked as its agent (the turn's
+        context is not open yet, so it is passed rather than read from it).
         """
         eff = await self._resolve(user_id)
         if not eff.enforce:
@@ -171,7 +173,7 @@ class QuotaGuard:
 
         # Token-based quota: the gateway's count (estimation: checked here, before the
         # turn's own calls). None = no token limit for this user, or the gateway is away.
-        token = await gateway_quota.user_token_quota(user_id, fresh=True)
+        token = await gateway_quota.user_token_quota(user_id, fresh=True, profile_id=profile_id)
         if token is not None and token.remaining <= 0:
             raise QuotaExceededError("Token quota reached", used=token.used, limit=token.limit)
 

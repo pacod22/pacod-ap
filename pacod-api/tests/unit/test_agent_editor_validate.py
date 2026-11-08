@@ -106,6 +106,11 @@ def test_marketing_completeness_and_icon_allowlist():
     assert {"invalid_slug", "invalid_icon", "incomplete_card", "incomplete_page"} <= codes
     g["meta"]["marketing"]["slug"] = "tax"
     assert "slug_taken" in _codes(validate_graph(g, taken_marketing_slugs={"tax"})[1])
+    # At most 63 characters, the gateway's rule for names.
+    g["meta"]["marketing"]["slug"] = "a" * 63
+    assert "invalid_slug" not in _codes(validate_graph(g)[1])
+    g["meta"]["marketing"]["slug"] = "a" * 64
+    assert "invalid_slug" in _codes(validate_graph(g)[1])
 
 
 def test_normalize_edges_follows_template_order():

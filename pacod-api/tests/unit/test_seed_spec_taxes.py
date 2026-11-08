@@ -27,3 +27,14 @@ def test_overrides_name_only_the_reference_fact_tools():
     for old in ("get_tax_rate", "list_tax_rates", "get_deadline", "list_deadlines"):
         assert old not in text
     assert "get_fact" in text and "list_facts" in text
+
+
+def test_a_profile_id_the_gateway_cannot_name_is_refused():
+    import pytest
+
+    from scripts.seed_profile import check_profile_id
+
+    check_profile_id(load_spec("taxes").profile_id)  # the shipped spec fits
+    for bad in ("a" * 64, "Taxes", "pacod-ap", "pacod-taxes", "-taxes"):
+        with pytest.raises(ValueError):
+            check_profile_id(bad)
