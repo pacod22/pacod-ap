@@ -518,6 +518,12 @@ Keeping numbers in a relational table (rather than the KB) makes them auditable,
 (admin CRUD with JSON import/export), and verifiable by the verifier pass — and it lets the planner
 enforce "numbers only from these tools."
 
+Despite its name, ap-mcp is plain REST that trusts the `profile_id` its caller sends, so it stays on
+the internal network and is never offered as an MCP server to anyone else. The MCP face of the facts
+is ap-api's `POST /mcp` (§9.1: JSON-RPC, offered agents only, the profile set by the server), which
+pacod-demo registers as a pacod-gw tool server; pacod-ap's own agents call their tools directly, not
+through the gateway's `/mcp`.
+
 ---
 
 ## 9. LLM gateway & model routing
@@ -534,8 +540,9 @@ dialect; drops the `temperature` field for models that reject it; and supports *
 caching** (`build_cached_system()` emits an Anthropic `cache_control` breakpoint on the static prefix).
 
 **Attribution is what makes the gateway's record the app's record.** Each call carries a `gateway`
-object — end user, chat session, the turn id as trace id, the profile as agent, the purpose as task,
-and tags `purpose`/`site`/`profile`/`variant` — taken from the ambient request and turn context. The
+object — end user, chat session, the turn id as trace id, the purpose as task, and tags
+`purpose`/`site`/`profile`/`variant` — taken from the ambient request and turn context, and the header
+`x-gw-agent-id`, the gateway agent it speaks for (below). The
 admin console's usage, analytics and per-turn pages then *ask the gateway* (its reports API, through
 `admin_api/services/gateway_reports.py`: allow-listed parameters, the app's dimensions mapped to tags,
 a 30 s cache, zeros plus `gateway_error` when it is away) instead of keeping a ledger of their own.
@@ -560,6 +567,21 @@ gateway (`../deploy/pacod-gw/platform-config.*.json`, `make gw-bootstrap`), not 
 **The users' token budget is the gateway's too** — an advisory end-user limit the chat guard reads
 before each turn (failing open), while the request quota and burst throttle, which count turns rather
 than LLM calls, stay in Redis.
+
+**Profiles are the gateway's registered agents.** pacod-gw binds registered agents to keys: a key
+bound to several must name one on every call, a key bound to none may not name a registered one, and
+an agent switched off in the console (its kill switch) has every call refused within a second. The
+four keys speak for a fallback agent, `pacod-ap` (registered by `make gw-bootstrap`), and for each
+profile's own agent, which admin-api registers and binds (`admin_api/services/gateway_agent_sync.py`,
+the only service with the token that may; it only ever adds, and never changes an agent's status or
+narrowing). What it saw is published in `app_settings` (not Redis: the workers make profile calls
+too) and each process names, per call, the profile's agent when it is bound and the fallback
+otherwise (`app/services/gateway_agents.py`). So the kill switch and per-agent limits act per profile,
+a profile whose id is no gateway name still works on the fallback, and `tags.profile` keeps every
+report per profile either way. A disabled agent is an `AgentDisabledError` (503, "switched off by the
+administrator"), never retried and never sent as the fallback. Because a bound key refuses a body
+that names another agent, the services must be upgraded before the bootstrap that binds the keys.
+pacod-ap's agents use no gateway tools and no A2A agents.
 
 ---
 

@@ -6,8 +6,9 @@ profile never auto-appears on a deployment that did not ask for it:
     docker compose run --rm --no-deps api python -m scripts.seed_profile taxes
     make seed-profile PROFILE=taxes
 
-Specs live in ``scripts/profiles/<slug>.py`` (``SPEC``). The steps, each safe
-to re-run:
+Specs live in ``scripts/profiles/<slug>.py`` (``SPEC``). A spec whose ``profile_id`` is not a
+gateway agent name (at most 63 lower-case letters, digits and hyphens; not ``pacod-ap`` nor
+``pacod-…``) is refused. The steps, each safe to re-run:
   1. Upsert the ``profiles`` row (refreshes the canonical descriptive fields).
   2. Provision the profile's Qdrant collections (empty; KB ingested later) —
      consultation agents only.
@@ -18,6 +19,9 @@ to re-run:
      ``data/profiles/<profile_id>/reference-facts-*.json`` when the spec says so.
   5. Optionally assign the profile to every existing user (new registrations
      are granted every active profile by ``assign_all_active_profiles`` anyway).
+
+Its gateway agent is admin-api's to register (``make seed-profile`` runs
+``python -m admin_api.services.gateway_agent_sync once`` afterwards).
 
 The three per-agent scripts this replaced were byte-identical apart from the
 literals now carried by the spec.
@@ -37,6 +41,7 @@ from app.core.config import get_settings
 from app.core.db import session_scope
 from app.core.db_models import AppSetting, Profile, User, UserProfile
 from app.core.logging import configure_logging, get_logger
+from app.services import gateway_agents
 from app.services.agent_prompts import get_prompt_state, set_prompt_override
 from app.services.profiles import collection_names_for_slug
 from app.services.vector_store import VectorStore
@@ -195,7 +200,23 @@ async def _assign_to_all_users(spec: ProfileSpec) -> int:
     return len(user_ids)
 
 
+def check_profile_id(profile_id: str) -> None:
+    """A profile's id is its gateway agent's name (app/services/gateway_agents.py): it must
+    fit the gateway's rule and not be reserved (the fallback agent, the prefix ``pacod-``)."""
+    if not gateway_agents.is_agent_name(profile_id):
+        raise ValueError(
+            f"profile id {profile_id!r}: lower-case letters, digits and hyphens, at most 63 "
+            "characters, neither starting nor ending with a hyphen (the gateway's agent names)"
+        )
+    if gateway_agents.is_reserved(profile_id):
+        raise ValueError(
+            f"profile id {profile_id!r} is reserved (the gateway's fallback agent "
+            f"{gateway_agents.fallback_agent()!r} and the prefix {gateway_agents.RESERVED_PREFIX!r})"
+        )
+
+
 async def seed(spec: ProfileSpec) -> dict:
+    check_profile_id(spec.profile_id)
     await _upsert_profile(spec)
     stats: dict = {"profile_id": spec.profile_id}
     if spec.provision_collections:

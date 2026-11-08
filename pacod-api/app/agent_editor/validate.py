@@ -32,7 +32,9 @@ ICON_ALLOWLIST = (
     "heart",
     "eye",
 )
-_SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+# A slug is at most 63 characters, the gateway's rule for names (an agent's id is its slug, and
+# its gateway agent's name: app/services/gateway_agents.py).
+_SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _PAGE_REQUIRED = ("title", "lead", "metaTitle", "metaDescription")
 

@@ -15,8 +15,10 @@ import respx
 
 from app.agent.graph import _resolve_native_web_search
 from app.core.config import get_settings
+from app.services import gateway_agents
 from app.services import gateway_models as gm
 from app.services.agent_runtime_config import env_runtime_config
+from app.services.gateway_agents import AgentState
 
 URL = "http://pacod-gw:8080/v1/models"
 
@@ -60,8 +62,32 @@ def _gateway(monkeypatch):
     monkeypatch.setattr(settings, "gateway_url", "http://pacod-gw:8080")
     monkeypatch.setattr(settings, "gateway_api_key", "pgw_test_service_key")
     gm.reset_cache()
+    gateway_agents.set_cached_state(None)  # never published: the fallback agent
     yield
     gm.reset_cache()
+    gateway_agents.reset_cache()
+
+
+@respx.mock
+async def test_the_list_is_asked_for_as_the_services_agent():
+    route = respx.get(URL).mock(return_value=httpx.Response(200, json=LISTING))
+    await gm.gateway_model_list()
+    req = route.calls[0].request
+    assert req.headers["authorization"] == "Bearer pgw_test_service_key"
+    # A key bound to several agents must name one on the list too: the fallback, never a
+    # profile's, whatever the published state says of profiles.
+    assert req.headers["x-gw-agent-id"] == "pacod-ap"
+    gm.reset_cache()
+    gateway_agents.set_cached_state(
+        AgentState(mode="registered", fallback="pacod-ap", bound=frozenset({"starter"}))
+    )
+    await gm.gateway_model_list()
+    assert route.calls[1].request.headers["x-gw-agent-id"] == "pacod-ap"
+    # A gateway without registered agents: no header (the key may name none).
+    gm.reset_cache()
+    gateway_agents.set_cached_state(AgentState(mode="labels", fallback="pacod-ap"))
+    await gm.gateway_model_list()
+    assert "x-gw-agent-id" not in route.calls[2].request.headers
 
 
 @respx.mock

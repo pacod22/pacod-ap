@@ -1,0 +1,37 @@
+{
+ "case": "error_403_agent_disabled",
+ "note": "HAND-WRITTEN, not recorded: the kill switch (the agent starter set to disabled) as pacod-gw's follow-up answers it, code agent_disabled; the OpenAI envelope of crates/pacod-gw-core/src/dataplane/errors.rs (GwError::body, Envelope::OpenAi) with the message of dataplane/auth.rs agent_of",
+ "request": {
+  "model": "anthropic/claude-sonnet-5-5",
+  "max_tokens": 64,
+  "messages": [
+   {
+    "role": "user",
+    "content": "hello"
+   }
+  ],
+  "gateway": {
+   "trace_id": "fixture",
+   "tags": {
+    "purpose": "synthesizer",
+    "profile": "starter"
+   }
+  }
+ },
+ "request_headers": {
+  "x-gw-agent-id": "starter"
+ },
+ "status": 403,
+ "headers": {
+  "content-type": "application/json",
+  "x-should-retry": "false"
+ },
+ "body": {
+  "error": {
+   "message": "the agent starter is disabled",
+   "type": "permission_error",
+   "param": null,
+   "code": "agent_disabled"
+  }
+ }
+}

@@ -59,6 +59,15 @@ _USER_MESSAGES: dict[str, dict[str, str]] = {
         ),
         "ru": "Произошла временная ошибка. Пожалуйста, повторите попытку через несколько секунд.",
     },
+    "agent_disabled": {
+        "bg": "Този асистент е изключен от администратора. Моля, опитайте отново по-късно.",
+        "en": "This assistant has been switched off by the administrator. Please try again later.",
+        "de": (
+            "Dieser Assistent wurde vom Administrator ausgeschaltet. "
+            "Bitte versuchen Sie es später erneut."
+        ),
+        "ru": "Этот ассистент отключён администратором. Пожалуйста, попробуйте позже.",
+    },
     "empty_response": {
         "bg": (
             "Моделът не върна отговор. Това може да се случи с някои модели "
@@ -247,6 +256,17 @@ class UpstreamRequestError(UpstreamError):
     The same request fails the same way again, so it is not retried."""
 
     retryable = False
+
+
+class AgentDisabledError(UpstreamRequestError):
+    """The gateway refused the call because its agent is switched off (the console's kill
+    switch, an agent's ``status: disabled``; runbook §21.3): a 403 whose code is
+    ``agent_disabled``, or, from a gateway that predates that code, ``not_allowed`` saying
+    "the agent <name> is disabled". Never retried, and never sent again as another agent:
+    the switch is the administrator's decision. 503, with its own message to the user."""
+
+    code = "agent_disabled"
+    http_status = 503
 
 
 class IdentityUnavailableError(AgentError):

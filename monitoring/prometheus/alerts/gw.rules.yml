@@ -1,4 +1,4 @@
-# Vendored unchanged from pacod-gw (deploy/prometheus/rules/pacod-gw.rules.yml, pacod-gw 13309e2).
+# Vendored unchanged from pacod-gw (deploy/prometheus/rules/pacod-gw.rules.yml, pacod-gw 46aec04).
 # The gateway's alerts are evaluated by the platform's Prometheus and routed by its
 # Alertmanager (the platform override disables the gateway's own). Refresh by copying
 # the file again; prometheus/alerts/app.rules.yml keeps only the app's own view of its
@@ -115,7 +115,7 @@ groups:
   - name: pacod-gw.prices
     rules:
       - alert: GatewayPriceStale
-        # A price in effect was neither set nor confirmed by the price tracker for longer than
+        # A price in effect was neither set nor confirmed by a source of model data for longer than
         # the price job's "stale days", which the core exports (30 when no instance does).
         expr: |
           max by (model) (gw_price_age_days)
@@ -125,8 +125,22 @@ groups:
           severity: info
         annotations:
           summary: "The price of {{ $labels.model }} has not been checked for {{ $value | humanize }} days"
-          description: "The price tracker has not confirmed the price of {{ $labels.model }}, and nobody has entered one, for {{ $value | humanize }} days. Costs may be computed with an outdated price."
+          description: "No source of model data has confirmed the price of {{ $labels.model }}, and nobody has entered one, for {{ $value | humanize }} days. Costs may be computed with an outdated price."
           runbook: "docs/runbook.md#prices-are-missing-or-stale"
+
+      - alert: GatewayCatalogSyncStale
+        # The sync of model data is on, and has not succeeded for two days (it runs daily). Before
+        # its first success the core reports its own start, so one that never succeeds fires too.
+        expr: |
+          time() - max(gw_catalog_sync_last_success_timestamp_seconds) > 172800
+            and on() max(gw_price_job_enabled) == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The sync of model data has not succeeded for {{ $value | humanizeDuration }}"
+          description: "Prices and properties are not updated from the selected source. The console's Model data page lists the runs and what went wrong."
+          runbook: "docs/runbook.md#model-data"
 
       - alert: GatewayPriceMissing
         # Calls were settled without a cost because the model has no price in effect.
@@ -207,6 +221,28 @@ groups:
           description: "{{ $value | humanize1024 }}B of audit-mode records wait on {{ $labels.instance }}. Calls that require a record are refused once the spool is full."
           runbook: "docs/runbook.md#the-spool-grows-or-events-are-dropped"
 
+      - alert: GatewayToolRecordsLost
+        expr: |
+          sum by (instance) (increase(gw_tool_records_dropped_total[10m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} lost records of tool calls"
+          description: "{{ $value | humanize }} records of tool and agent calls were dropped on {{ $labels.instance }} in the last 10 minutes."
+          runbook: "docs/runbook.md#the-spool-grows-or-events-are-dropped"
+
+      - alert: GatewayToolRecordsLost
+        # 90 % of 256 MiB. Keep in step with [spool] tool_max_bytes of the core.
+        expr: |
+          max by (instance) (gw_tool_spool_bytes) > 0.9 * 268435456
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The spool of tool calls of {{ $labels.instance }} is nearly full"
+          description: "{{ $value | humanize1024 }}B of records of tool and agent calls wait on {{ $labels.instance }}. New ones are lost once the spool is full."
+          runbook: "docs/runbook.md#the-spool-grows-or-events-are-dropped"
+
       - alert: GatewayConfigurationLag
         # An instance has not applied the newest configuration for more than 30 seconds.
         # The core reports how many versions it is behind.
@@ -283,3 +319,17 @@ groups:
           summary: "The {{ $labels.plugin }} plugin fails to answer"
           description: "{{ $value | humanizePercentage }} of the {{ $labels.plugin }} plugin's answers in the last 10 minutes were errors."
           runbook: "docs/runbook.md#a-plugin-blocks-calls-or-fails"
+
+      - alert: GatewayResponseCacheErrors
+        # The response cache's store (Valkey) fails or is skipped while it fails. Calls are not
+        # refused: they are served by their providers, without the cache, and cost what they
+        # cost without it.
+        expr: |
+          sum by (instance, store) (increase(gw_response_cache_errors_total[10m])) >= 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The response cache's store fails on {{ $labels.instance }}"
+          description: "The {{ $labels.store }} store of the response cache failed {{ $value | humanize }} times on {{ $labels.instance }} in the last 10 minutes; calls are served without the cache."
+          runbook: "docs/runbook.md#the-response-cache-fails"

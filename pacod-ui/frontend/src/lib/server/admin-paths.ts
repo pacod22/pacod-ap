@@ -51,6 +51,8 @@ export const ADMIN_PATH_PREFIXES: readonly string[] = [
 	'/api/v1/newsletter-issues',
 	'/api/v1/newsletter-subscribers',
 	'/api/v1/dashboard',
+	// The profiles as pacod-gw's registered agents (the profiles page's badges).
+	'/api/v1/gateway',
 	// Usage analytics (overview, per-user drill-down, token-guarded ingest).
 	'/api/v1/analytics'
 ];

@@ -6,10 +6,13 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import {
 		profilesQuery,
+		gatewayAgentsQuery,
+		gatewayBadge,
 		createProfileMutation,
 		updateProfileMutation,
 		deleteProfileMutation,
 		shortNameFor,
+		type GatewayBadge,
 		type Profile,
 		type ProfileCreateInput
 	} from '$lib/features/profiles/queries';
@@ -30,12 +33,39 @@
 	const canEdit = $derived(hasRole(data.user, 'superuser'));
 
 	const query = profilesQuery();
+	// The profiles as the gateway's agents (badges only: left out when it does not answer).
+	const gwQuery = gatewayAgentsQuery(browser);
 	const createM = createProfileMutation();
 	const updateM = updateProfileMutation();
 	const deleteM = deleteProfileMutation();
 
 	// SSR initial list until the browser query resolves.
 	let profiles = $derived<Profile[]>(($query.data ?? data.initial) as Profile[]);
+
+	const BADGE_STYLE: Record<GatewayBadge['kind'], string> = {
+		ok: 'background: var(--color-success-soft); color: var(--color-success);',
+		muted: 'background: var(--color-surface-3); color: var(--color-text-muted);',
+		warn: 'background: var(--color-warning-soft); color: var(--color-warning);',
+		danger: 'background: var(--color-danger-soft); color: var(--color-danger);'
+	};
+
+	function badgeFor(p: Profile): GatewayBadge | null {
+		const fallback = $gwQuery.data?.fallback ?? 'pacod-ap';
+		return gatewayBadge($gwQuery.data, p.id, {
+			bound: m.profiles_gw_bound(),
+			pending: m.profiles_gw_pending(),
+			nameUnfit: m.profiles_gw_name_unfit(),
+			conflict: m.profiles_gw_conflict(),
+			disabled: m.profiles_gw_disabled(),
+			label: m.profiles_gw_label(),
+			boundTitle: m.profiles_gw_bound_title(),
+			pendingTitle: m.profiles_gw_pending_title({ fallback }),
+			nameUnfitTitle: m.profiles_gw_name_unfit_title({ fallback }),
+			conflictTitle: m.profiles_gw_conflict_title({ fallback }),
+			disabledTitle: m.profiles_gw_disabled_title(),
+			labelTitle: m.profiles_gw_label_title()
+		});
+	}
 
 	// ---- Create / edit dialog -------------------------------------------
 	let dialogOpen = $state(false);
@@ -178,11 +208,13 @@
 					<th class="px-3 py-2 text-left font-medium">{m.profiles_col_year()}</th>
 					<th class="px-3 py-2 text-left font-medium">{m.profiles_col_languages()}</th>
 					<th class="px-3 py-2 text-left font-medium">{m.common_active_cap()}</th>
+					<th class="px-3 py-2 text-left font-medium">{m.profiles_col_gateway()}</th>
 					{#if canEdit}<th class="px-3 py-2"></th>{/if}
 				</tr>
 			</thead>
 			<tbody>
 				{#each profiles as p (p.id)}
+					{@const badge = badgeFor(p)}
 					<tr class="border-t" style="border-color: var(--color-border); color: var(--color-text);">
 						<td class="px-3 py-2">
 							<div class="font-medium">{p.name}</div>
@@ -209,6 +241,19 @@
 								<span class="text-xs" style="color: var(--color-text-faint);"
 									>{m.common_inactive_lc()}</span
 								>
+							{/if}
+						</td>
+						<td class="px-3 py-2">
+							{#if badge}
+								<span
+									class="rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap"
+									style={BADGE_STYLE[badge.kind]}
+									title={badge.title}
+								>
+									{badge.label}
+								</span>
+							{:else}
+								<span class="text-xs" style="color: var(--color-text-faint);">—</span>
 							{/if}
 						</td>
 						{#if canEdit}
@@ -238,7 +283,7 @@
 				{#if profiles.length === 0}
 					<tr>
 						<td
-							colspan="7"
+							colspan="8"
 							class="px-3 py-8 text-center text-sm"
 							style="color: var(--color-text-muted);"
 						>

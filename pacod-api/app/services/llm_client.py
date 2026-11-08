@@ -14,9 +14,11 @@ Three rules hold for every call:
   504 ``upstream_timeout``: the provider finishes and bills the answer anyway.
   ``_classify_error`` turns every failure into exactly one of the
   ``UpstreamError`` classes, whose ``retryable`` flag the retry layers obey.
-* **Every call is attributed**: ``_gateway_block`` adds the gateway's
-  ``gateway`` object (end user, session, trace = the turn id, agent = the
-  profile, task = the purpose, and the tags purpose/site/profile/variant).
+* **Every call is attributed**: ``_attribution`` adds the gateway's
+  ``gateway`` object (end user, session, trace = the turn id, task = the
+  purpose, and the tags purpose/site/profile/variant) and the ``x-gw-agent-id``
+  header, the gateway agent the call speaks for (the profile's own once it is
+  registered and bound, else the fallback ``pacod-ap``: gateway_agents.py).
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ from tenacity import (
 from app.core import metrics
 from app.core.config import get_settings
 from app.core.exceptions import (
+    AgentDisabledError,
     UpstreamError,
     UpstreamQuotaError,
     UpstreamRequestError,
@@ -51,6 +54,7 @@ from app.core.exceptions import (
 from app.core.logging import get_logger
 from app.core.models import TokenUsage
 from app.core.request_context import SITE_INTERNAL, current_request_context
+from app.services import gateway_agents
 from app.services.debug_audit import (
     current_profile_id,
     current_turn_context,
@@ -87,6 +91,10 @@ def _is_timeout(e: BaseException) -> bool:
 # whatever the status: a timeout is never retried, a used-up budget is not either.
 _TIMEOUT_CODES = frozenset({"upstream_timeout"})
 _QUOTA_CODES = frozenset({"quota_exceeded", "upstream_quota_exhausted"})
+# The kill switch (runbook §21.3): a 403 `agent_disabled`, or — from a gateway that predates
+# that code — `not_allowed` saying "the agent <name> is disabled".
+_AGENT_DISABLED_CODE = "agent_disabled"
+_AGENT_DISABLED_TEXT = re.compile(r"\bagent \S+ is disabled\b")
 # Longest wait honoured from a 429's Retry-After before the next attempt; the
 # user is waiting on the other side of this call.
 _RETRY_AFTER_CAP_SECONDS = 10.0
@@ -115,6 +123,23 @@ def _gateway_error(e: BaseException) -> tuple[int | None, str | None, float | No
     return (status if isinstance(status, int) else None), code, retry_after
 
 
+def _gateway_message(e: BaseException) -> str:
+    """The gateway's ``error.message`` of an SDK error ('' when there is none)."""
+    body = getattr(e, "body", None)
+    if isinstance(body, dict) and isinstance(body.get("error"), dict):
+        body = body["error"]
+    message = body.get("message") if isinstance(body, dict) else None
+    return message if isinstance(message, str) else ""
+
+
+def _agent_disabled(status: int | None, code: str | None, e: BaseException) -> bool:
+    if status != 403:
+        return False
+    if code == _AGENT_DISABLED_CODE:
+        return True
+    return code == "not_allowed" and bool(_AGENT_DISABLED_TEXT.search(_gateway_message(e)))
+
+
 def _classify_error(e: BaseException, *, waited: float, what: str = "LLM call") -> UpstreamError:
     """The one place a failed gateway call becomes an ``UpstreamError`` class.
 
@@ -122,6 +147,7 @@ def _classify_error(e: BaseException, *, waited: float, what: str = "LLM call") 
     |------------------------------------------------|------------------------|---------|
     | client timeout; HTTP 504; `upstream_timeout`   | UpstreamTimeoutError   | never   |
     | 402 (`quota_exceeded`, `upstream_quota_exh…`)  | UpstreamQuotaError     | never   |
+    | 403 `agent_disabled` (the agent is switched off) | AgentDisabledError   | never   |
     | other 4xx (bad key, model not granted, …)      | UpstreamRequestError   | never   |
     | 429                                            | UpstreamError          | yes, after Retry-After (capped) |
     | 5xx, connection errors, a broken stream        | UpstreamError          | yes (stream opens only) |
@@ -139,6 +165,8 @@ def _classify_error(e: BaseException, *, waited: float, what: str = "LLM call") 
         return UpstreamTimeoutError(f"{what} timed out at the gateway (not retried): {e}")
     if code in _QUOTA_CODES or status == 402:
         return UpstreamQuotaError(detail)
+    if _agent_disabled(status, code, e):
+        return AgentDisabledError(detail)
     if status == 429:
         return UpstreamError(detail, retry_after=retry_after)
     if status is not None and 400 <= status < 500:
@@ -164,18 +192,26 @@ def _retry_wait(retry_state) -> float:
     return _backoff(retry_state)
 
 
+def _call_profile_id() -> str | None:
+    """The profile the current call is made for: the turn's, else the request's."""
+    ctx = current_request_context()
+    return current_profile_id() or (ctx.profile_id if ctx is not None else None)
+
+
 def _gateway_block(purpose: str) -> dict:
     """The gateway's attribution object for one call.
 
     Who and what the call was for, from the ambient turn and request context: the
     end user (only inside a user's request — workers send none, so the users' token
     limit counts people only), the chat session, the turn id as the trace (the
-    console's trace page then shows one turn), the profile as the agent, the
-    purpose as the task, and the tags the platform workspace declares."""
+    console's trace page then shows one turn), the purpose as the task, and the tags
+    the platform workspace declares (``profile`` among them). The agent is not in
+    it: it travels in the ``x-gw-agent-id`` header (``_attribution``), and a body
+    ``agent_id`` that differs from the agent the key speaks for is refused."""
     turn_id, session_id, user_id = current_turn_context()
     ctx = current_request_context()
     site = ctx.site if ctx is not None else SITE_INTERNAL
-    profile_id = current_profile_id() or (ctx.profile_id if ctx is not None else None)
+    profile_id = _call_profile_id()
     tags = {"purpose": purpose, "site": site}
     if profile_id:
         tags["profile"] = profile_id
@@ -189,16 +225,23 @@ def _gateway_block(purpose: str) -> dict:
         block["session_id"] = session_id
     if turn_id:
         block["trace_id"] = turn_id
-    if profile_id:
-        block["agent_id"] = profile_id
     return block
 
 
-def _with_gateway(extra_body: dict, purpose: str) -> dict:
+async def _attribution(purpose: str) -> tuple[dict, dict[str, str]]:
+    """``(the gateway object, the per-call headers)`` of one call: the attribution
+    object and ``x-gw-agent-id``, the gateway agent the call speaks for — the
+    profile's own when it is a registered agent bound to this key, else the fallback
+    (``gateway_agents.agent_for``). Never sent as another agent on a refusal."""
+    agent = await gateway_agents.agent_for(_call_profile_id())
+    return _gateway_block(purpose), gateway_agents.agent_headers(agent)
+
+
+def _with_gateway(extra_body: dict, block: dict) -> dict:
     """``extra_body`` plus the attribution object, never replacing what is there
     (``thinking``, ``reasoning_effort``)."""
     out = dict(extra_body)
-    out.setdefault("gateway", _gateway_block(purpose))
+    out.setdefault("gateway", block)
     return out
 
 
@@ -756,7 +799,10 @@ class LLMClient:
                 presence_penalty=presence_penalty,
             )
         )
-        kwargs["extra_body"] = _with_gateway(extra_body, purpose)
+        block, agent_headers = await _attribution(purpose)
+        kwargs["extra_body"] = _with_gateway(extra_body, block)
+        if agent_headers:
+            kwargs["extra_headers"] = agent_headers
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
@@ -1061,6 +1107,7 @@ class LLMClient:
             **sampling,
             **({"extra_body": extra_body} if extra_body else {}),
         }
+        block, agent_headers = await _attribution(purpose)
         start = time.monotonic()
 
         log.info(
@@ -1095,7 +1142,8 @@ class LLMClient:
                     else {}
                 ),
                 **sampling,
-                extra_body=_with_gateway(extra_body, purpose),
+                extra_body=_with_gateway(extra_body, block),
+                **({"extra_headers": agent_headers} if agent_headers else {}),
                 **({"timeout": timeout} if timeout is not None else {}),
             )
         except UpstreamError as e:

@@ -27,6 +27,7 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services import gateway_agents
 
 log = get_logger(__name__)
 
@@ -37,10 +38,16 @@ _cache: tuple[float, list[dict]] | None = None
 
 async def _fetch() -> list[dict]:
     s = get_settings()
+    # A key bound to several gateway agents names one on every call, the list included; the
+    # list is the service's own (the fallback agent's), not a profile's.
+    agent = await gateway_agents.service_agent()
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(
             f"{s.gateway_url.rstrip('/')}/v1/models",
-            headers={"Authorization": f"Bearer {s.gateway_api_key}"},
+            headers={
+                "Authorization": f"Bearer {s.gateway_api_key}",
+                **gateway_agents.agent_headers(agent),
+            },
         )
         resp.raise_for_status()
         data = resp.json()

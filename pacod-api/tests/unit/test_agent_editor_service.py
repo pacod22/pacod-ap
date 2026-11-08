@@ -123,6 +123,33 @@ async def test_create_agent_is_dev_only_with_valid_blank_draft(env):
     assert e.value.status == 409
 
 
+@pytest.mark.parametrize(
+    ("slug", "code"),
+    [
+        ("assistant", "slug_reserved"),
+        # The gateway's fallback agent and the family's prefix: an agent's id is its gateway
+        # agent's name (app/services/gateway_agents.py).
+        ("pacod-ap", "slug_reserved"),
+        ("pacod-kb", "slug_reserved"),
+        ("a" * 64, "invalid_slug"),  # the gateway's names are at most 63
+    ],
+)
+async def test_create_agent_refuses_ids_the_gateway_cannot_name(env, slug, code):
+    with pytest.raises(AgentEditorError) as e:
+        await service.create_agent(slug=slug, name="X", template_id="rag_chat_v1", actor="su")
+    assert (e.value.code, e.value.status) == (code, 422)
+
+
+def test_the_create_schema_takes_63_characters_at_most():
+    from pydantic import ValidationError
+
+    from admin_api.schemas import AgentCreate
+
+    assert AgentCreate(slug="a" * 63, name="X").slug == "a" * 63
+    with pytest.raises(ValidationError):
+        AgentCreate(slug="a" * 64, name="X")
+
+
 async def test_save_draft_optimistic_concurrency(env):
     agent = await _create()
     graph = agent["graph"]

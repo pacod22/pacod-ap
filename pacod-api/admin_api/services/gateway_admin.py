@@ -10,6 +10,9 @@ quota pages change it here, on the gateway's management API, with admin-api's ow
   kept as the console's record of it and written here on every change);
 * a user's reset — clearing that user's counter of the limit.
 
+The same token registers the profiles as the workspace's agents and binds them to pacod-ap's
+keys (admin_api/services/gateway_agent_sync.py, through ``_call``).
+
 Every call raises ``GatewayAdminError`` when the gateway refuses or does not answer; the
 routes turn it into a 502 so an admin sees that the change did not land.
 """
@@ -30,7 +33,12 @@ USER_TOKEN_LIMIT = gateway_quota.USER_TOKEN_LIMIT
 
 
 class GatewayAdminError(Exception):
-    """The gateway refused a management call, or could not be reached."""
+    """The gateway refused a management call, or could not be reached. ``status`` is the
+    gateway's HTTP status when it answered (None: not configured, or no answer)."""
+
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 def _base() -> str:
@@ -64,7 +72,10 @@ async def _call(method: str, path: str, body: dict | None = None, *, params=None
             detail = resp.json().get("error", {}).get("message") or resp.text
         except ValueError:
             detail = resp.text
-        raise GatewayAdminError(f"{method} {path} answered {resp.status_code}: {detail[:300]}")
+        raise GatewayAdminError(
+            f"{method} {path} answered {resp.status_code}: {detail[:300]}",
+            status=resp.status_code,
+        )
     return resp.json() if resp.content else None
 
 

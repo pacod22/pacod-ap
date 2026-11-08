@@ -11,6 +11,11 @@ never cut off mid-answer.
 Only tokens moved. The request quota and the per-minute throttle stay in Redis
 (app/guards/quota.py): they count turns, and the gateway counts LLM calls.
 
+The question names the gateway agent it is asked for (``x-gw-agent-id``): a key bound to
+several agents is refused without one. Inside a turn that is the turn's profile's agent
+(``gateway_agents.agent_for``), so the gateway answers with the limits that apply to it; outside
+a turn, the service's own. Answers are cached per (user, agent).
+
 Fails open: when the gateway does not answer, ``None`` (logged) — the token check is skipped
 rather than refusing every user while the gateway is away.
 """
@@ -24,6 +29,7 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services import gateway_agents
 
 log = get_logger(__name__)
 
@@ -32,7 +38,8 @@ USER_TOKEN_LIMIT = "user-daily-tokens"
 # A turn reads its user's standing once at the start and once at the end; a few seconds of
 # reuse spares the gateway the second read of an idle user without letting a budget lag.
 CACHE_SECONDS = 5.0
-_cache: dict[str, tuple[float, GatewayTokenQuota | None]] = {}
+# (end user, agent named) → (monotonic time, answer)
+_cache: dict[tuple[str, str | None], tuple[float, GatewayTokenQuota | None]] = {}
 
 
 @dataclass(frozen=True)
@@ -70,14 +77,17 @@ class GatewayUnavailable(Exception):
     """The gateway did not answer the quota question."""
 
 
-async def _fetch(end_user: str) -> GatewayTokenQuota | None:
+async def _fetch(end_user: str, agent: str | None) -> GatewayTokenQuota | None:
     s = get_settings()
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(
                 f"{s.gateway_url.rstrip('/')}/gw/v1/quota",
                 params={"end_user": end_user},
-                headers={"Authorization": f"Bearer {s.gateway_api_key}"},
+                headers={
+                    "Authorization": f"Bearer {s.gateway_api_key}",
+                    **gateway_agents.agent_headers(agent),
+                },
             )
             resp.raise_for_status()
             return _parse(resp.json())
@@ -85,19 +95,23 @@ async def _fetch(end_user: str) -> GatewayTokenQuota | None:
         raise GatewayUnavailable(str(e)) from e
 
 
-async def user_token_quota(end_user: str, *, fresh: bool = False) -> GatewayTokenQuota | None:
+async def user_token_quota(
+    end_user: str, *, fresh: bool = False, profile_id: str | None = None
+) -> GatewayTokenQuota | None:
     """The user's token standing, or None when there is no token limit for them — or when
-    the gateway did not answer (logged; the caller then skips the check)."""
+    the gateway did not answer (logged; the caller then skips the check). ``profile_id`` is
+    the turn's profile, when there is one: the question is asked as its gateway agent."""
+    agent = await gateway_agents.agent_for(profile_id)
     now = time.monotonic()
-    hit = _cache.get(end_user)
+    hit = _cache.get((end_user, agent))
     if hit is not None and not fresh and now - hit[0] < CACHE_SECONDS:
         return hit[1]
     try:
-        quota = await _fetch(end_user)
+        quota = await _fetch(end_user, agent)
     except GatewayUnavailable as e:
-        log.warning("gateway_quota_unavailable", end_user=end_user, error=str(e))
+        log.warning("gateway_quota_unavailable", end_user=end_user, agent=agent, error=str(e))
         return None
-    _cache[end_user] = (now, quota)
+    _cache[(end_user, agent)] = (now, quota)
     return quota
 
 
@@ -105,4 +119,5 @@ def invalidate(end_user: str | None = None) -> None:
     if end_user is None:
         _cache.clear()
     else:
-        _cache.pop(end_user, None)
+        for key in [k for k in _cache if k[0] == end_user]:
+            _cache.pop(key, None)

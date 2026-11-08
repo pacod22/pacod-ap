@@ -560,7 +560,8 @@ class ProfileRead(BaseModel):
 
 
 class AgentCreate(BaseModel):
-    slug: str = Field(..., min_length=2, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    # The agent's id: at most 63, the gateway's rule for agent names (gateway_agents.py).
+    slug: str = Field(..., min_length=2, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
     name: str = Field(..., min_length=1, max_length=128)
     template: Literal["rag_chat_v1"] = "rag_chat_v1"
 

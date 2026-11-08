@@ -39,7 +39,7 @@ from app.core.db_models import (
 )
 from app.core.logging import get_logger
 from app.services import agent_runtime_config as runtime_config
-from app.services import response_cache
+from app.services import gateway_agents, response_cache
 from app.services.profiles import (
     ProfileContext,
     _row_to_context,
@@ -50,8 +50,10 @@ from app.services.profiles import (
 log = get_logger(__name__)
 
 PUBLIC_AGENTS_CACHE_PREFIX = "public:agents"
-# Editor pages living next to /agent-editor/<id> (the frontend's static routes win).
-RESERVED_SLUGS = frozenset({"assistant"})
+# Editor pages living next to /agent-editor/<id> (the frontend's static routes win), and the
+# gateway's fallback agent (an agent's id is its gateway agent's name; the prefix `pacod-`, which
+# the family's products register under, is refused too: gateway_agents.is_reserved).
+RESERVED_SLUGS = frozenset({"assistant", "pacod-ap"})
 
 
 class AgentEditorError(Exception):
@@ -457,8 +459,14 @@ async def create_agent(*, slug: str, name: str, template_id: str, actor: str | N
     template = TEMPLATES.get(template_id)
     if template is None:
         raise AgentEditorError("unknown_template", f"Unknown template {template_id!r}", 422)
-    if slug in RESERVED_SLUGS:
-        raise AgentEditorError("slug_reserved", f"{slug!r} is reserved by the editor", 422)
+    if slug in RESERVED_SLUGS or gateway_agents.is_reserved(slug):
+        raise AgentEditorError("slug_reserved", f"{slug!r} is reserved", 422)
+    if not gateway_agents.is_agent_name(slug):
+        raise AgentEditorError(
+            "invalid_slug",
+            "A slug is lower-case letters, digits and hyphens, at most 63 characters",
+            422,
+        )
     base, _parents, curated = collection_names_for_slug(slug)
     async with session_scope() as db:
         taken = (

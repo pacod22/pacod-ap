@@ -1,0 +1,37 @@
+{
+ "case": "error_403_agent_disabled_not_allowed",
+ "note": "HAND-WRITTEN, not recorded: the kill switch as pacod-gw main (46aec04) answers it, code not_allowed, told apart only by its message (dataplane/auth.rs agent_of)",
+ "request": {
+  "model": "anthropic/claude-sonnet-5-5",
+  "max_tokens": 64,
+  "messages": [
+   {
+    "role": "user",
+    "content": "hello"
+   }
+  ],
+  "gateway": {
+   "trace_id": "fixture",
+   "tags": {
+    "purpose": "synthesizer",
+    "profile": "starter"
+   }
+  }
+ },
+ "request_headers": {
+  "x-gw-agent-id": "starter"
+ },
+ "status": 403,
+ "headers": {
+  "content-type": "application/json",
+  "x-should-retry": "false"
+ },
+ "body": {
+  "error": {
+   "message": "the agent starter is disabled",
+   "type": "permission_error",
+   "param": null,
+   "code": "not_allowed"
+  }
+ }
+}

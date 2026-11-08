@@ -13,6 +13,7 @@
         start-cpu start-local rebuild-embeddings rebuild-embeddings-local \
         ensure-hf-cache clean-models \
         ensure-gateway-env recreate-gateway-clients recreate-gateway-clients-local gw-matrix-local \
+        gw-agent-sync gw-agent-sync-local \
         bootstrap seed-profile seed-example seed-example-local reset-prompt-overrides \
         indexnow-ping import-agents adopt-agents \
         ingest ingest-clean reingest ingest-cpu ingest-clean-cpu reingest-cpu \
@@ -66,6 +67,7 @@ help:
 	@echo "  make rebuild-cpu [SVC=...]  Rebuild + recreate services only (default ap-api; deps untouched)"
 	@echo "  make rebuild-embeddings Rebuild + recreate pacod-embeddings only"
 	@echo "  make recreate-gateway-clients  Recreate the services that call the gateway (new keys)"
+	@echo "  make gw-agent-sync[-local]     Register the profiles as gateway agents now (admin-api)"
 	@echo "  make bootstrap          init_db + the starter agent's reference facts + corpus"
 	@echo "  make seed-profile PROFILE=<id>    Provision one agent from scripts/profiles/<id>.py"
 	@echo "  make seed-example PROFILE=taxes    Install an example agent + ingest its knowledge base"
@@ -167,6 +169,17 @@ recreate-gateway-clients: ensure-env
 recreate-gateway-clients-local: ensure-env-local
 	$(COMPOSE_LOCAL) up -d --no-build --no-deps $(GATEWAY_CLIENTS)
 
+# The profiles as the gateway's registered agents, bound to the four keys, now rather than at
+# admin-api's next round (GATEWAY_AGENT_SYNC_SECONDS): after a profile was written outside
+# admin-api (a seed) and after gw-bootstrap. It waits for a round in progress and, when the
+# state changed lately, for the services' copies of it (15 s). Needs ap-admin-api running.
+GW_AGENT_SYNC = python -m admin_api.services.gateway_agent_sync once
+gw-agent-sync: ensure-env
+	$(COMPOSE) exec -T ap-admin-api $(GW_AGENT_SYNC)
+
+gw-agent-sync-local: ensure-env-local
+	$(COMPOSE_LOCAL) exec -T ap-admin-api $(GW_AGENT_SYNC)
+
 # Every model the gateway grants × thinking × prompt cache × native search, through the real
 # client: lists what the gateway refuses (scripts/gw_request_matrix.py). Free on the mock.
 gw-matrix-local: ensure-env-local
@@ -192,6 +205,7 @@ bootstrap:
 seed-profile:
 	@test -n "$(PROFILE)" || { echo "usage: make seed-profile PROFILE=<id>   (e.g. taxes)"; exit 1; }
 	$(COMPOSE) exec ap-api python -m scripts.seed_profile $(PROFILE)
+	@$(COMPOSE) exec -T ap-admin-api $(GW_AGENT_SYNC) || echo "seed-profile: its gateway agent is registered at admin-api's next round instead"
 
 # An example agent end to end: its profile spec, then its knowledge base
 # (data/profiles/<id>/{corpus,links.md,documents}).
@@ -438,6 +452,7 @@ bootstrap-local: ensure-env-local
 seed-example-local: ensure-env-local
 	@test -n "$(PROFILE)" || { echo "usage: make seed-example-local PROFILE=<id>   (e.g. taxes)"; exit 1; }
 	$(COMPOSE_LOCAL) exec ap-api python -m scripts.seed_profile $(PROFILE)
+	@$(COMPOSE_LOCAL) exec -T ap-admin-api $(GW_AGENT_SYNC) || echo "seed-example-local: its gateway agent is registered at admin-api's next round instead"
 	$(COMPOSE_LOCAL) exec ap-ingestion-cpu python -m scripts.ingest_corpus --profile $(PROFILE)
 
 # Health through the edge + one real streamed chat turn.

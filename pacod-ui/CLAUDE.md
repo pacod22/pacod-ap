@@ -196,7 +196,8 @@ Current admin prefixes (all `/api/v1/…`): `users`, `profiles`, `reference-fact
 `broker`, `response-cache-config`, `response-feedback`, `agent-prompts`, `agent-editor`, `kb-candidates`,
 `golden-tests`, `loop-config`, `loop-runs`, `loop-run-requests`, `loop-findings`, `loop-clusters`,
 `loop-fix-checks`, `newsletter-config`, `newsletter-sources`, `newsletter-items`,
-`newsletter-issues`, `newsletter-subscribers`, `dashboard`, `analytics`. **Note:** the _public_
+`newsletter-issues`, `newsletter-subscribers`, `dashboard`, `analytics`, `gateway` (the profiles as
+pacod-gw's registered agents: the badges of the profiles page). **Note:** the _public_
 `/api/v1/newsletter/*` subscription routes are deliberately **not** on the list, so they route to the
 chat `ap-api` (not `ap-admin-api`). Everything else (`chat`, `auth/me`, `my-profiles`, `quota`, `public/*`,
 …) goes to `ap-api`.
@@ -339,7 +340,12 @@ Profiles are the platform's isolation boundary; the frontend threads a profile t
   global** (all profiles / aggregate); a selection scopes every read, edit, and create to one profile.
   When adding a profile-scoped feature, include `selectedProfile.id` in its query keys and params.
 
-Profile CRUD lives under `(app)/profiles` (create/delete are superuser; assignment is admin). Isolation
+Profile CRUD lives under `(app)/profiles` (create/delete are superuser; assignment is admin). Its
+**Gateway agent** column (`gatewayAgentsQuery` → `GET /api/v1/gateway/agents`, `gatewayBadge`) shows
+where each profile stands at pacod-gw: its own registered agent, pending, on the fallback agent
+(`pacod-ap`) because its id is no gateway name or the name is taken, switched off in the gateway
+console (the kill switch), or a label (no registered agents yet); the column is blank when that
+route does not answer. Isolation
 itself is **not** the frontend's job — the backend authorizes every `profile_id` against the caller's
 assignments; the UI just scopes what it asks for. With no profile given, the backend uses the default
 profile, `starter`.

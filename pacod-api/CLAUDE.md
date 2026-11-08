@@ -267,6 +267,10 @@ edges are stored so a free-form executor (`template: null`) needs no data migrat
   `AGENT_EDITOR_ASSISTANT_*`, blank model → `AGENT_PRIMARY_MODEL`; an LLM template may be picked, checked by
   `validate_template_ids`), edited at `GET/PATCH /api/v1/agent-editor/assistant-config`. Its calls carry the
   gateway purpose tag `agent_editor_assistant` (profile = the agent being edited). Slug `assistant` is reserved.
+- **Agent ids are gateway agent names.** An agent's id (its slug) names its pacod-gw agent, so
+  `create_agent` refuses ids longer than 63 (`invalid_slug`; `AgentCreate.slug` `max_length=63`,
+  `validate._SLUG_RE`) and the reserved `pacod-ap` and `pacod-*` (`slug_reserved`;
+  `gateway_agents.is_reserved`). `scripts/seed_profile.py` checks a spec's `profile_id` the same way.
 - **Public listing** (`app/api/routes_public_agents.py`, unauthenticated, 300 s cache):
   `GET /api/v1/public/agents[/{slug}]` = published `meta.marketing` of released `show_on_landing`
   agents (+ seed copy for released agents not yet managed). Marketing copy only — never config.
@@ -311,6 +315,7 @@ app/                    Main chat API (FastAPI)
                         quota.py (request quota + throttle in Redis, token quota at the gateway), topic.py
   services/             llm_client (the gateway client, error classifier, attribution, UsageAccumulator),
                         gateway_models (the gateway's model list), gateway_quota (a user's token standing),
+                        gateway_agents (the gateway agent a call names: x-gw-agent-id, the published state),
                         identity (pacod-id: verifier, AuthzCache, catalogue, shadow users, erasure),
                         profiles, reference_facts, audit, llm_errors, llm_capabilities, llm_params, llm_templates,
                         agent_runtime_config, agent_prompts, runtime_settings, collection_config, response_cache,
@@ -333,13 +338,15 @@ admin_api/              Admin API — separate container (Postgres + Redis + Qdr
   ingest_auth.py        Shared-token check for the frontend's telemetry ingest (fails closed)
   schemas.py            All admin Pydantic schemas
   services/             identity_admin (pacod-id /admin/v1 facade, token exchange), gateway_reports (the gateway's
-                        usage reports), gateway_admin (the gateway's users' token limit)
+                        usage reports), gateway_admin (the gateway's users' token limit),
+                        gateway_agent_sync (the profiles as the gateway's agents; `once` CLI)
   routes/               users (facade over pacod-id), profiles, user_profiles, reference_facts, usage_events,
                         analytics, dashboard, audit_log, crawler_visits, conversations, debug_config,
                         debug_interactions, directives, agent_prompts, agent_editor, llm_config (models/params/
                         web search + search keys), llm_templates, llm_models (read-only: the gateway's list),
                         quota_config, response_cache_config, response_feedback, ingested_sources, vector_store,
                         broker (offers, linked models, search; the connection, superuser writes),
+                        gateway (the profiles as the gateway's agents, read only),
                         redis_store, loop_config (config + runs + run-requests + findings + clusters + fix checks),
                         kb_candidates (+ golden tests), newsletter
 
@@ -543,6 +550,7 @@ make ingest / ingest-clean / reingest [PROFILE=<id>]   # (re-)ingest / drop a pr
 make import-agents [ARGS="--force <id>"] / adopt-agents   # agent editor import / hand agents to the editor
 make reset-prompt-overrides [ARGS=--yes]                  # drop stale loop-prompt overrides (previews by default)
 make recreate-gateway-clients[-local]                     # recreate the 4 gateway clients after new keys
+make gw-agent-sync[-local]                                # admin-api registers the profiles as gateway agents now
 make test-unit / test-integration / eval [PROFILE=<id>]   # tests / golden-set eval
 make lint / format                  # uvx ruff@0.7.1 check + format --check / format + check --fix
 make dev-install                    # local venv: requirements-dev + the vendored pacod_id wheel
@@ -564,7 +572,7 @@ make id-image                       # build pacod-id:<commit> from the vendored 
 make up-all                         # local: up-local (+ pacod-gw's database) → gw-up → gw-bootstrap (→ monitor-up), then the URLs
 make down-all                       # gw-down + down-local
 make gw-up / gw-down / gw-ps / gw-logs / gw-config   # the gateway stack (project pacod-ap-gw, GW_DIR=../pacod-gw)
-make gw-bootstrap [GW_ENV=dev|live] # config import, provider credentials, per-service keys, report/admin tokens (live: in a container on pacod-net + pacod-admin-net)
+make gw-bootstrap [GW_ENV=dev|live] # config import, provider credentials, the agent pacod-ap, per-service keys bound to it, report/admin tokens, then admin-api's agent sync (live: in a container on pacod-net + pacod-admin-net)
 make smoke-all                      # smoke-local + gw-turn-smoke (a turn traced through the gw mock) + gw-smoke
 make test                           # backend unit tests + pacod-ui tests
 make monitor-up / monitor-down      # the monitoring stack
@@ -723,7 +731,9 @@ db `pacod`), `REDIS_URL` (`redis://ap-redis:6379/0`), `QDRANT_URL` (`http://paco
 `pgw_` key, from `.env.gateway` by compose interpolation), `GATEWAY_ADMIN_URL` (`http://pacod-gw-admin:8081`,
 the management API: reports + limits), `GATEWAY_CONSOLE_URL` (deep links; blank hides them),
 `GATEWAY_ORG_ID` / `GATEWAY_WORKSPACE_ID`, admin-api only `GATEWAY_REPORT_TOKEN` (viewer) and
-`GATEWAY_ADMIN_TOKEN` (workspace_admin). `gw_bootstrap.py` writes the per-service keys
+`GATEWAY_ADMIN_TOKEN` (workspace_admin), `GATEWAY_FALLBACK_AGENT` (`pacod-ap`: the registered agent a
+call names when it is no profile's own) and, admin-api only, `GATEWAY_AGENT_SYNC_SECONDS` (60; how
+often it registers the profiles as agents, 0 = never). `gw_bootstrap.py` writes the per-service keys
 (`GATEWAY_KEY_API|ADMIN_API|LOOP|NEWSLETTER`, which compose maps to each service's `GATEWAY_API_KEY`), the
 report/admin tokens, the org/workspace ids and its own `GW_ADMIN_TOKEN` into `.env.gateway`; the URLs
 are compose `environment:` values (`GATEWAY_CONSOLE_URL` defaults to `https://console.pacod.io`).
@@ -1082,8 +1092,11 @@ default_headers={"x-gw-retries": "1"})`. Compose passes each service its own `pg
 interpolation from `pacod-api/.env.gateway` (never an `env_file:`): api `GATEWAY_KEY_API`, admin-api
 `GATEWAY_KEY_ADMIN_API`, both loop services `GATEWAY_KEY_LOOP`, newsletter-worker
 `GATEWAY_KEY_NEWSLETTER`. `make gw-bootstrap` (`../scripts/gw_bootstrap.py`) issues them (probing stored
-keys with `GET /v1/models` and reissuing dead ones; the worker keys get a daily spend cap) and recreates
-the running clients when the file changed.
+keys with `GET /v1/models` as the agent `pacod-ap` and reissuing those answered 401; the worker keys get a
+daily spend cap), registers the fallback agent `pacod-ap` and binds the four keys to it, recreates the
+running clients when the file changed, and runs admin-api's agent sync (**Registered agents** below).
+**Rollout order: the new ap services before the new bootstrap** — an older app names its profile in the
+body with no header, which a key bound to `[pacod-ap]` refuses (403) on every profile turn.
 
 **One retry layer — this client.** The SDK's retries are off and `x-gw-retries: 1` tells the gateway to
 make one attempt (no gateway retry or failover), so tenacity here is the only retry layer.
@@ -1094,6 +1107,7 @@ whose `retryable` flag every retry layer obeys:
 |---|---|---|
 | client timeout (SDK/httpx), HTTP 504, error code `upstream_timeout` | `UpstreamTimeoutError` | **never** |
 | 402, codes `quota_exceeded` / `upstream_quota_exhausted` | `UpstreamQuotaError` | never |
+| 403 `agent_disabled`, or `not_allowed` saying "the agent … is disabled" (the kill switch) | `AgentDisabledError` (code `agent_disabled`, 503) | never, nor as another agent |
 | any other 4xx (bad key, model not granted, invalid request) | `UpstreamRequestError` | never |
 | 429 | `UpstreamError` (`retry_after` from `Retry-After`) | yes, waiting `Retry-After` capped at 10 s |
 | other 5xx, connection errors | `UpstreamError` | yes |
@@ -1114,14 +1128,19 @@ one slow thinking-on call reached a provider up to 15 times: 3 client attempts �
 provider timeouts are 600 s (platform config) and must stay ≥ the app's. Size the timeouts for the
 slowest legitimate call, not the typical one — raising them is free, lowering them costs money.
 
-**Attribution on every call.** `_gateway_block(purpose)` builds the gateway's `gateway` object and
-`_with_gateway` merges it into `extra_body` with `setdefault`, never replacing `thinking` /
-`reasoning_effort`:
+**Attribution on every call.** `_attribution(purpose)` gives `(block, headers)`: `_gateway_block`
+builds the gateway's `gateway` object, which `_with_gateway` merges into `extra_body` with
+`setdefault`, never replacing `thinking` / `reasoning_effort`, and the per-call `extra_headers` carry
+`x-gw-agent-id` (`gateway_agents.agent_for(profile)`, see **Registered agents**):
 
 ```
-{"gateway": {"end_user": user_id, "session_id": …, "trace_id": turn_id, "agent_id": profile_id,
+{"gateway": {"end_user": user_id, "session_id": …, "trace_id": turn_id,
              "task": purpose, "tags": {"purpose", "site", "profile", "variant"}}}
+x-gw-agent-id: <the profile's agent, or pacod-ap>
 ```
+
+No `agent_id` in the body: the gateway decides the agent from the key and the header and refuses a
+body `agent_id` that differs from it. `tags.profile` is always the profile (the reports group by it).
 
 Values come from the ambient context: `current_turn_context()` / `current_profile_id()`
 (`app/services/debug_audit.py`) and `current_request_context()` (site, user, the agent-editor
@@ -1145,7 +1164,9 @@ the search provider, an **estimated** cost from `WEB_SEARCH_COST_USD_*`).
 
 **The users' token quota is the gateway's** (`app/services/gateway_quota.py`): the workspace's advisory
 end-user limit `user-daily-tokens` (platform config: tokens/day, 100 000). `QuotaGuard.check_and_reserve`
-reads `GET /gw/v1/quota?end_user=` (5 s in-process cache, `fresh=True` before a turn) and refuses with
+reads `GET /gw/v1/quota?end_user=` (5 s in-process cache per user and agent, `fresh=True` before a
+turn; asked as the turn's agent — `check_and_reserve(user, profile_id=…)`, since the turn's context is
+not open yet — and as the service's outside a turn) and refuses with
 429 when `remaining <= 0`; the limit is advisory at the gateway, so a running turn is never cut off and a
 user can exceed by one turn's tokens. **Fails open**: an unreachable gateway skips the token check
 (logged). The request quota and the per-minute throttle stay in Redis — they count turns, the gateway
@@ -1176,6 +1197,51 @@ mock in dev, the real APIs live —, the platform's model ids with prices, organ
 `gw_bootstrap.py`. Two app-side counters stay local because they see what the gateway cannot (client
 timeouts, an unreachable gateway): `llm_requests_total{outcome}` / `llm_retries_total` and the
 `llm_call_errors` table.
+
+**Registered agents** (pacod-gw runbook §21.3; `../docs/LLM_GATEWAY.md` has the operator's view). A
+key bound to several gateway agents must name one in `x-gw-agent-id` on **every** call (`/v1/models`
+and `/gw/v1/quota` too); a key bound to none may not name a registered one; a disabled agent's calls
+are refused (the console's kill switch).
+
+- `app/services/gateway_agents.py`: `is_agent_name` (the gateway's `is_slug`: ≤ 63, lower-case,
+  digits, hyphens, no hyphen at either end), `is_reserved` (`GATEWAY_FALLBACK_AGENT` and the prefix
+  `pacod-`, which kb, cms and the aggregator use in the same workspace), `agent_for(profile_id)` and
+  `service_agent()`. The **published state** is `app_settings` `gateway.agents` under `__global__`
+  (`{v, mode: registered|labels, fallback, bound, registered, at}`), **not Redis**: the loop and
+  newsletter workers make profile calls too. Each process keeps it `CACHE_SECONDS` (15) and keeps its
+  last copy on a DB error (retried after the same time). Header: never published → the fallback;
+  `labels` → the profile id unless it is a registered name (none outside a profile); `registered` →
+  the profile id if bound, else the fallback. A disabled agent stays `bound`, so its 403 is never
+  side-stepped. The model list uses `service_agent()`.
+- `admin_api/services/gateway_agent_sync.py` (`GatewayAgentSync`, started in admin-api's lifespan,
+  modelled on `BrokerAnnouncer`; one round at a time across processes, Redis lock `gw:agents:lock`):
+  pages `…/agents` (404 → publish `labels`: an older gateway), no `pacod-ap` or no key bound to it →
+  `labels`; pacod-ap's keys are **those whose `agents` hold the fallback** (no key names written, so
+  pacod-demo's product keys are never touched); creates each fitting profile's agent (description
+  ends `(managed by pacod-ap's admin-api)`; an existing one with that marker is adopted, any other is
+  a `conflict` and that profile stays on the fallback); adds them to each key by GET + PUT at the read
+  `version` (gw's items are flat; 409 → read again, 3 attempts); waits `DATA_PLANE_SECONDS` (2) after a
+  change, then publishes `registered` with the agents bound on every key. It **only adds**: never
+  changes an agent's status, `allowed_*` or `tool_bundles`, never unbinds or deletes. Runs at start,
+  every `GATEWAY_AGENT_SYNC_SECONDS`, and on `kick()` after profile create/delete
+  (`routes/profiles.py`) and agent-editor create/import/import-all/adopt-all. Out-of-band writes run
+  `python -m admin_api.services.gateway_agent_sync once` (waits for the lock and, when the state
+  changed lately, 16 s for the processes' copies): `make -C pacod-api gw-agent-sync[-local]`, run by
+  `make gw-bootstrap`, `seed-profile`, `seed-example-local` and `scripts/smoke_gateway_turn.sh`.
+- `GET /api/v1/gateway/agents` (admin, `admin_api/routes/gateway.py`): the mode, the fallback, the
+  last error, and per profile `state` (`bound|pending|name_unfit|conflict|orphaned`) with the agent's
+  live `gw_status`; the profiles page shows a badge per profile.
+- **The kill switch** surfaces as `AgentDisabledError` (`UpstreamRequestError`, code `agent_disabled`,
+  503, its own user message in bg/en/de/ru), raised for a 403 `agent_disabled` or a 403 `not_allowed`
+  whose message says `the agent … is disabled` (pacod-gw 46aec04 has only the latter). Never retried;
+  `routes_chat.py` renders `e.code`, and the OpenAI-compatible path answers the same message
+  (`_failure_code`) instead of its generic `upstream_error` text. The switch stops LLM calls only: a
+  first-turn question answered from the topic and response caches makes none and is still served
+  until those entries expire or the profile's response cache is cleared; the quota read of a
+  disabled agent's turn is refused and fails open (`gateway_quota_unavailable`).
+- Tests: `test_gateway_agents.py`, `test_gateway_agent_sync.py` (respx), `test_gateway_client.py`
+  (the header, no body `agent_id`, the kill switch on hand-written fixtures
+  `fixtures/gw/error_403_agent_disabled*.json`), `test_gateway_models.py`, `test_gateway_quota.py`.
 
 ## pacod-broker (the platform's catalogue)
 
@@ -1275,7 +1341,7 @@ Browser → Caddy → frontend (BFF: session → Bearer pacod-id access token) �
 ```
 
 Every LLM call in the turn carries the gateway attribution (end user, session, trace = the turn id,
-agent = the profile, task/purpose, tags) — so the console's trace page is the turn. Tools: `kb_search`
+the profile's gateway agent in `x-gw-agent-id`, task/purpose, tags) — so the console's trace page is the turn. Tools: `kb_search`
 (Qdrant 2-stage), `get_fact` / `list_facts` (MCP → `reference_facts`), `web_search` (Tavily/Google,
 allowlisted, or the model's native search). The OpenAI-compat path (`routes_openai_compat.py`,
 streaming + non-streaming) runs the same guard chain, `turn_pipeline` hooks and runner — `req.model`
@@ -1753,7 +1819,7 @@ account rows whose user is active and still assigned to the profile (`newsletter
 `user_profiles`; pacod-id confirmed the address), and email-only rows from the public double opt-in —
 recording a `newsletter_issues` row and flipping items to `sent`. The classification calls are tagged
 with the `newsletter` purpose at the gateway (key `GATEWAY_KEY_NEWSLETTER`, daily spend cap), inside a
-`debug_scope` with trace `newsletter:collect:{profile}:{ts}` and the profile as agent; no `end_user`.
+`debug_scope` with trace `newsletter:collect:{profile}:{ts}` and the profile's gateway agent; no `end_user`.
 
 **Execution model.** Admin **Collect now**/**Send now** (`POST /api/v1/newsletter-config/{collect,send}`)
 and the scheduler both **enqueue** a `newsletter_run_requests` row (with a `job` = `collect`|`send`
@@ -2036,7 +2102,7 @@ drop the account columns pacod-id now holds. The default profile is seeded in th
 | `retrieval_feedback` | `relevance` 1/-1 per `chunk_id`; written by `/feedback`; no FK on `user_id` |
 | `response_feedback` | Response-level 👍/👎 on the whole answer (`rating` 1/-1), one row per `(profile_id, user_id, turn_id)` (re-vote upserts); written by `/feedback/response`. Distinct from chunk-level `retrieval_feedback`; no FK on `user_id` |
 | `agent_directives` | `title, content, language(bg/en/all), legal_year(NULL=any), priority, is_active, created_by, timestamps` |
-| `app_settings` | Key/value store for runtime-mutable settings read per request (DB→Redis cache→env default). **Composite PK `(profile_id, key)`**. Per-profile keys: `active_collection`, `agent.*`/`websearch.*` (LLM-config, incl. the `*_template` assignments), `respcache.*`, `prompt.*` (absence = code default), `loop.*` (Review process, incl. `loop.redaction_packs`), `newsletter.*`. Global keys (under `__global__`): `debug_audit_enabled`, `turn_evidence_enabled`, `retrieval_trace_enabled`, `quota_enforcement_enabled`, `quota.*`, `editor_assistant.*`, `newsletter.public_profile_id`, and the workers' day guards (`loop.last_scheduled_date:{profile}`, `loop.last_meta_eval_date:{profile}`, `loop.last_fix_verify_date:{profile}`, `newsletter.last_{collect,send}_date:{profile}`, `*.last_prune_date`) |
+| `app_settings` | Key/value store for runtime-mutable settings read per request (DB→Redis cache→env default). **Composite PK `(profile_id, key)`**. Per-profile keys: `active_collection`, `agent.*`/`websearch.*` (LLM-config, incl. the `*_template` assignments), `respcache.*`, `prompt.*` (absence = code default), `loop.*` (Review process, incl. `loop.redaction_packs`), `newsletter.*`. Global keys (under `__global__`): `debug_audit_enabled`, `turn_evidence_enabled`, `retrieval_trace_enabled`, `quota_enforcement_enabled`, `quota.*`, `editor_assistant.*`, `newsletter.public_profile_id`, `gateway.agents` (the gateway agent state admin-api publishes), and the workers' day guards (`loop.last_scheduled_date:{profile}`, `loop.last_meta_eval_date:{profile}`, `loop.last_fix_verify_date:{profile}`, `newsletter.last_{collect,send}_date:{profile}`, `*.last_prune_date`) |
 | `provider_secrets` | The **search** keys only (`TAVILY_API_KEY`, `GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_CX`), **Fernet-encrypted at rest** (`APP_SECRETS_KEY`): `name` PK, `value_encrypted`, `last4`, `target` (`live`). Admin-only |
 | `llm_templates` | Global named LLM call-parameter sets — see LLM templates |
 | `deleted_chat_sessions` | User-hidden chats. PK `(user_id, session_id)`; filtered out of the chat-history queries while `audit_log` rows are kept for admin review |
@@ -2097,9 +2163,11 @@ dense), cosine. After a fine-tune run the logical name stays but the alias is at
 | `respcache:bucket:{profile_ns}:{lang}:{year}` | ≈cfg (≥1h floor) | Per-profile semantic answer cache: hash of `{embedding, response, citations, suggestions, created_at}` per entry |
 | `respcache:stats:{profile}:{hits,misses}` | — | Per-profile response-cache hit/miss counters (reset on clear) |
 | `app_session:{id}` | ≈session lifetime | **Frontend** BFF session (pacod-id tokens server-side), written by the SvelteKit Redis store |
+| `gw:agents:lock` | 60s | admin-api's gateway agent sync: one round at a time |
 
-The gateway model list (60 s), a user's gateway token standing (5 s), the gateway reports (30 s) and
-pacod-id's introspection answers (30 s) are cached **in-process**, not in Redis.
+The gateway model list (60 s), a user's gateway token standing (5 s), the gateway reports (30 s), the
+gateway agent state (15 s) and pacod-id's introspection answers (30 s) are cached **in-process**, not in
+Redis.
 
 ## API reference
 
@@ -2140,7 +2208,8 @@ profiles). In the frontend the top-bar `selectedProfile` selector threads it; bl
   /profiles/{id}` (**superuser** — create provisions the profile's Qdrant collections; delete tears
   them down + cascades every `PROFILE_SCOPED_TABLES` row; the default profile can't be deleted).
   `GET/POST /users/{id}/profiles`, `DELETE /users/{id}/profiles/{profile_id}` assigns/unassigns
-  profiles to a user.
+  profiles to a user. Create and delete kick the gateway agent sync. `GET /gateway/agents` (admin):
+  each profile as a pacod-gw agent (`state`, `gw_status`; see **LLM gateway → Registered agents**).
 - **Reference facts:** `GET|POST /reference-facts`, `GET /reference-facts/categories`,
   `GET /reference-facts/export`, `POST /reference-facts/import`, `GET|PUT|DELETE /reference-facts/{id}`
   (see Reference facts).
