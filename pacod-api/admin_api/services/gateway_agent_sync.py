@@ -32,7 +32,10 @@ Only ap-admin-api runs it: it is the one service holding ``GATEWAY_ADMIN_TOKEN``
    ``registered`` with the agents bound on every one of those keys.
 
 It never changes an existing agent (``status``, ``allowed_*``, ``tool_bundles``): an
-operator's kill switch and narrowing stay. It never deletes or unbinds one: a deleted
+operator's kill switch and narrowing stay. A new agent is made with the empty bundle
+``NO_TOOLS_BUNDLE`` as its ``tool_bundles`` (the bundle is made first when missing), so it
+calls none of the gateway's tools until an operator grants it a bundle: a bundle on pacod-ap's
+shared keys then reaches only the agents it is meant for. It never deletes or unbinds one: a deleted
 profile's agent stays, shown as orphaned. To stop a profile, disable its agent; an unbound one
 is bound again by the next round.
 
@@ -77,6 +80,9 @@ PUT_ATTEMPTS = 3
 # How long the gateway's data plane takes to see a key's new binding.
 DATA_PLANE_SECONDS = 2.0
 PAGE_SIZE = 500
+# The empty tool bundle a new agent is made with: none of the gateway's tools until an operator
+# gives the agent a bundle (the agent's bundles narrow its key's).
+NO_TOOLS_BUNDLE = "ap-none"
 
 _RELEASE = (
     "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) "
@@ -138,6 +144,32 @@ async def list_all(path: str) -> list[dict]:
         cursor = data.get("next_cursor") if isinstance(data, dict) else None
         if not cursor:
             return out
+
+
+async def _no_tools_bundle(report: RoundReport) -> list[str]:
+    """``[NO_TOOLS_BUNDLE]``, made when the workspace lacks it; ``[]`` on a gateway without tool
+    bundles (an agent's ``tool_bundles`` must name bundles the workspace has)."""
+    try:
+        bundles = await list_all("/tool-bundles")
+        if not any(b.get("name") == NO_TOOLS_BUNDLE for b in bundles):
+            await gateway_admin._call(
+                "POST",
+                "/tool-bundles",
+                {
+                    "name": NO_TOOLS_BUNDLE,
+                    "description": "No tools: what pacod-ap's new agents start with "
+                    f"{MANAGED_MARKER}",
+                    "allow": [],
+                },
+            )
+            log.info("gateway_tool_bundle_created", bundle=NO_TOOLS_BUNDLE)
+    except GatewayAdminError as e:
+        if e.status == 404:
+            return []
+        report.errors.append(f"bundle {NO_TOOLS_BUNDLE}: {e}")
+        log.warning("gateway_tool_bundle_failed", bundle=NO_TOOLS_BUNDLE, error=str(e))
+        return []
+    return [NO_TOOLS_BUNDLE]
 
 
 async def _profiles() -> list[tuple[str, str, str]]:
@@ -202,17 +234,22 @@ async def reconcile() -> RoundReport:
         report.reason = f"no key speaks for {fallback} yet: run make gw-bootstrap"
         return await _publish(report, "labels", bound=set(), registered=set(by_name))
 
+    no_tools: list[str] | None = None
     for pid, slug, name in await _profiles():
         if not gateway_agents.profile_agent_fits(pid):
             continue
         agent = by_name.get(pid)
         if agent is None:
+            if no_tools is None:
+                no_tools = await _no_tools_bundle(report)
             body = {
                 "name": pid,
                 "display_name": name,
                 "description": managed_description(slug),
                 "status": "active",
             }
+            if no_tools:
+                body["tool_bundles"] = no_tools
             try:
                 made = await gateway_admin._call("POST", "/agents", body)
             except GatewayAdminError as e:

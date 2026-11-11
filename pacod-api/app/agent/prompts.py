@@ -75,16 +75,21 @@ TOOL_CATALOGUE: dict[str, str] = {
 OPT_IN_TOOLS: frozenset[str] = frozenset({"broker_search"})
 
 
-def tool_catalogue(tools=None) -> str:
-    """The planner's tool list, restricted to ``tools`` (None → every tool)."""
+def tool_catalogue(tools=None, extra: tuple[str, ...] | list[str] = ()) -> str:
+    """The planner's tool list, restricted to ``tools`` (None → every built-in tool), then
+    ``extra``: the lines of the gateway tools the agent is bound to (``gateway_mcp.catalogue_line``)."""
     names = [t for t in TOOL_CATALOGUE if (t not in OPT_IN_TOOLS if tools is None else t in tools)]
-    return (
-        "\n".join(TOOL_CATALOGUE[t] for t in names)
-        or "- (no tools — answer from the conversation only)"
-    )
+    lines = [TOOL_CATALOGUE[t] for t in names] + list(extra)
+    return "\n".join(lines) or "- (no tools — answer from the conversation only)"
 
 
-def planner_prompt(directives: str = "", *, template: str | None = None, tools=None) -> str:
+def planner_prompt(
+    directives: str = "",
+    *,
+    template: str | None = None,
+    tools=None,
+    extra_tools: tuple[str, ...] | list[str] = (),
+) -> str:
     """Inject admin directives into the planner prompt so they can steer tool
     selection (e.g. "always include web_search for topic X").
 
@@ -99,7 +104,7 @@ def planner_prompt(directives: str = "", *, template: str | None = None, tools=N
     """
     base = template or PLANNER_SYSTEM
     if _PLANNER_TOOLS_SENTINEL in base:
-        base = base.replace(_PLANNER_TOOLS_SENTINEL, tool_catalogue(tools))
+        base = base.replace(_PLANNER_TOOLS_SENTINEL, tool_catalogue(tools, extra_tools))
     body = (directives or "").strip()
     if not body:
         # Drop the sentinel line entirely when there are no directives.

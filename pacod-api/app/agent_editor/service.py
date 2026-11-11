@@ -27,7 +27,14 @@ from app.agent_editor.graph import SCHEMA_VERSION, parse_graph
 from app.agent_editor.importer import blank_graph, build_graph_from_profile
 from app.agent_editor.layout import normalize_edges
 from app.agent_editor.registry import TEMPLATES
-from app.agent_editor.validate import GraphIssue, check_broker, has_errors, validate_graph
+from app.agent_editor.validate import (
+    GraphIssue,
+    bound_gateway_tools,
+    check_broker,
+    has_errors,
+    pin_gateway_tools,
+    validate_graph,
+)
 from app.core.db import session_scope
 from app.core.db_models import (
     AgentDefinition,
@@ -416,11 +423,38 @@ def _deployment(
 
 
 async def _validated_draft(definition: AgentDefinition, profile_id: str) -> dict:
+    """The draft as it is released: valid, and its gateway tools pinned (pin_gateway_tools)."""
     graph = json.loads(definition.draft_graph)
     issues = await check_graph(graph, profile_id)
     if has_errors(issues):
         raise AgentEditorError("invalid_graph", "Fix the errors before deploying", 422, issues)
-    return graph
+    return await _pin_gateway_tools(graph, profile_id)
+
+
+async def _pin_gateway_tools(graph: dict, profile_id: str) -> dict:
+    """Each bound gateway tool's definition as the gateway lists it to the agent now: a tool
+    it does not grant stops the release, and so does a gateway that cannot be asked (the
+    agent would call tools nobody checked)."""
+    if not bound_gateway_tools(graph):
+        return graph
+    from app.services import gateway_agents
+    from app.services.gateway_mcp import GatewayToolError, get_gateway_mcp
+
+    client = get_gateway_mcp()
+    agent = await gateway_agents.agent_for(profile_id)
+    client.forget(agent)
+    try:
+        listed = await client.list_tools(agent)
+    except GatewayToolError as e:
+        raise AgentEditorError(
+            "gateway_unavailable",
+            f"The gateway's tools could not be checked ({e.code}): try again",
+            502,
+        ) from e
+    pinned, issues = pin_gateway_tools(graph, listed)
+    if has_errors(issues):
+        raise AgentEditorError("invalid_graph", "Fix the errors before deploying", 422, issues)
+    return pinned
 
 
 async def save_draft(profile_id: str, graph: dict, revision: int, *, actor: str | None) -> dict:
@@ -569,11 +603,11 @@ async def deploy_dev(profile_id: str, *, actor: str | None, redis=None) -> dict:
     """Freeze the draft as a dev snapshot and point the dev variant at it."""
     async with session_scope() as db:
         profile, definition = await _load(db, profile_id, lock=True)
-        await _validated_draft(definition, profile_id)
+        graph = await _validated_draft(definition, profile_id)
         version = await _snapshot(
             db,
             profile_id,
-            definition.draft_graph,
+            _dumps(graph),
             "dev_snapshot",
             revision=definition.draft_revision,
             note=None,
@@ -636,7 +670,7 @@ async def publish(
         version = await _snapshot(
             db,
             profile_id,
-            definition.draft_graph,
+            _dumps(graph),
             "release",
             revision=definition.draft_revision,
             note=note,

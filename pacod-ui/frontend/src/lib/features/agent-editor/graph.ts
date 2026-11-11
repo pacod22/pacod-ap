@@ -240,7 +240,13 @@ function unwrap(prop: JsonSchema): JsonSchema {
 
 export function fieldsOf(configSchema: Record<string, unknown>): FieldSpec[] {
 	const props = (configSchema.properties ?? {}) as Record<string, JsonSchema>;
-	return Object.entries(props).map(([name, raw]) => {
+	// An object (a map such as the gateway tools' pinned definitions) has no widget: it is set
+	// through the API, and a text box would turn it into a string. `x-widget: hidden` likewise.
+	const editable = Object.entries(props).filter(([, raw]) => {
+		const p = unwrap(raw);
+		return p['x-widget'] !== 'hidden' && p.type !== 'object';
+	});
+	return editable.map(([name, raw]) => {
 		const p = unwrap(raw);
 		const widget = p['x-widget'] as string | undefined;
 		const type = p.type as string | undefined;

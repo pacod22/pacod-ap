@@ -16,6 +16,7 @@ from app.guards.language import LanguageGuard
 from app.guards.quota import QuotaGuard
 from app.guards.topic import TopicGuard
 from app.services.embeddings_client import EmbeddingsClient
+from app.services.gateway_mcp import get_gateway_mcp
 from app.services.llm_client import LLMClient
 from app.services.mcp_client import MCPClient
 from app.services.vector_store import VectorStore
@@ -110,5 +111,6 @@ def get_agent_runner() -> AgentRunner:
         kb=KBRetriever(get_embeddings_client(), get_vector_store(), get_redis()),
         facts=ReferenceFactsTools(get_mcp_client()),
         web=get_web_search(),
+        gateway=get_gateway_mcp(),
     )
     return AgentRunner(deps)

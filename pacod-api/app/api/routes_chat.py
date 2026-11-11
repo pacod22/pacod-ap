@@ -72,6 +72,7 @@ from app.services.debug_audit import (
     is_debug_audit_enabled,
     record_debug_interaction,
 )
+from app.services.gateway_mcp import is_gateway_tool
 from app.services.llm_client import usage_scope
 from app.services.profiles import ProfileAccessError, resolve_profile_id
 from app.services.user_activity import record_activity
@@ -614,12 +615,14 @@ async def chat(
 
                             # Cache this answer for future first-turn questions, unless
                             # it used web_search — those pull volatile "recent changes"
-                            # data and are the worst staleness offenders. Reuse the
-                            # lookup embedding; best-effort (never breaks the turn).
+                            # data and are the worst staleness offenders — or a gateway
+                            # tool, whose server's data changes without the agent knowing.
+                            # Reuse the lookup embedding; best-effort (never breaks the turn).
                             if (
                                 cache_eligible
                                 and cache_embedding is not None
                                 and "web_search" not in outcome.tool_calls
+                                and not any(is_gateway_tool(t or "") for t in outcome.tool_calls)
                             ):
                                 await response_cache.store(
                                     quota_guard.redis,

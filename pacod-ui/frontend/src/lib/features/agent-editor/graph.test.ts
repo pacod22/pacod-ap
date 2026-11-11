@@ -166,6 +166,28 @@ describe('fieldsOf (pydantic JSON schema)', () => {
 		expect(f.planner_prompt).toMatchObject({ kind: 'prompt', promptKey: 'planner' });
 	});
 
+	it('leaves out fields the form cannot edit (objects, hidden ones)', () => {
+		const withObjects = {
+			properties: {
+				tools: {
+					anyOf: [{ items: { type: 'string' }, type: 'array' }, { type: 'null' }],
+					title: 'Tools',
+					'x-widget': 'string_list'
+				},
+				injected_args: {
+					anyOf: [{ additionalProperties: { type: 'string' }, type: 'object' }, { type: 'null' }],
+					title: 'Injected'
+				},
+				pinned: {
+					anyOf: [{ additionalProperties: { type: 'object' }, type: 'object' }, { type: 'null' }],
+					title: 'Pinned',
+					'x-widget': 'hidden'
+				}
+			}
+		};
+		expect(fieldsOf(withObjects).map((x) => x.name)).toEqual(['tools']);
+	});
+
 	it('reads inherited values from an effective-config payload', () => {
 		const eff = { runtime: { primary_model: 'base' }, prompts: { planner: 'P' } };
 		expect(effectiveValue(eff, 'runtime.primary_model')).toBe('base');

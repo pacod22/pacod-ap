@@ -29,6 +29,9 @@ class FakeGw:
         self.keys: dict[str, dict] = {}
         self.log: list[str] = []
         self.conflicts = 0  # PUTs to answer 409 before taking one
+        # The workspace's tool bundles; None: a gateway without them (404).
+        self.bundles: list[dict] | None = []
+        self.agent_bodies: dict[str, dict] = {}
 
     def agent(self, name, *, description="", status="active"):
         self.agents[name] = {
@@ -67,8 +70,17 @@ class FakeGw:
             page = items[start : start + 1]
             nxt = str(start + 1) if start + 1 < len(items) else None
             return httpx.Response(200, json={"items": page, "next_cursor": nxt})
+        if path == "/tool-bundles":
+            if self.bundles is None:
+                return httpx.Response(404, json={"error": {"message": "no such route"}})
+            if m == "GET":
+                return httpx.Response(200, json={"items": self.bundles, "next_cursor": None})
+            body = json.loads(request.content)
+            self.bundles.append({**body, "id": f"tb_{len(self.bundles)}"})
+            return httpx.Response(201, json=self.bundles[-1])
         if path == "/agents" and m == "POST":
             body = json.loads(request.content)
+            self.agent_bodies[body["name"]] = body
             self.log.append(f"POST agent {body['name']}")
             self.agent(body["name"], description=body["description"], status=body["status"])
             self.agents[body["name"]]["display_name"] = body["display_name"]
@@ -308,3 +320,35 @@ async def test_the_console_shows_each_profiles_state(gw):
     assert states["a" * 64] == ("name_unfit", None)
     assert states["gone"] == ("orphaned", "active")
     assert body["gateway_error"] is None
+
+
+async def test_new_agents_start_with_the_empty_tool_bundle(gw):
+    gw.agent("pacod-ap")
+    gw.key("pacod-api", ["pacod-ap"])
+    report = await sync.reconcile()
+    assert sorted(report.created) == ["starter", "taxes"] and not report.errors
+    # The bundle is made once, empty; every new agent names it (its bundles narrow the key's).
+    (bundle,) = gw.bundles
+    assert bundle["name"] == sync.NO_TOOLS_BUNDLE and bundle["allow"] == []
+    for name in ("starter", "taxes"):
+        assert gw.agent_bodies[name]["tool_bundles"] == [sync.NO_TOOLS_BUNDLE]
+    gw.profiles.append(("third", "third", "Third"))
+    await sync.reconcile()
+    assert len(gw.bundles) == 1 and gw.agent_bodies["third"]["tool_bundles"] == ["ap-none"]
+
+
+async def test_a_gateway_without_tool_bundles_gets_agents_without_them(gw):
+    gw.bundles = None
+    gw.agent("pacod-ap")
+    gw.key("pacod-api", ["pacod-ap"])
+    report = await sync.reconcile()
+    assert sorted(report.created) == ["starter", "taxes"] and not report.errors
+    assert "tool_bundles" not in gw.agent_bodies["starter"]
+
+
+async def test_an_existing_agent_keeps_its_bundles(gw):
+    gw.agent("pacod-ap")
+    gw.agent("starter", description="pacod-ap profile starter (managed by pacod-ap's admin-api)")
+    gw.key("pacod-api", ["pacod-ap"])
+    await sync.reconcile()
+    assert "starter" not in gw.agent_bodies  # adopted, never re-made or changed

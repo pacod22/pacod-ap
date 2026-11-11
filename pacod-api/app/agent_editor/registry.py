@@ -171,6 +171,42 @@ class EmptyConfig(_Config):
     pass
 
 
+# Where a value the platform sets in a gateway tool's arguments comes from.
+InjectSource = Literal["profile_id", "legal_year", "language", "user_id"]
+
+
+class McpToolsConfig(_Config):
+    """Not settings (no ``x-target``): which of the gateway's tools this agent calls. Compile
+    turns it into ``PipelineFlags.gateway_tools`` and the tool allowlist."""
+
+    tools: list[str] | None = Field(
+        default=None,
+        title="Tools (<server>__<tool>, as the gateway lists them)",
+        json_schema_extra={"x-widget": "string_list"},
+    )
+    planner_hint: str | None = Field(
+        default=None, title="When the planner should use them", max_length=500
+    )
+    result_budget: int | None = Field(
+        default=None, title="Characters of a result the answer sees", ge=500, le=50000
+    )
+    internal: bool | None = Field(
+        default=None, title="Trusted server (results not fenced as outside data)"
+    )
+    injected_args: dict[str, InjectSource] | None = Field(
+        default=None, title="Arguments the platform sets (never the planner)"
+    )
+    # Written at deploy/publish (service.pin_gateway_tools): each tool's definition as the
+    # gateway listed it, with its hash. A changed definition stops the next release until the
+    # pin is removed (accepting the new one).
+    pinned: dict[str, dict] | None = Field(
+        default=None, title="Definitions released with", json_schema_extra={"x-widget": "hidden"}
+    )
+
+
+MCP_NODE_TYPE = "tool.mcp"
+
+
 # --------------------------------------------------------------------------- #
 # Node types
 # --------------------------------------------------------------------------- #
@@ -310,6 +346,16 @@ _NODE_LIST: tuple[NodeType, ...] = (
         tool_names=("broker_search",),
     ),
     NodeType(
+        MCP_NODE_TYPE,
+        "tool",
+        "chat",
+        "Gateway tools",
+        "Tools of the MCP servers pacod-gw grants this agent, called through the gateway "
+        "(approved and pinned there, and pinned again when the agent is released). Its tools "
+        "are in its settings; the gateway's agent must hold the bundles that grant them.",
+        McpToolsConfig,
+    ),
+    NodeType(
         "generate.synthesizer",
         "generate",
         "chat",
@@ -395,7 +441,13 @@ TEMPLATES: dict[str, Template] = {
             Slot("planner", ("plan.planner",), False),
             Slot(
                 "tools",
-                ("tool.kb_search", "tool.reference_facts", "tool.web_search", "tool.broker_search"),
+                (
+                    "tool.kb_search",
+                    "tool.reference_facts",
+                    "tool.web_search",
+                    "tool.broker_search",
+                    MCP_NODE_TYPE,
+                ),
                 False,
                 multi=True,
             ),

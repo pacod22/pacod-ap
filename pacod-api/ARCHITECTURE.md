@@ -521,8 +521,9 @@ enforce "numbers only from these tools."
 Despite its name, ap-mcp is plain REST that trusts the `profile_id` its caller sends, so it stays on
 the internal network and is never offered as an MCP server to anyone else. The MCP face of the facts
 is ap-api's `POST /mcp` (§9.1: JSON-RPC, offered agents only, the profile set by the server), which
-pacod-demo registers as a pacod-gw tool server; pacod-ap's own agents call their tools directly, not
-through the gateway's `/mcp`.
+pacod-demo registers as a pacod-gw tool server; pacod-ap's own agents call their facts tools directly,
+not through the gateway's `/mcp`. Other servers' tools, which the gateway grants an agent, are called
+through it (a `tool.mcp` node; CLAUDE.md, "Gateway tools").
 
 ---
 
