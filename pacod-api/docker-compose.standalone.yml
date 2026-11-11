@@ -40,7 +40,9 @@ services:
       - "443:443"
     volumes:
       - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../platform/caddy:/etc/caddy/sites:ro
+      # ap.caddy alone: ap-agents.caddy is for stacks that set AP_AGENT_API_SITE (pacod-demo),
+      # and an unset address there stops Caddy.
+      - ../platform/caddy/ap.caddy:/etc/caddy/sites/ap.caddy:ro
       - /data/caddy/data:/data
       - /data/caddy/config:/config
       - /data/caddy/certs:/etc/caddy/certs
