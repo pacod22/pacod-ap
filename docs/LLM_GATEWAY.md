@@ -120,10 +120,13 @@ kill switch): every new call of its keys for it is refused within a second.
   gateway refuses that as a conflict (403) — every profile turn, the loop's and the newsletter's
   included. Deploy the new ap images first, then run `make gw-bootstrap` (live, pacod-demo alike).
 
-**Tools and A2A.** pacod-ap's own agents call no gateway `/mcp` tools and no A2A agents. ap-api's
-`POST /mcp` is real MCP and is registered as a gateway tool server in pacod-demo (its bootstrap),
-not in pacod-ap's own stack; ap-mcp (the internal REST facts server) is not MCP and is never
-registered. No family service is an A2A agent this round.
+**Tools and A2A.** An agent whose editor graph has a `tool.mcp` node calls the gateway tools it
+binds through the gateway's `/mcp`, with the service's key and its own `x-gw-agent-id`
+(pacod-api/CLAUDE.md, "Gateway tools"): the gateway grants what the key's bundles allow, narrowed
+to the agent's `tool_bundles` (new agents start with the empty `ap-none`). No agent calls an A2A
+agent. ap-api's `POST /mcp` is real MCP and is registered as a gateway tool server in pacod-demo
+(its bootstrap), not in pacod-ap's own stack; ap-mcp (the internal REST facts server) is not MCP
+and is never registered. No family service is an A2A agent this round.
 
 ## Plugins
 

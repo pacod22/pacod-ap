@@ -16,7 +16,7 @@ from pathlib import Path
 from app.agent.prompts import GENERIC_PROMPTS
 from app.agent_editor.graph import SCHEMA_VERSION
 from app.agent_editor.layout import auto_layout, normalize_edges
-from app.agent_editor.registry import NODE_TYPES, TEMPLATE_FOR_UI_KIND, TEMPLATES
+from app.agent_editor.registry import MCP_NODE_TYPE, NODE_TYPES, TEMPLATE_FOR_UI_KIND, TEMPLATES
 from app.services import agent_prompts, response_cache
 from app.services import agent_runtime_config as runtime_config
 from app.services.profiles import ProfileContext
@@ -45,6 +45,9 @@ def _opt_in(node_type: str) -> bool:
     or a new graph, so adoption stays behaviour-neutral and a new agent searches nothing new."""
     from app.agent.prompts import OPT_IN_TOOLS
 
+    if node_type == MCP_NODE_TYPE:
+        # Gateway tools: chosen by hand in its config, never part of an import or a new agent.
+        return True
     names = NODE_TYPES[node_type].tool_names
     return bool(names) and set(names) <= OPT_IN_TOOLS
 

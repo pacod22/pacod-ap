@@ -1222,7 +1222,10 @@ are refused (the console's kill switch).
   a `conflict` and that profile stays on the fallback); adds them to each key by GET + PUT at the read
   `version` (gw's items are flat; 409 → read again, 3 attempts); waits `DATA_PLANE_SECONDS` (2) after a
   change, then publishes `registered` with the agents bound on every key. It **only adds**: never
-  changes an agent's status, `allowed_*` or `tool_bundles`, never unbinds or deletes. Runs at start,
+  changes an agent's status, `allowed_*` or `tool_bundles`, never unbinds or deletes. A **new** agent
+  is made with `tool_bundles: ["ap-none"]` (`NO_TOOLS_BUNDLE`, an empty bundle the round makes first;
+  none on a gateway without bundles, 404), so a bundle later put on pacod-ap's shared keys reaches no
+  agent until an operator gives that agent the bundle (an agent's bundles narrow its key's). Runs at start,
   every `GATEWAY_AGENT_SYNC_SECONDS`, and on `kick()` after profile create/delete
   (`routes/profiles.py`) and agent-editor create/import/import-all/adopt-all. Out-of-band writes run
   `python -m admin_api.services.gateway_agent_sync once` (waits for the lock and, when the state
@@ -1242,6 +1245,37 @@ are refused (the console's kill switch).
 - Tests: `test_gateway_agents.py`, `test_gateway_agent_sync.py` (respx), `test_gateway_client.py`
   (the header, no body `agent_id`, the kill switch on hand-written fixtures
   `fixtures/gw/error_403_agent_disabled*.json`), `test_gateway_models.py`, `test_gateway_quota.py`.
+
+## Gateway tools (pacod-gw `/mcp`) — `app/services/gateway_mcp.py`
+
+An agent calls the tools the gateway grants it (`<server>__<tool>`, a tool server an organisation
+registered and approved at the gateway) when its editor graph binds them in a **`tool.mcp`** node.
+- **Client** (`GatewayMcpClient`, `get_gateway_mcp()`): the 2026-07-28 revision (stateless; `_meta`
+  plus `MCP-Protocol-Version`/`Mcp-Method`/`Mcp-Name` headers), the service's own `GATEWAY_API_KEY`,
+  `x-gw-agent-id` = `gateway_agents.agent_for(profile)`, `x-gw-trace` = the turn. `tools/list` is
+  cached per agent 60 s. A 403 `agent_disabled` raises `AgentDisabledError` (the executor lets it
+  through: the turn stops); a timeout is never retried; everything else is a `GatewayToolError`
+  whose code the answer reports ("no answer this turn").
+- **Binding** (`registry.McpToolsConfig`): `tools`, `planner_hint`, `result_budget`, `internal`,
+  `injected_args` (argument → `profile_id|legal_year|language|user_id`, set by code, never by the
+  planner, and left out of its catalogue line), `pinned` (hidden; written at release). `tool.mcp` is
+  opt-in (`importer._opt_in`): never in an imported or new graph. Compile puts the names in
+  `allowed_tools` and a `GatewayToolBinding` each in `PipelineFlags.gateway_tools`.
+- **Pinning.** `deploy_dev`/`publish` (`service._validated_draft` → `_pin_gateway_tools`) list the
+  agent's tools at the gateway and snapshot the draft with each bound tool's definition and its
+  gw-canonical hash (`definition_hash`, pacod-gw's `tools/pin.rs`) in `config.pinned`; a tool the
+  gateway does not grant is `gateway_tool_not_granted` (422), an unreachable gateway
+  `gateway_unavailable` (502). At run time a tool whose listed definition no longer has the pinned
+  hash is not called (`changed`): releasing the agent again accepts the new definition.
+- **Runtime** (`app/agent/graph.py`): a gateway tool passes `_tool_allowed` only when the turn's
+  bindings hold it (a legacy agent without an allowlist never runs one a planner invents); its
+  planner line comes from the pinned definition (`catalogue_line`); `_build_context` fences the
+  result as the server's data, not instructions (unless `internal`), cuts it at `result_budget`,
+  and labels it `[TOOL-n]`. A turn that used a gateway tool is not stored in the response cache.
+- **Grants.** The gateway grants a tool when the call's key holds a bundle allowing it and the
+  agent's `tool_bundles` (if any) name that bundle. Every key a profile's turns use needs it:
+  `pacod-api` (chat), `pacod-admin-api` (the release check), `pacod-loop` (fix verification).
+- Tests: `test_gateway_tools.py` (client on MockTransport, compile/validate/pin, runtime).
 
 ## pacod-broker (the platform's catalogue)
 

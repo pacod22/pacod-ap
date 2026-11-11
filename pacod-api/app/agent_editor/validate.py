@@ -13,8 +13,9 @@ from dataclasses import asdict, dataclass
 from pydantic import ValidationError
 
 from app.agent_editor.graph import LOCALES, AgentGraph, parse_graph
-from app.agent_editor.registry import NODE_TYPES, TEMPLATES
+from app.agent_editor.registry import MCP_NODE_TYPE, NODE_TYPES, TEMPLATES, McpToolsConfig
 from app.services.agent_prompts import _SPEC_BY_KEY, PromptValidationError, validate_prompt_content
+from app.services.gateway_mcp import PINNED_FIELDS, definition_hash, is_gateway_tool
 from app.services.gateway_models import RETIRED_MODELS
 
 # Landing-card icons the frontend ships as static SVG paths (never raw SVG from data).
@@ -37,6 +38,7 @@ ICON_ALLOWLIST = (
 _SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _PAGE_REQUIRED = ("title", "lead", "metaTitle", "metaDescription")
+_ARG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,8 @@ def validate_graph(
                 )
             continue
         issues.extend(_check_fields(nt, cfg, path, node.id, known_models))
+        if node.type == MCP_NODE_TYPE:
+            issues.extend(_check_gateway_tools(cfg, path, node.id, node.enabled))
 
     # ---- slots ----------------------------------------------------------------
     for slot in template.slots:
@@ -254,6 +258,94 @@ def _check_fields(
                     GraphIssue("unknown_model", f"Model {value!r} is not available", fpath, node_id)
                 )
     return out
+
+
+def _check_gateway_tools(
+    cfg: McpToolsConfig, path: str, node_id: str, enabled: bool
+) -> list[GraphIssue]:
+    out: list[GraphIssue] = []
+    seen: set[str] = set()
+    for i, name in enumerate(cfg.tools or []):
+        tpath = f"{path}/config/tools/{i}"
+        if not is_gateway_tool(name):
+            out.append(
+                GraphIssue(
+                    "invalid_gateway_tool",
+                    f"{name!r} is not a gateway tool's name (<server>__<tool>)",
+                    tpath,
+                    node_id,
+                )
+            )
+        elif name in seen:
+            out.append(
+                GraphIssue("duplicate_gateway_tool", f"{name} is named twice", tpath, node_id)
+            )
+        seen.add(name)
+    for arg in cfg.injected_args or {}:
+        if not _ARG_RE.match(arg):
+            out.append(
+                GraphIssue(
+                    "invalid_injected_arg",
+                    f"{arg!r} is not an argument name",
+                    f"{path}/config/injected_args",
+                    node_id,
+                )
+            )
+    if enabled and not cfg.tools:
+        out.append(
+            GraphIssue(
+                "no_gateway_tools",
+                "Name the gateway tools this agent calls, or remove the node",
+                f"{path}/config/tools",
+                node_id,
+                severity="warning",
+            )
+        )
+    return out
+
+
+def bound_gateway_tools(graph: dict) -> list[str]:
+    """The gateway tools the enabled ``tool.mcp`` nodes of a graph (JSON) name."""
+    out: list[str] = []
+    for node in graph.get("nodes") or []:
+        if node.get("type") == MCP_NODE_TYPE and node.get("enabled", True):
+            for name in (node.get("config") or {}).get("tools") or []:
+                if name not in out:
+                    out.append(name)
+    return out
+
+
+def pin_gateway_tools(graph: dict, listed: list[dict]) -> tuple[dict, list[GraphIssue]]:
+    """The graph to release: each bound gateway tool's definition as the gateway lists it to
+    the agent now, pinned into its node (``config.pinned``, with its hash). An error for a tool
+    the gateway does not grant the agent. Pure: ``listed`` is the gateway's tools/list."""
+    by_name = {t.get("name"): t for t in listed if isinstance(t, dict)}
+    issues: list[GraphIssue] = []
+    nodes = []
+    for index, node in enumerate(graph.get("nodes") or []):
+        if node.get("type") != MCP_NODE_TYPE or not node.get("enabled", True):
+            nodes.append(node)
+            continue
+        config = dict(node.get("config") or {})
+        pinned = {}
+        for i, name in enumerate(config.get("tools") or []):
+            tool = by_name.get(name)
+            if tool is None:
+                issues.append(
+                    GraphIssue(
+                        "gateway_tool_not_granted",
+                        f"The gateway grants this agent no {name}: put the bundle that holds it "
+                        "on the agent (and on the platform's keys) in the gateway console",
+                        f"/nodes/{index}/config/tools/{i}",
+                        node.get("id"),
+                    )
+                )
+                continue
+            entry = {k: tool[k] for k in PINNED_FIELDS if tool.get(k) is not None}
+            pinned[name] = {**entry, "hash": definition_hash(tool)}
+        config["pinned"] = pinned
+        nodes.append({**node, "config": config})
+    return {**graph, "nodes": nodes}, issues
 
 
 def check_broker(graph: AgentGraph) -> list[GraphIssue]:
